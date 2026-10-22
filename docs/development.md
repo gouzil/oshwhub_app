@@ -39,6 +39,15 @@ pnpm android
 
 原生桥需要 development build；Expo Go 不含本地 Rust 模块。生成的 Android/iOS 工程不提交，由 Expo prebuild 重建。CI 的 APK 使用开发签名，分发正式版本前必须配置自己的 release keystore。
 
+Release 在生成原生工程后构建：
+
+```sh
+cd apps/mobile/android
+./gradlew :app:assembleRelease --no-daemon
+```
+
+Expo 配置插件为 JS 打包任务补充仓库 `packages/`、`modules/` 的源码及共享 `assets/` 输入。这样共享界面修改会使增量 Release 重新打包，而不会误用旧 JS；构建缓存不包含 node_modules 或原生 build 目录。
+
 ## iOS / iPadOS
 
 需要 macOS、Xcode 和 CocoaPods。
