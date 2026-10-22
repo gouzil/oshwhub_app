@@ -198,6 +198,7 @@ function Discover({
   const layout = layoutFor(width);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const latestDraft = useRef("");
   const [sort, setSort] = useState<Sort>("recommend");
   const controller = useMemo(
     () => new FeedController((request) => call<FeedPage>({ command: "feed", ...request })),
@@ -213,7 +214,11 @@ function Discover({
     void controller.search(query, sort);
     list.current?.scrollToOffset({ offset: 0, animated: false });
   }, [controller, query, sort]);
-  const search = () => setQuery(draft.trim());
+  const changeDraft = (text: string) => {
+    latestDraft.current = text;
+    setDraft(text);
+  };
+  const search = () => setQuery(latestDraft.current.trim());
   const header = (
     <View>
       <View style={styles.discoverHeading}>
@@ -231,8 +236,11 @@ function Discover({
             placeholder="搜索项目、开发板、灵感…"
             placeholderTextColor="#8e9993"
             value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={search}
+            onChangeText={changeDraft}
+            onSubmitEditing={({ nativeEvent }) => {
+              changeDraft(nativeEvent.text);
+              setQuery(nativeEvent.text.trim());
+            }}
             returnKeyType="search"
             autoCorrect={false}
             style={styles.searchInput}
@@ -243,7 +251,7 @@ function Discover({
               accessibilityRole="button"
               accessibilityLabel="清除搜索"
               onPress={() => {
-                setDraft("");
+                changeDraft("");
                 setQuery("");
               }}
               style={styles.clearSearch}

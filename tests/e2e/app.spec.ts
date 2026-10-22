@@ -100,6 +100,23 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   await card.click();
   await expect(page.getByRole("heading", { name: "自制项目说明", exact: true })).toBeVisible();
   await expect(page.getByText(unsafeMarkup, { exact: true })).toBeVisible();
+  const articleImage = page.locator('img[alt="本地自制说明图片"]');
+  await expect(articleImage).toBeAttached();
+  expect(
+    await articleImage.evaluate(async (element) => {
+      const image = element as HTMLImageElement;
+      await image.decode();
+      return [image.naturalWidth, image.naturalHeight];
+    }),
+  ).toEqual([200, 100]);
+  await expect
+    .poll(() =>
+      articleImage.evaluate((element) => {
+        const bounds = element.parentElement?.getBoundingClientRect();
+        return bounds ? bounds.width / bounds.height : 0;
+      }),
+    )
+    .toBeCloseTo(2, 2);
   expect(await page.evaluate(() => "__e2eUnsafe" in window)).toBe(false);
   await expect(page.locator('a[href^="javascript:"], a[href^="data:"]')).toHaveCount(0);
   await expect(page.getByRole("link", { name: "无效脚本链接" })).toHaveCount(0);
@@ -218,6 +235,43 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
     pagesBeforeOverlay,
   );
   await expectViewport(page);
+});
+
+test("Enter submits current native text and rapid typing supports the search button", async ({
+  page,
+  bridge,
+}) => {
+  await page.goto("/");
+  const input = page.getByRole("textbox", { name: "搜索开源硬件项目" });
+  await input.fill("ESP32-");
+  // Emulate native control text arriving before its final change updates JS draft state.
+  await input.evaluate((element) => {
+    (element as HTMLInputElement).value = "ESP32-S31";
+  });
+  await input.press("Enter");
+  await expect(input).toHaveValue("ESP32-S31");
+  await expect(page.getByText("“ESP32-S31”的搜索结果", { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      bridge.requests.some(
+        (command) => command.command === "feed" && command.query === "ESP32-S31",
+      ),
+    )
+    .toBe(true);
+  await input.fill("");
+  await input.pressSequentially("ESP32-S31-USB", { delay: 0 });
+  await page.getByRole("button", { name: "搜索", exact: true }).click();
+  await expect(page.getByText("“ESP32-S31-USB”的搜索结果", { exact: true })).toBeVisible();
+  await expect
+    .poll(() =>
+      bridge.requests.some(
+        (command) => command.command === "feed" && command.query === "ESP32-S31-USB",
+      ),
+    )
+    .toBe(true);
+  await page.getByRole("button", { name: "清除搜索", exact: true }).click();
+  await expect(input).toHaveValue("");
+  await expect(page.getByText("精选开源项目", { exact: true })).toBeVisible();
 });
 
 test("HTTP 418 is visible and the same failed page can be retried", async ({ page, bridge }) => {

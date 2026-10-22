@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { test as base, expect } from "@playwright/test";
 import type {
   Command,
@@ -31,6 +32,7 @@ const project = (id: string): ProjectDetail => ({
     { kind: "heading", text: "自制项目说明", url: null },
     { kind: "text", text: unsafeMarkup, url: null },
     { kind: "code", text: "const voltage = 3.3;", url: null },
+    { kind: "image", text: "本地自制说明图片", url: "http://127.0.0.1:5173/__e2e__/article.png" },
     { kind: "link", text: "无效脚本链接", url: "javascript:window.__e2eUnsafe=true" },
   ],
   boards: [
@@ -53,7 +55,7 @@ const project = (id: string): ProjectDetail => ({
           designator: "R1, R2",
           footprint: "0603",
           quantity: 2,
-          partNumber: "10K",
+          partNumber: "",
           supplierPart: "",
         },
       ],
@@ -109,7 +111,7 @@ export const scene: Scene = {
 export const test = base.extend<{
   bridge: { requests: Command[]; failNextFeed: boolean; endlessFeed: boolean };
 }>({
-  bridge: async ({ page }, use) => {
+  bridge: async ({ page }, use, testInfo) => {
     const bridge = { requests: [] as Command[], failNextFeed: false, endlessFeed: false };
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
@@ -119,6 +121,12 @@ export const test = base.extend<{
       if (/Failed to load resource:.*status of 418/.test(message.text())) return;
       errors.push(`console.error: ${message.text()}`);
     });
+    await page.route("http://127.0.0.1:5173/__e2e__/article.png", (route) =>
+      route.fulfill({
+        contentType: "image/png",
+        path: join(testInfo.project.testDir, "assets", "article.png"),
+      }),
+    );
     await page.route("http://127.0.0.1:4318/bridge", async (route) => {
       const command = route.request().postDataJSON() as Command;
       bridge.requests.push(command);

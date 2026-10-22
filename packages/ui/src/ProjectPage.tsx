@@ -173,7 +173,7 @@ export function ProjectPage({
                                 {[item.name, item.footprint].filter(Boolean).join(" · ") ||
                                   "未提供型号 / 封装"}
                               </Text>
-                              {(item.partNumber || item.supplierPart) && (
+                              {!!(item.partNumber || item.supplierPart) && (
                                 <Text selectable style={styles.partNumber}>
                                   {[item.partNumber, item.supplierPart].filter(Boolean).join(" / ")}
                                 </Text>
@@ -271,8 +271,13 @@ function ContentImage({ block }: { block: ContentBlock }) {
       resizeMode="contain"
       onError={() => setFailed(true)}
       onLoad={({ nativeEvent }) => {
-        const { width, height } = nativeEvent.source;
-        if (width > 0 && height > 0) setRatio(width / height);
+        const updateRatio = (width: number, height: number) => {
+          if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0)
+            setRatio(width / height);
+        };
+        const source = nativeEvent.source;
+        if (source) updateRatio(source.width, source.height);
+        else Image.getSize(uri, updateRatio);
       }}
       style={[styles.contentImage, { aspectRatio: ratio }]}
     />

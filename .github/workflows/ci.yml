@@ -79,7 +79,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
       - run: sdkmanager 'ndk;27.1.12297006' 'platforms;android-37.0' 'build-tools;37.0.0' 'cmake;3.22.1'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
