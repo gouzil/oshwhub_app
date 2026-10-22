@@ -74,6 +74,8 @@ export const scene: Scene = {
   revision: "offline-1",
   bounds: { minX: 0, minY: 0, maxX: 120, maxY: 80 },
   layers: [
+    { id: 90, name: "技术参考层 A", color: "#718096", visible: false, order: -2 },
+    { id: 91, name: "技术参考层 B", color: "#718096", visible: false, order: -1 },
     { id: 1, name: "顶层铜", color: "#ef6b62", visible: true, order: 1 },
     { id: 2, name: "底层铜", color: "#3bc98c", visible: true, order: 2 },
     { id: 3, name: "中文丝印", color: "#f8f6e8", visible: true, order: 3 },

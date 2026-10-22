@@ -131,6 +131,20 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   const surface = page.getByRole("img", { name: /^自制中文测试 PCB，PCB 画布/ });
   await expect(page.locator("canvas")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  const layerControls = page.getByRole("checkbox");
+  const expectedLayerOrder = [
+    "顶层铜",
+    "底层铜",
+    "中文丝印",
+    "孔洞",
+    "技术参考层 A",
+    "技术参考层 B",
+  ];
+  const layerOrder = () =>
+    layerControls.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("aria-label")),
+    );
+  expect(await layerOrder()).toEqual(expectedLayerOrder);
   const bounds = await surface.boundingBox();
   const viewport = page.viewportSize();
   if (!bounds || !viewport) throw new Error("Missing canvas dimensions");
@@ -211,6 +225,12 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   await touches.detach();
   await page.getByRole("checkbox", { name: "顶层铜", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "顶层铜", exact: true })).not.toBeChecked();
+  expect(await layerOrder()).toEqual(expectedLayerOrder);
+  const technicalLayer = page.getByRole("checkbox", { name: "技术参考层 A", exact: true });
+  await technicalLayer.click();
+  await expect(technicalLayer).toBeChecked();
+  expect(await layerOrder()).toEqual(expectedLayerOrder);
+  await technicalLayer.click();
   await expect
     .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
     .toBe(0);

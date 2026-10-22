@@ -132,12 +132,11 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
   );
 
   useEffect(() => {
-    let pictures: LayerPicture[] = [];
     setRenderError(null);
     if (scene.texts.length && !typeface) return;
     try {
       const result = buildPictures(scene, typeface);
-      pictures = result.pictures;
+      // Canvas can retain these handles past effect cleanup; Skia releases them when unreachable.
       setCompiled({ scene, ...result });
     } catch (error) {
       setRenderError(error instanceof Error ? error.message : "PCB 绘制失败。");
@@ -148,7 +147,6 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     pickVersion.current += 1;
     return () => {
       pickVersion.current += 1;
-      for (const { picture } of pictures) picture.dispose();
     };
   }, [scene, typeface]);
 
@@ -376,7 +374,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         >
           {scene.layers
             .slice()
-            .sort((a, b) => a.order - b.order)
+            .sort((a, b) => Number(b.visible) - Number(a.visible) || a.order - b.order)
             .map((layer) => (
               <Pressable
                 key={layer.id}

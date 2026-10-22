@@ -81,6 +81,24 @@ background. The UI must keep these colors synchronized. Copper, silkscreen,
 outline, and drill layers are enabled by default when the source layer is shown;
 mask, paste, and technical layers remain selectable in layer controls.
 
+## Picture ownership
+
+`buildPictures` explicitly releases temporary paths, paints, fonts, and recorders,
+and disposes partially built pictures if compilation fails. Once pictures are
+published to `Canvas`, its independent render root and recorded commands can
+retain them beyond the owning React effect's cleanup. Cleanup must not manually
+dispose those published handles: Fast Refresh preserves React state while
+restarting effects, so a pending draw could otherwise receive a deleted picture.
+
+Published pictures follow their reachable Skia handles. CanvasKit's Embind
+`sk_sp<Picture>` wrappers register with `FinalizationRegistry`; native
+`JsiSkPicture` objects release their smart pointers during JSI garbage collection,
+scheduling GPU resource release on the creating thread. Browser lifecycle tests
+exercise StrictMode, three consecutive Fast Refresh updates, unmounting, real
+canvas pixels, and picture finalizers after forced test GC. Collection timing is
+not deterministic in normal use, and releasing live resources does not guarantee
+an immediate reduction in process RSS/PSS.
+
 ## Picking and retained state
 
 `pcb::pick(scene_id, x, y, tolerance, layers)` first queries a 100-unit spatial
