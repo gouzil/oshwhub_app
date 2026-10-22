@@ -41,7 +41,7 @@ PCB 样板工程 `90602f2f840d4245a97479e90a31d17b`，板子 `d4c95e111c8e5672`�
 | iPhone | iOS 27.0 / iPhone 18 Pro Max 模拟器 Release 构建、安装和启动成功，真实列表可见 | 真机、签名及完整原生手势验收 |
 | iPad | iOS 27.0 / iPad Pro 11-inch (M5) 模拟器安装相同 Release，真实三列列表和安全区域可见 | 分屏、大字体及真机手势验收 |
 | macOS | Apple Silicon Release `.app` 与 `.dmg` 构建成功，原生 Rust 已成功获取真实列表 | 正式包动态样式修复后的界面及外链验收；当前系统锁屏妨碍 UI 自动化 |
-| Windows / Linux | 代码 `7abf60d` 的 GitHub Actions Tauri 构建成功并上传安装包 | `6f7bbf8` 的最新构建待 CI 结束；Windows/Linux 原生运行、字体及 GPU 验收 |
+| Windows / Linux | 代码 `6f7bbf8` 的 GitHub Actions Tauri 构建均成功并上传安装包 | Windows/Linux 原生运行、字体及 GPU 验收 |
 
 Android 软件 GPU 模拟器的内存优化版 Release 真实板载入 6,917 ms、解码 603 ms、场景编译 90 ms；此前一次为 7,412/1,009/98 ms。网络耗时会波动。系统 DNS 故障已通过显式 DNS 和 SwiftShader 启动模拟器恢复；数据未清除。此结果不能代替真机性能基准。
 
@@ -95,6 +95,8 @@ DMG  7fa5651fec99e900a2a337b28dd2d08577d6d2617b021e4f1f159e94f43e20bb
 
 代码 `7abf60d38568a4589228a11f8a02c45750fb0bff` 的 [CI #39839629388](https://github.com/gouzil/oshwhub_app/actions/runs/39839629388)：quality、iOS 和 Windows/macOS/Linux 三个桌面构建全部成功，平台产物已上传。quality 中统一检查、prek、Web 构建及 30 项 E2E 通过（CI E2E 3.1 分钟）。Android 的 SDK、Rust 双架构和原生工程生成已成功，Gradle Release 未取得成功结论；新代码推送后已取消该过时运行，最终状态为 cancelled，不能当作源码编译失败。
 
-最新代码 `6f7bbf8268589a93195e7aa13e0a823460bb6402` 已推送并触发 [CI #39846343412](https://github.com/gouzil/oshwhub_app/actions/runs/39846343412)。质量检查、Android、Windows、Linux 已开始，macOS/iOS 等待 runner；整轮结果尚未返回，不能据旧版本的绿灯宣称最新跨平台 CI 完成。本地统一检查、prek、30 项 E2E、三个原生平台构建及上述模拟器复测已通过。文档更新跳过 CI；测试与构建证据按各自代码版本区分。
+最新代码 `6f7bbf8268589a93195e7aa13e0a823460bb6402` 已推送并触发 [CI #39846343412](https://github.com/gouzil/oshwhub_app/actions/runs/39846343412)。quality、Windows、Linux 已成功；CI 日志确认 27 项 TS 测试、7 项构建脚本测试、51 项 Rust 测试及 30 项 E2E 通过（CI E2E 2.9 分钟）。Android Gradle Release 仍在执行，macOS/iOS 等待 runner，整轮结果尚未返回。本地统一检查、prek、30 项 E2E、三个原生平台构建及上述模拟器复测已通过。文档更新跳过 CI；测试与构建证据按各自代码版本区分。
+
+交互验收阻挡：macOS 自动化接口连续三轮仍报告系统锁屏，必须由用户手动解锁后，才能继续正式包界面与外链验收。其余 CI 保留上述运行 ID，恢复工作时先读回同一运行的结果，不能因观察超时重启构建。
 
 本轮不宣称覆盖所有专业版文档类型或全部设备。重点后续项为真机性能采样、复杂板的首帧/帧时间/内存基准，以及文档中明确提示的格式兼容扩展；账号功能按用户确认另行迭代。
