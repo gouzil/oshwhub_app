@@ -81,6 +81,16 @@ background. The UI must keep these colors synchronized. Copper, silkscreen,
 outline, and drill layers are enabled by default when the source layer is shown;
 mask, paste, and technical layers remain selectable in layer controls.
 
+## Viewport and compact layouts
+
+Fitting keeps world coordinates unchanged and caps each canvas margin at 15% of
+its available width/height, up to the requested padding. A short canvas must not
+shrink the board to a few pixels merely to preserve a fixed margin. Windows below
+500 logical pixels high omit the canvas hint, layer heading, and timing footer.
+Zoom and layer controls remain available. The property panel is anchored to the
+whole viewer rather than the canvas, so a short canvas cannot collapse its
+scrollable content; system font scaling remains enabled.
+
 ## Picture ownership
 
 `buildPictures` explicitly releases temporary paths, paints, fonts, and recorders,

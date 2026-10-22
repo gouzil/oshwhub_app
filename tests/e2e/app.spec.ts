@@ -148,6 +148,9 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   const bounds = await surface.boundingBox();
   const viewport = page.viewportSize();
   if (!bounds || !viewport) throw new Error("Missing canvas dimensions");
+  await expect(
+    page.getByText("拖动平移 · 双指 / 滚轮缩放 · 点选图元", { exact: true }),
+  ).toHaveCount(viewport.height < 500 ? 0 : 1);
   expect(bounds.width).toBeGreaterThan(
     viewport.width >= 1024 ? viewport.width - 260 : viewport.width - 8,
   );
@@ -196,7 +199,15 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   if (pannedPick?.command !== "pick") throw new Error("Missing panned pick request");
   expect(pannedPick.x).toBeLessThan(60);
   expect(pannedPick.y).toBeLessThan(40);
+  if (viewport.height < 500) {
+    await page.setViewportSize({ width: viewport.width, height: 240 });
+    await expect(page.getByText("网络：GND", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByRole("button", { name: "关闭图元属性", exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+  }
   await page.getByRole("button", { name: "关闭图元属性", exact: true }).click();
+  if (viewport.height < 500) await page.setViewportSize(viewport);
   await surface.press("0");
   await touches.send("Input.dispatchTouchEvent", {
     type: "touchStart",

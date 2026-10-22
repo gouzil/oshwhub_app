@@ -4,9 +4,10 @@ export type Viewport = { scale: number; x: number; y: number };
 export function fitViewport(bounds: Bounds, width: number, height: number, padding = 24): Viewport {
   const worldWidth = Math.max(bounds.maxX - bounds.minX, 0.001);
   const worldHeight = Math.max(bounds.maxY - bounds.minY, 0.001);
+  const inset = Math.min(padding, width * 0.15, height * 0.15);
   const scale = Math.min(
-    Math.max(1, width - padding * 2) / worldWidth,
-    Math.max(1, height - padding * 2) / worldHeight,
+    Math.max(1, width - inset * 2) / worldWidth,
+    Math.max(1, height - inset * 2) / worldHeight,
   );
   return {
     scale,

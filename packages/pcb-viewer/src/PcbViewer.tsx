@@ -331,39 +331,12 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
               )}
             </View>
           )}
-          <View style={styles.hint} pointerEvents="none">
-            <Text style={styles.hintText}>拖动平移 · 双指 / 滚轮缩放 · 点选图元</Text>
-          </View>
-        </View>
-        {selection && (
-          <View style={styles.selection}>
-            <View style={styles.selectionTitle}>
-              <Text selectable style={styles.selectionName}>
-                {selection.kind} · {selection.id}
-              </Text>
-              <Tool
-                text="×"
-                label="关闭图元属性"
-                onPress={() => {
-                  setSelection(null);
-                  onPick?.(null);
-                }}
-              />
+          {!compact && (
+            <View style={styles.hint} pointerEvents="none">
+              <Text style={styles.hintText}>拖动平移 · 双指 / 滚轮缩放 · 点选图元</Text>
             </View>
-            <ScrollView style={styles.properties}>
-              {selection.net && (
-                <Text selectable style={styles.property}>
-                  网络：{selection.net}
-                </Text>
-              )}
-              {Object.entries(selection.properties).map(([key, value]) => (
-                <Text selectable key={key} style={styles.property}>
-                  {key}：{value}
-                </Text>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+          )}
+        </View>
       </View>
       <View style={[styles.layerSection, compact && styles.layerCompact]}>
         {!compact && <Text style={styles.sectionLabel}>图层</Text>}
@@ -420,6 +393,35 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
           载入 {Math.round(scene.metrics.loadMs)} ms · 解码 {Math.round(scene.metrics.parseMs)} ms ·
           场景 {Math.round(scene.metrics.sceneMs)} ms
         </Text>
+      )}
+      {selection && (
+        <View style={styles.selection}>
+          <View style={styles.selectionTitle}>
+            <Text selectable style={styles.selectionName}>
+              {selection.kind} · {selection.id}
+            </Text>
+            <Tool
+              text="×"
+              label="关闭图元属性"
+              onPress={() => {
+                setSelection(null);
+                onPick?.(null);
+              }}
+            />
+          </View>
+          <ScrollView style={styles.properties}>
+            {selection.net && (
+              <Text selectable style={styles.property}>
+                网络：{selection.net}
+              </Text>
+            )}
+            {Object.entries(selection.properties).map(([key, value]) => (
+              <Text selectable key={key} style={styles.property}>
+                {key}：{value}
+              </Text>
+            ))}
+          </ScrollView>
+        </View>
       )}
     </View>
   );

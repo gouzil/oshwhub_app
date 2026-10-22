@@ -9,6 +9,23 @@ describe("PCB viewport", () => {
       y: -25,
     });
   });
+  it.each([
+    { width: 320, height: 48 },
+    { width: 844, height: 70 },
+    { width: 64, height: 600 },
+  ])("keeps the board legible in a $width by $height canvas", ({ width, height }) => {
+    const fit = fitViewport({ minX: 10, minY: 20, maxX: 110, maxY: 70 }, width, height);
+    expect(Math.max((100 * fit.scale) / width, (50 * fit.scale) / height)).toBeGreaterThanOrEqual(
+      0.6,
+    );
+    expect(10 * fit.scale + fit.x).toBeGreaterThanOrEqual(0);
+    expect(20 * fit.scale + fit.y).toBeGreaterThanOrEqual(0);
+    expect(110 * fit.scale + fit.x).toBeLessThanOrEqual(width);
+    expect(70 * fit.scale + fit.y).toBeLessThanOrEqual(height);
+    const center = worldPoint(fit, { x: width / 2, y: height / 2 });
+    expect(center.x).toBeCloseTo(60, 10);
+    expect(center.y).toBeCloseTo(45, 10);
+  });
   it("keeps the world point under the zoom anchor fixed and clamps scale", () => {
     const start = { scale: 2, x: 10, y: 20 };
     expect(zoomAt(start, 4, { x: 110, y: 70 }, 1, 3)).toEqual({ scale: 3, x: -40, y: -5 });
