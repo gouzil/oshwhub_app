@@ -20,7 +20,10 @@ pub struct Record {
     pub id: Value,
     pub ticket: u64,
     pub client: String,
-    pub header: Value,
+    // Keep opaque original fields without retaining a JSON object tree per record.
+    #[allow(dead_code)]
+    pub header: String,
+    pub has_ticket: bool,
     pub data: Option<Value>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -103,6 +106,7 @@ pub fn replay(project: &mut Project, text: &str) -> Result<()> {
             return Err(error());
         }
         let (header, body) = line.split_once("||").ok_or_else(error)?;
+        let header_text = header;
         let header: Value = serde_json::from_str(header).map_err(|_| error())?;
         let kind = header["type"]
             .as_str()
@@ -187,7 +191,8 @@ pub fn replay(project: &mut Project, text: &str) -> Result<()> {
                     id,
                     ticket,
                     client,
-                    header,
+                    header: header_text.to_owned(),
+                    has_ticket: header.get("ticket").is_some(),
                     data,
                 },
             );
@@ -356,6 +361,46 @@ mod tests {
                 .values()
                 .any(|r| r.id == "deleted" && r.data.is_none())
         );
+    }
+    #[test]
+    fn replay_preserves_original_header_json_with_unknown_fields_and_conflicts() {
+        let header = r#"{ "type":"LINE", "id":"[\"LINE\",1]", "ticket":0, "client":"a", "opaque":{"future":[true,null,{"label":"值\\\""}]}} "#;
+        let mut p = Project::default();
+        replay(
+            &mut p,
+            &format!(
+                "{{\"type\":\"DOCHEAD\"}}||{{\"uuid\":\"board\",\"client\":\"z\"}}|\n{header}||{{\"width\":5}}|"
+            ),
+        )
+        .unwrap();
+        let record = p.docs["board"].records.values().next().unwrap();
+        assert_eq!(record.header, header);
+        assert_eq!(record.id, serde_json::json!(["LINE", 1]));
+        assert_eq!(record.ticket, 0);
+        replay(
+            &mut p,
+            r#"{"type":"DOCHEAD"}||{"uuid":"board","client":"z"}|
+{"type":"LINE","id":["LINE",1],"ticket":0,"client":"b","opaque":"loser"}||{"width":99}|"#,
+        )
+        .unwrap();
+        assert_eq!(
+            p.docs["board"].records.values().next().unwrap().header,
+            header
+        );
+        let tombstone =
+            r#"{"type":"LINE","id":["LINE",1],"ticket":1,"opaque":{"deletion":"future"}}"#;
+        replay(
+            &mut p,
+            &format!(
+                "{{\"type\":\"DOCHEAD\"}}||{{\"uuid\":\"board\",\"client\":\"z\"}}|\n{tombstone}|||"
+            ),
+        )
+        .unwrap();
+        let record = p.docs["board"].records.values().next().unwrap();
+        assert_eq!(record.header, tombstone);
+        assert_eq!(record.ticket, 1);
+        assert_eq!(record.client, "z");
+        assert!(record.data.is_none());
     }
     #[test]
     fn malformed_log_fails_instead_of_silently_discarding_geometry() {

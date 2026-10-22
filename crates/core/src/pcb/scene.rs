@@ -33,7 +33,6 @@ struct HitObject {
 }
 struct Stored {
     id: String,
-    _project: Project,
     objects: Vec<HitObject>,
     grid: HashMap<(i32, i32), Vec<usize>>,
     broad: Vec<usize>,
@@ -336,7 +335,14 @@ impl<'a> Builder<'a> {
             .unwrap_or_else(|| rid(r));
         let mut properties = BTreeMap::new();
         properties.insert("recordId".into(), rid(r));
-        properties.insert("ticket".into(), r.header["ticket"].to_string());
+        properties.insert(
+            "ticket".into(),
+            if r.has_ticket {
+                r.ticket.to_string()
+            } else {
+                "null".into()
+            },
+        );
         if let Some(c) = component {
             properties.insert("componentId".into(), c.to_owned());
             if let Some(attrs) = self.attrs.get(c) {
@@ -1148,7 +1154,6 @@ pub fn compile(
         .map_err(|_| AppError::new("internal", "场景缓存不可用"))?;
     cache.push_back(Stored {
         id,
-        _project: project,
         objects,
         grid,
         broad,
@@ -1297,6 +1302,36 @@ mod tests {
             history::replay(&mut p, FIXTURE).unwrap();
             compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
         })
+    }
+    #[test]
+    fn picking_ticket_properties_preserve_missing_zero_and_full_u64_values() {
+        let mut project = Project::default();
+        history::replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"LINE","id":"missing"}||{"startX":0,"startY":0,"endX":10,"endY":0,"width":1}|
+{"type":"LINE","id":"zero","ticket":0}||{"startX":0,"startY":5,"endX":10,"endY":5,"width":1}|
+{"type":"LINE","id":"max","ticket":18446744073709551615}||{"startX":0,"startY":10,"endX":10,"endY":10,"width":1}|"#,
+        )
+        .unwrap();
+        let doc = &project.docs["board"];
+        let mut builder = Builder::new(&project, doc);
+        for record in doc.active() {
+            builder.primitive(record, builder.tf, false, None).unwrap();
+        }
+        let tickets: BTreeMap<_, _> = builder
+            .paints
+            .iter()
+            .map(|paint| {
+                (
+                    paint.result.id.as_str(),
+                    paint.result.properties["ticket"].as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(tickets["missing"], "null");
+        assert_eq!(tickets["zero"], "0");
+        assert_eq!(tickets["max"], "18446744073709551615");
     }
     #[test]
     fn scene_resolves_footprints_pad_nets_pours_and_geometry_picking_without_filling_holes() {

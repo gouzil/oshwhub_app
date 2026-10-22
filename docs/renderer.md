@@ -22,6 +22,9 @@ handles the viewport and layer controls. No EasyEDA viewer renderer or closed
    `(document, type, normalized ID)`, including IDs serialized as JSON arrays.
    Higher logical tickets win; equal tickets prefer the lexically smaller client
    ID. Empty bodies remain tombstones. `DELETE_DOC` suppresses deleted documents.
+   After the existing per-line whitespace trimming, opaque record headers remain
+   as JSON strings during replay, including unknown fields; ticket/client/ID values are extracted for conflict
+   resolution without retaining a separate header object tree for each record.
 5. Resolve a component's `Footprint` attribute against the replayed project.
    `Device` references can resolve through live device metadata; deleted devices
    cannot restore referenced footprints. Expand footprint
@@ -88,11 +91,20 @@ their actual drawn layers and return a currently visible layer. Drill masks do
 not make an otherwise hidden component selectable. Drill holes are excluded from the pad/via copper hit
 geometry. Large objects use a separate bounded candidate list.
 
-The core retains at most two scenes. Each keeps the full replayed project,
-including opaque record headers, bodies, unknown types, and tombstones, alongside
-the picking index. Eviction yields `scene_expired` on later picks. This preserves
-the original data needed for future editing; the current product exposes a
-read-only preview, without edit/save operations.
+The core retains at most two picking scenes, containing owned object IDs,
+properties, flattened geometry, the spatial index, and layer metadata. The full
+replayed project, including opaque headers, bodies, unknown types, and tombstones,
+exists while compiling and is released when the read-only scene is returned.
+Eviction yields `scene_expired` on later picks. The current product exposes no
+edit/save operations. A future editing entry point must reload and own the full
+project state; a picking scene is insufficient to reconstruct the source records.
+
+Releasing the replayed project lowers live retained allocations, but the loader
+still downloads all encrypted parts before replaying the complete project in
+memory. Compact headers reduce this replay peak; they do not make the loader
+streaming. An allocator may retain freed pages, so lower live allocations do not
+guarantee an immediate matching reduction in process RSS/PSS. Native memory and
+load-time peaks require separate device measurements.
 
 Limits include 256 history versions, 1,024 downloaded parts, 16 MiB per encrypted
 part, 128 MiB total download, 256 MiB decompressed history, one million records,
