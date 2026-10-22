@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "code": 0,
+  "result": {
+    "boards": [
+      {
+        "uuid": "97a37ff62a58ff6f",
+        "name": "V0.3",
+        "sch": "6e9bf6c0323c94de",
+        "pcb": "d4c95e111c8e5672",
+        "schematic": {
+          "uuid": "6e9bf6c0323c94de",
+          "boms": {
+            "boms": "[{\"Name\":\"ESP32-S31\",\"Designator\":\"U2\",\"Footprint\":\"QFN-80\",\"Quantity\":1,\"Manufacturer Part\":\"ESP32-S31\",\"Supplier Part\":\"C12345\"}]"
+          },
+          "documents": []
+        },
+        "pcb_info": {
+          "uuid": "d4c95e111c8e5672",
+          "display_title": "PCB1",
+          "thumb": "//image-pro.lceda.cn/projects/thumbs/board.webp"
+        }
+      }
+    ],
+    "out_schematics": [],
+    "out_pcbs": [],
+    "panels": []
+  }
+}

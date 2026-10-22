@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "code": 0,
+  "result": {
+    "uuid": "90602f2f840d4245a97479e90a31d17b",
+    "name": "ESP32 开发板",
+    "path": "li-chuang-kai-fa-ban/project_wxwsirbz",
+    "origin": "pro",
+    "introduction": "公开工程",
+    "owner": { "nickname": "立创开发板" },
+    "text_editor_type": "markdown",
+    "content": "<div><div><h2>装配说明</h2><p>只出现一次 <strong>安全正文</strong><script>THIS_MUST_NOT_LEAK</script></p><div>尾段</div><pre><code>let x = 1;\n  x + 2</code></pre><img src=\"//image.lceda.cn/board.webp\" alt=\"PCB\"><img src=\"data:text/html,bad\"><a href=\"javascript:alert(1)\">无效链接</a><a href=\"https://example.com/docs\">资料</a></div><iframe>IFRAME_MUST_NOT_LEAK</iframe></div>",
+    "attachments": [
+      { "name": "固件.zip", "src": "https://image.lceda.cn/firmware.zip" },
+      { "name": "危险", "src": "javascript:alert(1)" }
+    ]
+  }
+}

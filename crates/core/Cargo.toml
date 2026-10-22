@@ -1,0 +1,27 @@
+[package]
+name = "oshwhub-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+reqwest.workspace = true
+url.workspace = true
+uuid.workspace = true
+scraper = "0.24"
+html-escape = "0.2"
+aes-gcm = "0.10"
+flate2 = "1.1"
+hex = "0.4"
+base64 = "0.22"
+futures-util = "0.3"
+
+[[example]]
+name = "smoke"
+path = "examples/smoke.rs"

@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "code": 0,
+  "result": {
+    "page": 1,
+    "pageSize": 2,
+    "total": 4,
+    "totalPage": 2,
+    "lists": [
+      {
+        "uuid": "90602f2f840d4245a97479e90a31d17b",
+        "name": "ESP32 开发板",
+        "path": "li-chuang-kai-fa-ban/project_wxwsirbz",
+        "introduction": "公开工程",
+        "thumb": "//image.lceda.cn/board.png",
+        "owner": { "nickname": "立创开发板", "avatar": "//image.lceda.cn/avatar.png" },
+        "count": { "like": 44, "views": 33222 },
+        "tags": ["开发板"],
+        "updated_at": "2026-10-22T16:03:20.430Z"
+      },
+      {
+        "uuid": "90602f2f840d4245a97479e90a31d17b",
+        "name": "重复推荐",
+        "path": "li-chuang-kai-fa-ban/project_wxwsirbz"
+      },
+      {
+        "uuid": "2e07c2fa32384ef393686dfa7c7222f6",
+        "name": "ESP32 遥控",
+        "path": "bhwj/esp32-yao-kong",
+        "thumb": "javascript:alert(1)",
+        "owner": { "username": "bhwj" },
+        "members": [{ "uuid": "3e6aa785ebfe40da8bba58eab2ade786" }]
+      }
+    ]
+  }
+}
