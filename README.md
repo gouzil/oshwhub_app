@@ -1,13 +1,47 @@
 # OSHWHub App
 
-面向手机、平板和桌面的开源硬件浏览客户端。React Native 负责界面，Rust 负责公开接口、数据模型和 PCB 工程准备。首轮实现公开工程浏览、搜索、详情与二维 PCB 查看。
+开源硬件社区的跨端只读客户端。React Native 共享手机、平板和桌面界面，Rust 负责公开 API、内容归一化、工程历史、几何与拾取。二维 PCB 引擎独立实现，使用 Skia 绘制，不依赖 EasyEDA 的预览器或闭源渲染引擎。
 
-这是独立客户端，与嘉立创无隶属关系。在线内容的权利属于原作者；项目许可证不改变工程内容的授权。
+首轮提供项目发现、搜索、排序、分页、详情、BOM、专业版 PCB 查看，以及本地自制交互示例。账号、评论、云收藏、编辑和 3D 后续迭代。非官方客户端，项目内容及素材版权属于原作者。
 
-## 设计与交付
+## 开发
 
-- [架构与范围](docs/design.md)
-- [分阶段实施与验收](docs/plan.md)
-- [研究证据](docs/research.md)
+需要 Node.js 24、pnpm 10.32.1、Rust 1.98.1 和 prek。
 
-运行命令、平台构建与测试说明随对应可运行阶段补齐。
+```sh
+pnpm install --frozen-lockfile
+prek install
+pnpm dev
+```
+
+打开 `http://127.0.0.1:5173`。浏览器开发预览通过本机 Rust 服务调用核心；移动和桌面安装包直接调用进程内 Rust。
+
+```sh
+pnpm check
+pnpm test:e2e
+prek run --all-files
+```
+
+## 平台
+
+```sh
+pnpm android    # Android SDK/NDK、JDK 21，默认 emulator-5554
+pnpm ios        # macOS、Xcode、CocoaPods
+pnpm desktop    # Tauri 开发窗口
+pnpm --filter @oshwhub/desktop tauri build
+```
+
+Android 提供 arm64-v8a / x86_64；iOS 支持 iPhone 和 iPad；桌面使用 Windows WebView2、macOS WKWebView、Linux WebKitGTK。原生目录和 Rust 库由构建命令生成。详细依赖、签名和构建产物路径见开发文档。
+
+## 文档
+
+- [架构与设计](docs/design.md)
+- [实施阶段](docs/plan.md)
+- [开发、日志与平台构建](docs/development.md)
+- [公开 API 契约](docs/api.md)
+- [独立 PCB 引擎、格式覆盖与性能边界](docs/renderer.md)
+- [验收结果](docs/validation.md)
+
+当前 PCB 数据入口针对专业版公开工程。已实现图元和已知格式限制见渲染文档；无法完整解析的内容必须显示错误或警告。请附平台、工程 ID、错误码和 requestId 报告问题。
+
+本项目代码采用 MIT；随包字体使用 SIL OFL。公开工程的许可各自独立，不能据本仓库许可重新分发作者的 PCB 数据。

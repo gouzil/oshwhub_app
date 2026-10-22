@@ -1,0 +1,33 @@
+minimum_pre_commit_version: '3.6.0'
+repos:
+  - repo: local
+    hooks:
+      - id: format-and-lint
+        name: TypeScript / JSON formatting and lint
+        entry: pnpm exec biome check
+        language: system
+        types_or: [ts, tsx, javascript, json]
+      - id: rust-format
+        name: Rust formatting
+        entry: cargo fmt --all --check
+        language: system
+        pass_filenames: false
+        types: [rust]
+      - id: rust-check
+        name: Rust clippy
+        entry: cargo clippy -p oshwhub-core -p oshwhub-ffi -p oshwhub-dev-server --all-targets -- -D warnings
+        language: system
+        pass_filenames: false
+        types: [rust]
+      - id: typecheck
+        name: TypeScript typecheck
+        entry: pnpm typecheck
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx]
+      - id: unit-tests
+        name: Shared UI and bridge tests
+        entry: pnpm test
+        language: system
+        pass_filenames: false
+        types_or: [ts, tsx, javascript]
