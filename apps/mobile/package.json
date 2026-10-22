@@ -1,0 +1,28 @@
+{
+  "name": "@oshwhub/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android --device emulator-5554",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild"
+  },
+  "dependencies": {
+    "@oshwhub/native-core": "workspace:*",
+    "@oshwhub/ui": "workspace:*",
+    "@shopify/react-native-skia": "2.14.0",
+    "expo": "58.0.17",
+    "expo-asset": "~58.0.18",
+    "expo-dev-client": "~58.0.14",
+    "expo-modules-core": "~58.0.24",
+    "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.6",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-worklets": "0.13.0"
+  }
+}

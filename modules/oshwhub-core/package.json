@@ -1,0 +1,10 @@
+{
+  "name": "@oshwhub/native-core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "peerDependencies": {
+    "expo": "*",
+    "expo-modules-core": "*"
+  }
+}

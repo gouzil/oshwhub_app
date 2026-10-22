@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@oshwhub/bridge": ["packages/bridge/src/index.ts"],
+      "@oshwhub/ui": ["packages/ui/src/index.ts"],
+      "@oshwhub/pcb-viewer": ["packages/pcb-viewer/src/index.ts"]
+    },
+    "allowJs": false,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "tests/**/*.ts",
+    "*.ts"
+  ],
+  "exclude": ["node_modules", "**/dist", "apps/mobile/android", "apps/mobile/ios"]
+}

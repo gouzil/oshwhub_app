@@ -1,0 +1,18 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.oshwhubcore'
+version = '0.1.0'
+
+android {
+  namespace 'expo.modules.oshwhubcore'
+  sourceSets.main.jniLibs.srcDirs = ['src/main/jniLibs']
+}
+
+tasks.register('buildRustCore', Exec) {
+  workingDir file('../../..')
+  commandLine 'node', 'scripts/build-rust.mjs', 'android'
+}
+tasks.named('preBuild').configure { dependsOn 'buildRustCore' }

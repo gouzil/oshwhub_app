@@ -1,0 +1,33 @@
+{
+  "name": "oshwhub-app",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n core,web 'cargo run -p oshwhub-dev-server' 'pnpm --filter @oshwhub/desktop dev'",
+    "android": "node scripts/build-rust.mjs android && pnpm --filter @oshwhub/mobile android",
+    "ios": "node scripts/build-rust.mjs ios-sim && pnpm --filter @oshwhub/mobile ios",
+    "desktop": "pnpm --filter @oshwhub/desktop tauri dev",
+    "build:web": "pnpm --filter @oshwhub/desktop build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run && node --test scripts/*.test.mjs",
+    "test:e2e": "playwright test",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && cargo fmt --all --check && cargo clippy --workspace --all-targets --exclude oshwhub-desktop -- -D warnings && cargo test --workspace --exclude oshwhub-desktop",
+    "rust:android": "node scripts/build-rust.mjs android"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.15",
+    "@playwright/test": "1.58.2",
+    "@types/node": "24.10.13",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "concurrently": "9.2.1",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}

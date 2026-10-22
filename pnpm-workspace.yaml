@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+  - modules/*
+onlyBuiltDependencies:
+  - esbuild
+  - '@swc/core'
+overrides:
+  react: 19.3.0
+  react-dom: 19.3.0
