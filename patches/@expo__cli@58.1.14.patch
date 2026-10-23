@@ -1,0 +1,51 @@
+diff --git a/build/src/start/platforms/ios/AppleDeviceManager.js b/build/src/start/platforms/ios/AppleDeviceManager.js
+index 840d0ce827c6668b253384c57bd510837b835937..449f95b827d21838f903f9c8c7c31e078dcdfe52 100644
+--- a/build/src/start/platforms/ios/AppleDeviceManager.js
++++ b/build/src/start/platforms/ios/AppleDeviceManager.js
+@@ -55,6 +55,7 @@ function _path() {
+     };
+     return data;
+ }
++const _log = require("../../../log");
+ const _delay = require("../../../utils/delay");
+ const _errors = require("../../../utils/errors");
+ const _interactive = require("../../../utils/interactive");
+@@ -274,18 +275,26 @@ class AppleDeviceManager extends _DeviceManager.DeviceManager {
+         }
+     }
+     async activateWindowAsync() {
+-        await (0, _ensureSimulatorAppRunning.ensureSimulatorAppRunningAsync)(this.device);
+-        // If we're in interactive mode, we can attempt to focus the Simulator app.
+-        // In non-interactive mode, we should assume this is an agent and not attempt to focus the Simulator app since it doesn't need focus.
+-        if ((0, _interactive.isInteractive)()) {
+-            // TODO: Focus the individual window
+-            await (0, _osascript().spawnAsync)([
+-                `if application "Simulator" is running then`,
+-                `tell application "Simulator" to activate`,
+-                `else if application "DeviceHub" is running then`,
+-                `tell application "DeviceHub" to activate`,
+-                `end if`
+-            ]);
++        try {
++            await (0, _ensureSimulatorAppRunning.ensureSimulatorAppRunningAsync)(this.device);
++            // If we're in interactive mode, we can attempt to focus the Simulator app.
++            // In non-interactive mode, we should assume this is an agent and not attempt to focus the Simulator app since it doesn't need focus.
++            if ((0, _interactive.isInteractive)()) {
++                // TODO: Focus the individual window
++                await (0, _osascript().spawnAsync)([
++                    `if application "Simulator" is running then`,
++                    `tell application "Simulator" to activate`,
++                    `else if application "DeviceHub" is running then`,
++                    `tell application "DeviceHub" to activate`,
++                    `end if`
++                ]);
++            }
++        } catch (error) {
++            if (!String(error?.stderr ?? '').includes('(-1743)')) {
++                throw error;
++            }
++            // The device is already booted; denied window automation must not prevent simctl launch.
++            _log.warn('› macOS denied simulator window automation (-1743). Continuing via simctl; open Simulator or DeviceHub manually if needed.');
+         }
+     }
+     getExpoGoAppId() {

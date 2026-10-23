@@ -8,3 +8,5 @@ onlyBuiltDependencies:
 overrides:
   react: 19.3.0
   react-dom: 19.3.0
+patchedDependencies:
+  '@expo/cli@58.1.14': patches/@expo__cli@58.1.14.patch

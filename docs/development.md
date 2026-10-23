@@ -61,6 +61,8 @@ pnpm ios
 
 脚本把设备 arm64 与 simulator arm64/x86_64 静态库组装为 XCFramework，Podspec 随本地模块链接。simulator 与设备不能混为同一普通静态库。CI 构建未签名模拟器 app；真机安装与 App Store 发布需要开发者签名。
 
+macOS 拒绝 Expo 向 `System Events` 发送 Apple 事件时会返回 `-1743`，即使构建、安装和模拟器启动都已成功。仓库通过 pnpm patch 修复 `@expo/cli@58.1.14`：仅在窗口操作遇到此权限错误时输出警告，继续用 `simctl` 打开应用；其他模拟器错误和应用启动错误仍会报出。补丁随 `pnpm install --frozen-lockfile` 自动应用，无需更改系统自动化权限。如果模拟器窗口没有出现，可手动打开 Xcode 的 Simulator / DeviceHub。升级 Expo CLI 时需重新核对补丁，并运行 `node --test scripts/expo-ios-launch.test.mjs`。
+
 ## 桌面
 
 ```sh
