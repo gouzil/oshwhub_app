@@ -27,7 +27,7 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "开源硬件浏览和二维 PCB 查看",
+    "shortDescription": "开源硬件浏览和二维 / 三维 PCB 查看",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -241,6 +241,29 @@ font, so its shape and metrics are approximate. Self-intersecting polygon
 topology and all producer-version variants have not been exhaustively validated.
 Native gesture/device visual validation is separate from these core checks.
 
+## Read-only 3D
+
+The same retained scene also owns bounded board outlines, drills, surface paints,
+stack-up thickness and model bindings. `pcb3d` compiles these in Rust on first use,
+without retaining or downloading the full replay again. Closed outlines are
+extruded after subtracting the union of drill shapes; top/bottom surface paints
+are clipped against that solid. Invalid outlines or missing stack-up data produce
+explicit fallback warnings. See [3d.md](3d.md) for format and model limitations.
+
+The independent WebGL renderer uses Expo GL on native and a DOM canvas on desktop.
+Packed meshes deduplicate identical position/normal/color tuples and carry u32
+indices. Devices without the u32 index extension expand them once on upload.
+Duplicate components reuse their vertex/index buffers and precomputed normal
+matrices. Model loading has three workers and a 64 MiB GPU buffer budget; the Rust
+model cache holds at most 16 assets / 48 MiB. Failed assets do not block the board.
+
+Gestures only change a local camera ref and coalesce into one animation frame;
+they do not rebuild meshes or call Rust. Idle/hidden canvases do not run a draw
+loop. A 2D/3D switch keeps both mounted after first use to preserve the 2D camera
+and layers, hides inactive accessibility content and keyboard focus, and releases
+GPU buffers/programs when leaving the viewer. Web GL context loss shows a reload
+action. These controls do not imply 3D picking, editing or export support.
+
 ## Sources and licensing
 
 - [EasyEDA file-format documentation](https://github.com/easyeda/easyeda-file-format),

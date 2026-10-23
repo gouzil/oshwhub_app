@@ -1120,6 +1120,14 @@ pub fn compile(
     layers.sort_by_key(|l| l.order);
     let mut paints = b.paints;
     let mut solid = b.solid;
+    solid
+        .warnings
+        .extend(b.warnings.iter().map(|(message, count)| {
+            format!(
+                "{} ({count})",
+                message.replace("使用系统字体近似", "三维未显示这些文字")
+            )
+        }));
     for paint in &paints {
         if paint.result.layer == 11 {
             solid.outlines.extend(paint.geometry.contours.clone());
@@ -1444,6 +1452,32 @@ mod tests {
                 assert_eq!(properties.get("PadNumber").map(String::as_str), Some("1"));
             }
         }
+    }
+    #[test]
+    fn three_dimensional_scene_reports_missing_font_and_source_geometry_warnings() {
+        let mut project = Project::default();
+        history::replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"STRING","id":"text"}||{"layerId":3,"x":0,"y":0,"text":"Hello","fontSize":12}|
+{"type":"FANCY","id":"unknown"}||{"future":true}|"#,
+        )
+        .unwrap();
+        let scene = compile(project, "board", "text-test".into(), Metrics::default()).unwrap();
+        let solid = prepare_3d(&scene.id).unwrap();
+        assert!(
+            solid
+                .warnings
+                .iter()
+                .any(|w| w.contains("三维未显示") && w.contains("FONT"))
+        );
+        assert!(solid.warnings.iter().any(|w| w.contains("FANCY")));
+        assert!(
+            !solid
+                .warnings
+                .iter()
+                .any(|w| w.contains("使用系统字体近似"))
+        );
     }
     #[test]
     fn picking_ticket_properties_preserve_missing_zero_and_full_u64_values() {

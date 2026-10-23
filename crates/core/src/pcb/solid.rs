@@ -52,6 +52,8 @@ pub struct Mesh {
 pub struct PackedMesh {
     pub data: String,
     pub vertex_count: usize,
+    pub indices: String,
+    pub index_count: usize,
     pub bounds: Bounds3,
 }
 impl Mesh {
@@ -102,10 +104,25 @@ impl Mesh {
         Ok(())
     }
     pub fn packed(&self) -> PackedMesh {
-        let bytes: Vec<u8> = self.vertices.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let mut unique = std::collections::HashMap::<[u32; 9], u32>::new();
+        let mut vertices = Vec::new();
+        let mut indices = Vec::with_capacity(self.vertices.len() / 9);
+        for vertex in self.vertices.as_chunks::<9>().0 {
+            let key = vertex.map(f32::to_bits);
+            let index = *unique.entry(key).or_insert_with(|| {
+                let index = vertices.len() as u32 / 9;
+                vertices.extend_from_slice(vertex);
+                index
+            });
+            indices.push(index);
+        }
+        let bytes: Vec<u8> = vertices.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let index_bytes: Vec<u8> = indices.iter().flat_map(|v| v.to_le_bytes()).collect();
         PackedMesh {
             data: STANDARD.encode(bytes),
-            vertex_count: self.vertices.len() / 9,
+            vertex_count: vertices.len() / 9,
+            indices: STANDARD.encode(index_bytes),
+            index_count: indices.len(),
             bounds: self.bounds.clone(),
         }
     }
@@ -136,6 +153,8 @@ pub fn close_outlines(contours: &[Vec<Point>]) -> Vec<Vec<Point>> {
         if path.len() > 3 && near(path[0], *path.last().unwrap()) {
             *path.last_mut().unwrap() = path[0];
             result.push(path);
+        } else {
+            return Vec::new();
         }
     }
     result
@@ -489,6 +508,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn packing_reuses_identical_vertices_without_changing_triangles() {
+        let mut mesh = Mesh::new();
+        mesh.triangle(
+            [[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
+            None,
+            [0.2, 0.4, 0.6],
+        )
+        .unwrap();
+        mesh.triangle(
+            [[0., 0., 0.], [1., 1., 0.], [0., 1., 0.]],
+            None,
+            [0.2, 0.4, 0.6],
+        )
+        .unwrap();
+        let packed = mesh.packed();
+        assert_eq!(packed.vertex_count, 4);
+        assert_eq!(packed.index_count, 6);
+        let vertices = STANDARD.decode(packed.data).unwrap();
+        let indices = STANDARD.decode(packed.indices).unwrap();
+        let reconstructed: Vec<_> = indices
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|bytes| {
+                let i = u32::from_le_bytes(*bytes) as usize;
+                vertices[i * 36..(i + 1) * 36]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|v| f32::from_le_bytes(*v))
+            })
+            .collect();
+        assert_eq!(reconstructed, mesh.vertices);
+    }
+
+    #[test]
     fn board_faces_leave_the_drilled_hole_open() {
         let outline = vec![vec![
             (0., 0.),
@@ -530,6 +585,36 @@ mod tests {
         assert_eq!(closed.len(), 1);
         assert_eq!(closed[0].first(), closed[0].last());
         assert!(close_outlines(&contours[..2]).is_empty());
+    }
+
+    #[test]
+    fn incomplete_outer_outline_does_not_turn_a_closed_cutout_into_the_board() {
+        let seed = Seed {
+            outlines: vec![
+                vec![(0., 0.), (400., 0.), (400., 240.), (0., 240.)],
+                vec![
+                    (100., 80.),
+                    (140., 80.),
+                    (140., 120.),
+                    (100., 120.),
+                    (100., 80.),
+                ],
+            ],
+            ..Default::default()
+        };
+        let scene = prepare(
+            &seed,
+            std::iter::empty(),
+            Bounds {
+                min_x: 0.,
+                min_y: 0.,
+                max_x: 400.,
+                max_y: 240.,
+            },
+        )
+        .unwrap();
+        assert!(scene.warnings.iter().any(|w| w.contains("板框")));
+        assert!((scene.board.bounds.max[0] - 400. * MM).abs() < 0.001);
     }
 
     #[test]

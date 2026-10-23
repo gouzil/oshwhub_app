@@ -364,6 +364,7 @@ test("Enter submits current native text and rapid typing supports the search but
     .toBe(true);
   await input.fill("");
   await input.pressSequentially("ESP32-S31-USB", { delay: 0 });
+  await expect(input).toHaveValue("ESP32-S31-USB");
   await page.getByRole("button", { name: "搜索", exact: true }).click();
   await expect(page.getByText("“ESP32-S31-USB”的搜索结果", { exact: true })).toBeVisible();
   await expect

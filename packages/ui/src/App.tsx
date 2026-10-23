@@ -1,5 +1,12 @@
 import { call, type FeedPage, type ProjectSummary, type Sort } from "@oshwhub/bridge";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type ComponentRef,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Animated,
   BackHandler,
@@ -309,8 +316,9 @@ function Discover({
 }) {
   const layout = layoutFor(width);
   const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState("");
+  const [hasDraft, setHasDraft] = useState(false);
   const latestDraft = useRef("");
+  const searchInput = useRef<ComponentRef<typeof TextInput>>(null);
   const [sort, setSort] = useState<Sort>("recommend");
   const controller = useMemo(
     () => new FeedController((request) => call<FeedPage>({ command: "feed", ...request })),
@@ -328,7 +336,7 @@ function Discover({
   }, [controller, query, sort]);
   const changeDraft = (text: string) => {
     latestDraft.current = text;
-    setDraft(text);
+    setHasDraft(text.length > 0);
   };
   const search = () => setQuery(latestDraft.current.trim());
   const header = (
@@ -343,11 +351,13 @@ function Discover({
           <Text style={styles.searchIcon} accessibilityElementsHidden>
             ⌕
           </Text>
+          {/* Native edits survive list rerenders; only clear() writes back to the input. */}
           <TextInput
+            ref={searchInput}
             accessibilityLabel="搜索开源硬件项目"
             placeholder="搜索项目、开发板、灵感…"
             placeholderTextColor="#8e9993"
-            value={draft}
+            defaultValue={latestDraft.current}
             onChangeText={changeDraft}
             onSubmitEditing={({ nativeEvent }) => {
               changeDraft(nativeEvent.text);
@@ -358,11 +368,12 @@ function Discover({
             style={styles.searchInput}
             clearButtonMode="never"
           />
-          {draft.length > 0 && (
+          {hasDraft && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="清除搜索"
               onPress={() => {
+                searchInput.current?.clear();
                 changeDraft("");
                 setQuery("");
               }}
@@ -523,7 +534,7 @@ function Lab({ onOpen, bottomInset }: { onOpen: () => void; bottomInset: number 
       <Text style={styles.eyebrow}>PCB LAB</Text>
       <Text style={styles.title}>看清每一个连接</Text>
       <Text style={styles.staticDescription}>
-        在项目详情中选择板子，即可查看二维 PCB、切换图层和拾取图元。
+        在项目详情中选择板子，即可切换二维 / 三维，查看图层、拾取图元或旋转板体。
       </Text>
       <View style={styles.labCard}>
         <View style={styles.labDrawing}>
@@ -554,7 +565,7 @@ function About({ bottomInset }: { bottomInset: number }) {
       <View style={styles.aboutSection}>
         <Text style={styles.sectionTitle}>从创意到电路</Text>
         <Text style={styles.staticDescription}>
-          浏览公开项目、阅读制作说明、查看物料清单，在本地二维画布中探索
+          浏览公开项目、阅读制作说明、查看物料清单，在二维 / 三维画布中探索
           PCB。项目内容与署名属于原作者，请遵守各项目的开源许可。
         </Text>
         <ExternalLink url="https://oshwhub.com" label="前往 OSHWHub 网站" />

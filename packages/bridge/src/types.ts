@@ -105,6 +105,30 @@ export interface PickResult {
   properties: Record<string, string>;
   bounds: Bounds;
 }
+export interface Bounds3 {
+  min: number[];
+  max: number[];
+}
+export interface PackedMesh {
+  data: string;
+  vertexCount: number;
+  indices?: string;
+  indexCount?: number;
+  bounds: Bounds3;
+}
+export interface Scene3d {
+  board: PackedMesh;
+  modelKeys: string[];
+  componentCount: number;
+  boundCount: number;
+  thickness: number;
+  warnings: string[];
+}
+export interface Model3d {
+  key: string;
+  mesh: PackedMesh;
+  instances: { title: string; matrix: number[] }[];
+}
 export type Command =
   | { command: "health" }
   | { command: "feed"; page: number; pageSize?: number; query?: string; sort?: Sort }
@@ -112,6 +136,8 @@ export type Command =
   | { command: "searchBom"; items: BomItem[]; query: string }
   | { command: "pcb"; projectId: string; documentId: string }
   | { command: "demo" }
+  | { command: "pcb3d"; sceneId: string }
+  | { command: "model3d"; sceneId: string; key: string }
   | {
       command: "pick";
       sceneId: string;

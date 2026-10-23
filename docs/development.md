@@ -39,6 +39,8 @@ pnpm android
 
 原生桥需要 development build；Expo Go 不含本地 Rust 模块。生成的 Android/iOS 工程不提交，由 Expo prebuild 重建。CI 的 APK 使用开发签名，分发正式版本前必须配置自己的 release keystore。
 
+三维宿主使用与 SDK 58 匹配的 `expo-gl`；添加或升级后须重新 prebuild 并构建安装原生包，仅刷新 JS 不会添加 GLView。iOS 还需在 `apps/mobile/ios` 内运行 `pod install`。桌面没有新增原生 GL 依赖，复用 WebView 的 WebGL；不支持 WebGL 时可继续二维查看。
+
 Release 在生成原生工程后构建：
 
 ```sh
@@ -85,3 +87,5 @@ RUST_LOG=info cargo run -p oshwhub-dev-server
 ```
 
 报告问题时附错误码、requestId、平台版本、工程 ID、可重复步骤和是否触发大小限制。不要附账号凭据或私有 PCB 正文。画布性能应同时记录实际工程的图元数、批次数、加载阶段耗时和设备；单个示例的结果不代表全部工程。
+
+三维日志包括 Rust 的 `pcb.solid.complete`、`pcb.model.complete` 及 JS 的 `pcb.3d.ready/render_failed/model_failed`，可核对网格顶点、装配数量、GPU 缓存字节与失败原因。模型 API 被拦截时检查 Rust 错误码，不要将板体就绪等同为所有器件已下载。原生模拟器的渲染结果、浏览器软件 GPU 与真实硬件帧时需分别记录。

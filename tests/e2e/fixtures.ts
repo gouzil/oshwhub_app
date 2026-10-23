@@ -5,6 +5,7 @@ import type {
   Command,
   ContentBlock,
   FeedPage,
+  PackedMesh,
   PickResult,
   ProjectDetail,
   ProjectSummary,
@@ -116,6 +117,42 @@ export const scene: Scene = {
   metrics: { loadMs: 1, parseMs: 2, sceneMs: 3, recordCount: 5, historyCount: 1, downloadBytes: 0 },
 };
 
+// Original box geometry, independent of the Rust board/model compiler.
+export const boxMesh = (min: number[], max: number[], color: number[]): PackedMesh => {
+  const points = [
+    [min[0], min[1], min[2]],
+    [max[0], min[1], min[2]],
+    [max[0], max[1], min[2]],
+    [min[0], max[1], min[2]],
+    [min[0], min[1], max[2]],
+    [max[0], min[1], max[2]],
+    [max[0], max[1], max[2]],
+    [min[0], max[1], max[2]],
+  ];
+  const faces = [
+    { indices: [0, 3, 2, 1], normal: [0, 0, -1] },
+    { indices: [4, 5, 6, 7], normal: [0, 0, 1] },
+    { indices: [0, 1, 5, 4], normal: [0, -1, 0] },
+    { indices: [3, 7, 6, 2], normal: [0, 1, 0] },
+    { indices: [1, 2, 6, 5], normal: [1, 0, 0] },
+    { indices: [0, 4, 7, 3], normal: [-1, 0, 0] },
+  ];
+  const data = Float32Array.from(
+    faces.flatMap((face) =>
+      [0, 1, 2, 0, 2, 3].flatMap((i) => [...points[face.indices[i]], ...face.normal, ...color]),
+    ),
+  );
+  return {
+    data: Buffer.from(data.buffer).toString("base64"),
+    vertexCount: data.length / 9,
+    indices: Buffer.from(
+      Uint32Array.from({ length: data.length / 9 }, (_, i) => i).buffer,
+    ).toString("base64"),
+    indexCount: data.length / 9,
+    bounds: { min, max },
+  };
+};
+
 export const test = base.extend<{
   bridge: {
     requests: Command[];
@@ -127,6 +164,8 @@ export const test = base.extend<{
     projectCover?: string;
     projectBom?: BomItem[];
     pickResult?: PickResult | null;
+    modelGate?: Promise<void>;
+    failModels?: boolean;
   };
 }>({
   bridge: async ({ page }, use, testInfo) => {
@@ -140,6 +179,8 @@ export const test = base.extend<{
       projectCover?: string;
       projectBom?: BomItem[];
       pickResult?: PickResult | null;
+      modelGate?: Promise<void>;
+      failModels?: boolean;
     } = { requests: [], failNextFeed: false, endlessFeed: false };
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
@@ -211,6 +252,34 @@ export const test = base.extend<{
           data = bridge.pickResult === undefined ? result : bridge.pickResult;
           break;
         }
+        case "pcb3d":
+          data = {
+            board: boxMesh([0, -80, 0], [120, 0, 4], [0.06, 0.36, 0.23]),
+            modelKeys: ["self-model"],
+            componentCount: 2,
+            boundCount: 1,
+            thickness: 4,
+            warnings: ["自制离线三维夹具"],
+          };
+          break;
+        case "model3d":
+          await bridge.modelGate;
+          if (bridge.failModels) {
+            await route.fulfill({
+              contentType: "application/json",
+              json: {
+                ok: false,
+                error: { code: "BLOCKED", message: "自制网络失败", requestId: "model-test" },
+              },
+            });
+            return;
+          }
+          data = {
+            key: command.key,
+            mesh: boxMesh([40, -55, 4], [65, -30, 22], [0.72, 0.55, 0.25]),
+            instances: [{ title: "U1", matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }],
+          };
+          break;
         default:
           data = { version: "offline-e2e" };
       }

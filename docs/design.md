@@ -4,11 +4,11 @@
 
 ## 目标与边界
 
-在 Android、iPhone/iPad 和 Windows/macOS/Linux 桌面端复用 React Native 界面。支持公开工程信息流、分页、搜索、排序、工程详情、BOM、板子选择和二维 PCB 查看。能在 320px 手机、小屏横屏、平板分屏和宽屏窗口中伸缩，保留安全区域、可访问标签和键盘操作。平台支持、实际构建、模拟器验证和真机验证分别记录，不用“完美适配”代替验收。
+在 Android、iPhone/iPad 和 Windows/macOS/Linux 桌面端复用 React Native 界面。支持公开工程信息流、分页、搜索、排序、工程详情、BOM、板子选择和二维 / 三维 PCB 查看。能在 320px 手机、小屏横屏、平板分屏和宽屏窗口中伸缩，保留安全区域、可访问标签和键盘操作。平台支持、实际构建、模拟器验证和真机验证分别记录，不用“完美适配”代替验收。
 
 参考 `/Users/gouzi/Downloads/app_zh_release.apk`（Bambu Handy 4.3.0）的搜索、分类标签、卡片信息流和底部导航布局；不复制其代码和素材。桌面端使用侧栏和可伸缩内容区；详情和查看器在窄屏以独立页面呈现，在宽屏利用额外空间。
 
-本轮不实现账号登录、评论写入、云收藏同步、PCB 编辑、三维模型或制造导出。离线数据必须明确标注，不能用示例冒充实时工程。
+本轮不实现账号登录、评论写入、云收藏同步、PCB 编辑或制造导出。三维只读阶段的设计与资源边界见 [3d.md](3d.md)。离线数据必须明确标注，不能用示例冒充实时工程。
 
 ## 技术选择
 
@@ -18,6 +18,7 @@
 - Android 通过 Expo Modules + JNI 调用 Rust；iOS 通过 Expo Modules + C ABI；桌面通过 Tauri command。协议为版本化 JSON，请求/响应有稳定的类型与结构化错误。
 - 浏览器仅作开发预览，通过只绑定 loopback 的 Rust 开发服务调用相同核心；正式移动和桌面包不依赖该服务。
 - PCB 使用自研二维渲染器：Rust 重放文档状态、转换几何、生成图层绘制批次和执行拾取，React Native Skia 绘制本地场景。移动端使用原生 Skia，桌面使用同组件的 CanvasKit 后端；不复用 `easyeda-viewer` 或闭源 `smt-gl-engine` 的实现。
+- 三维使用自研 WebGL / Expo GL 查看器；Rust 生成带孔板体、表面几何、索引网格和器件装配矩阵，UI 仅上传缓存、处理相机并按需绘制。官方模型失败不阻塞板体。
 
 对比方案：全部 JS 业务实现不满足 Rust 业务主体要求；已有二维预览器虽能减少首轮工作，但用户已明确要求自研。采用独立文档、场景和绘制三层，格式兼容与 GPU 绘制分别验证。此处的“smt-gl-engine”表示自研图形引擎方向，不表示已复刻专业版全部功能。
 
@@ -110,7 +111,7 @@ Rust 一次返回归一化正文，界面用 FlatList 首批/每批渲染 4 个�
 
 ### PCB 工作区：参考 Shapr3D
 
-参考 [Shapr3D 官方工作区说明](https://support.shapr3d.com/hc/en-us/articles/7873880676508-Shapr3D-modeling-space) 中的 macOS、iPadOS 实图及 [Items Manager](https://support.shapr3d.com/hc/en-us/articles/7873936188956-Items-Manager) 的按需侧栏。采用画布为主、工具沿边、选中后显示属性的布局；保留 PCB 二维只读范围。没有增加建模、历史编辑、3D 视图或无实际功能的工具。
+参考 [Shapr3D 官方工作区说明](https://support.shapr3d.com/hc/en-us/articles/7873880676508-Shapr3D-modeling-space) 中的 macOS、iPadOS 实图及 [Items Manager](https://support.shapr3d.com/hc/en-us/articles/7873936188956-Items-Manager) 的按需侧栏。采用画布为主、工具沿边、选中后显示属性的布局；保持 PCB 只读范围。三维阶段在同一工作区加入 2D / 3D 切换，保留二维相机和图层，没有增加建模或历史编辑。
 
 进入查看器后收起应用导航，用紧凑深色标题栏显示返回、板名和只读状态。画布填满其余安全区域，左上角放图层、适应窗口和信息工具，右下角放缩放，左下角保留图元/图层数量。工具使用明确文字和至少 44px 触控区域；高度低于 500px 时改为横向工具组，避免短横屏裁切。查看器采用低反差深色面板和蓝色选中状态，不修改浏览页的玻璃导航。
 

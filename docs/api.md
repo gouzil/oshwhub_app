@@ -20,6 +20,14 @@
 
 连接超时 5 秒，总超时 30 秒；JSON 最多 8 MiB；二进制下载流式累计并执行调用者大小上限。JSON 必须返回 JSON MIME；HTML 拦截页、418、429 和业务错误都作为明确错误返回，不变成空页。PCB 缩略图实际可返回 `application/octet-stream`，二进制下载允许此 MIME。日志只保留方法、域名、状态和耗时，不记录完整 URL、查询、正文或密钥。
 
+## 三维 PCB
+
+- `{ command: "pcb3d", sceneId }` 从已有二维场景编译板体，返回 `board/thickness/componentCount/boundCount/modelKeys/warnings`；场景已淘汰返回 `scene_expired`，不在后台重下载。
+- `{ command: "model3d", sceneId, key }` 仅接受当前场景实际绑定的模型 key，返回 `key/mesh/instances`。实例包含标题与列主序 4×4 装配矩阵，单位 mm；不会接收任意模型 URL。
+- `PackedMesh` 的 `data` 是 base64 little-endian f32，交错位置/法线/RGB，每顶点 36 字节，附 `vertexCount` 和 `bounds.min/max`。`indices/indexCount` 为 base64 little-endian u32 三角索引；前端兼容旧核心的无索引网格。器件重复实例复用同一网格。
+- 模型元数据使用 `GET https://pro.lceda.cn/api/v5/components/{seedUuid}` 的 `3d_model_uuid`，再下载 `https://modules.lceda.cn/3dmodel/{fileUuid}`。ID、所属场景、状态、大小均需校验；每个 OBJ 最多 12 MiB，内嵌材质以外的 MTL 和贴图不发请求。
+- 当前在线元数据受 418/超时阻断，v5 响应形状与官方模型下载尚未完成本轮在线验收，详见 [3d.md](3d.md)。
+
 ## 数据转换
 
 - 摘要必须有合法 UUID、名称和 `owner/project` 路径。缺失可选作者信息以“未知作者”显示；缺失计数为 0；无效图片 URL 省略。

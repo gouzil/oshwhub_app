@@ -532,7 +532,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
           ]}
         >
           <View style={styles.panelHeader}>
-            <View style={styles.panelHeading}>
+            <View style={[styles.panelHeading, compact && styles.compactPanelHeading]}>
               <Text
                 accessibilityRole="header"
                 selectable
@@ -855,6 +855,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#ffffff14",
   },
   panelHeading: { flex: 1, paddingVertical: 10 },
+  compactPanelHeading: { paddingVertical: 4 },
   panelTitle: { color: "#edf2f7", fontSize: 13, fontWeight: "600", lineHeight: 20 },
   selectedTitle: { fontSize: 18, lineHeight: 24 },
   selectionContext: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
