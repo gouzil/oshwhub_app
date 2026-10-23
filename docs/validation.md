@@ -131,6 +131,8 @@ iOS main.jsbundle  5ac4625cbc539f70b23235c231fd24130c048291baa53f63e67b12e5a1fa7
 
 代码 `1ac8b68286b12a9142fe65b9d59d788ff804c635` 已推送并触发 [CI #39890604300](https://github.com/gouzil/oshwhub_app/actions/runs/39890604300)。2026-10-23 本轮记录时仍在执行；上面的 60 项 E2E、WebKit 6 项、统一检查、prek 及 Android/iOS/macOS Release 均为本机结果。文档提交跳过 CI，避免取消正在执行的代码构建。
 
+玻璃导航代码 `c6d3184c74abf78f811440436f81245154390dc8` 已推送至 `main`，HTTPS 读回远端 SHA 一致；[CI #39894586310](https://github.com/gouzil/oshwhub_app/actions/runs/39894586310) 已触发，记录时为 pending，尚无成功结论。此前加载优化 CI 的 quality、iOS 和三个桌面构建均已成功，Android 仍停留在 Gradle Release 构建中；本轮 72 项 E2E、WebKit、prek 与三个本机 Release 的证据见“本轮玻璃导航”。
+
 系统已解锁，本轮 macOS 正式包界面与外链验证已继续完成；此前锁屏阻挡已解除。文档更新与源码构建证据按各自版本区分。
 
 本轮不宣称覆盖所有专业版文档类型或全部设备。重点后续项为真机性能采样、复杂板的首帧/帧时间/内存基准，以及文档中明确提示的格式兼容扩展；账号功能按用户确认另行迭代。
