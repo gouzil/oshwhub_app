@@ -8,7 +8,7 @@
 | --- | --- |
 | `pnpm check` | Biome、TypeScript、29 项 Vitest、12 项构建脚本测试、Rust fmt/clippy/test 通过；Rust 核心 51 项、开发服务 1 项、FFI 1 项，2 项测试默认忽略 |
 | `prek run --all-files` | 全部 5 个 hook 通过；已安装本地提交 hook |
-| `pnpm test:e2e` | 本轮六视口 BOM 回归 24/24 通过；全量串行 101/102，5.3 分钟，首页极速输入用例失败，详见下文。使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
+| `pnpm test:e2e` | PCB 工作区全量回归 107/108，首页极速输入用例失败；最终短横屏修复后的查看器回归 18/18 通过，详见“PCB 工作区改版验证”。使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
 | WebKit 补测 | 玻璃导航阶段 1440×900 下 6 项通过、1 项 CDP 透明度模拟显式跳过，4.6 秒；覆盖导航与全部加载回归。上一阶段另有示例板中文/实际像素、铜层隐藏与恢复证据；未在 WebKit 运行 Chromium CDP 手势和生命周期用例 |
 | 开发服务超限回归 | 新增真实 TCP HTTP 测试通过：普通非法命令、恰好 1 MiB 成功、超过 1 MiB 拒绝且保留错误码和独立 UUID |
 | CodeGraph | 已按用户授权初始化，本地索引不提交 |
@@ -174,6 +174,30 @@ APK  71a04b7bfab384347a9196be8caf93af247fc463bd38ed8893710eea401325d9
 DMG  04ead324d31ca8686bdddd46216fcd2d2a9f4478c5b4b543391e2321b93c8903
 iOS main.jsbundle  5ac4625cbc539f70b23235c231fd24130c048291baa53f63e67b12e5a1fa71dd
 ```
+
+## PCB 工作区改版验证
+
+对照 Shapr3D 官方 macOS、iPadOS 工作区及 Items Manager 实图调整共享查看器，设计来源和范围见 [design.md](design.md#pcb-工作区参考-shapr3d)。画布占满标题栏下的安全区域，工具沿边悬浮；图层、信息、拾取属性一次展开一个面板，手机窄屏贴底，平板和桌面靠右。开关面板不改变画布尺寸或重新适应视口。
+
+最终 `pnpm check` 通过（29 项 Vitest、12 项脚本测试、Rust 核心 51 项、开发服务和 FFI 各 1 项，2 项忽略），全部 5 个 prek hook 通过。同机并行构建三个 Release 时，有一次字体录制测试超过原有 5 秒限制；构建结束后未改测试或超时设置，完整 `pnpm check` 复核通过。
+
+新增面板回归在六个视口下全部通过，检查应用导航隐藏/返回恢复、画布占用、面板展开状态与互斥、关闭后保留视口和图层选择、信息和拾取属性。最终查看器相关 18 项 Chromium E2E 全部通过（47.3 秒），涵盖真实 CanvasKit/中文字体、铜层像素、图层顺序、拖动/双指/滚轮/键盘缩放。极短横屏先复现信息按钮只有 95.45% 在视口内，再改为横向工具组；844×240 下信息按钮、网络属性和关闭按钮完整可见，红绿回归通过。真实板的同尺寸截图也确认工具与面板没有裁切。
+
+本次改版的全量回归为 107/108（1.6 分钟）。唯一失败是 `wide-1440` 的首页 `Enter submits current native text and rapid typing supports the search button`，输入 `ESP32-S31-USB` 后文本缺少字符；物料搜索阶段已记录同一问题，本阶段未修改首页搜索实现。最终短横屏修复后只重跑了上面的 18 项相关回归，不能将其当作全量通过。
+
+macOS `.app` / DMG、iOS Simulator Release、Android Release 均在最终源码上重新构建成功。macOS 退出旧进程后重开最终正式包，实际打开 ESP32-S31 的 V0.3 板（`90602f2f840d4245a97479e90a31d17b` / `d4c95e111c8e5672`）：7,569 图元、62 图层、默认可见 9 层，右侧图层面板及信息面板互相切换正常，4 项格式显示提示可读。浏览器另查同一真实板的桌面、手机窄屏和 844×240 极短横屏；手机底部面板关闭后恢复完整视野。
+
+iPhone 18 Pro Max / iOS 27.0 安装并启动最终 Release，打开本地示例后确认深色状态栏安全区域、底部导航隐藏、图层列表与颜色/名称/状态分列；关闭 Bottom Copper 后蓝色曲线消失，关闭面板保留 5/6 层状态，放大到 125% 正常，返回后系统底栏和 PCB 实验室选中状态恢复。iPad Pro 11-inch (M5) / iPadOS 27.0 安装同一包，确认画布全宽和右侧图层面板。Android 最终 APK 安装至 emulator-5554 成功，冷启动 `Status: ok`；本阶段未完成 Android 查看器现场交互验收。
+
+最终产物 SHA-256（产物路径见“原生构建与运行”）：
+
+```text
+APK  e047ee2316fa2b06ff0d438e2a98e34482303b0f048ea4ab6bd172c54daedf53
+DMG  69111624f738cfe29d1ca6a97002808dd26c4ed35eed343e1a0b9a01d7f748ec
+iOS main.jsbundle  4b5d40b84255d750d3456f870d1f89dd17386b452cfadd6b50c1e82392334ee3
+```
+
+本次没有改动 Rust 解析/拾取或 Picture 绘制算法，未重复真机 GPU/功耗/内存基准、VoiceOver/TalkBack、极大字体和 Windows/Linux 原生视觉检查；模拟器与浏览器布局结果不代表这些项目已验收。PCB 仍为二维只读查看器。
 
 ## 交付与后续
 

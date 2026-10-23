@@ -96,12 +96,12 @@ function Shell() {
   const hiddenFeed = tab !== "discover" || projectId !== null || viewer !== null;
   return (
     <SafeAreaView
-      style={styles.app}
+      style={[styles.app, viewer && { backgroundColor: "#0b121a" }]}
       edges={showDock ? ["top", "left", "right"] : ["top", "left", "right", "bottom"]}
     >
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={viewer ? "light-content" : "dark-content"} />
       <View nativeID="app-shell" style={styles.shell}>
-        {layout.sidebar > 0 && (
+        {layout.sidebar > 0 && !viewer && (
           <View style={[styles.sidebar, { width: layout.sidebar }]}>
             <GlassSurface style={styles.sidebarGlass}>
               <View style={styles.brand}>

@@ -54,7 +54,10 @@ const touchPoints = (event: GestureResponderEvent): Point[] =>
   }));
 
 export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Props) {
-  const compact = useWindowDimensions().height < 500;
+  const { width, height } = useWindowDimensions();
+  const compact = height < 500;
+  const bottomPanel = width < 600 && !compact;
+  const [panel, setPanel] = useState<"layers" | "info" | "selection" | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [compiled, setCompiled] = useState<{
     scene: Scene;
@@ -76,6 +79,13 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     () => new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)),
   );
   const [selection, setSelection] = useState<PickResult | null>(null);
+  const layers = useMemo(
+    () =>
+      scene.layers
+        .slice()
+        .sort((a, b) => Number(b.visible) - Number(a.visible) || a.order - b.order),
+    [scene.layers],
+  );
   const [pickError, setPickError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const surface = useRef<ViewInstance>(null);
@@ -143,6 +153,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     }
     setVisible(new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)));
     setSelection(null);
+    setPanel(null);
     setPickError(null);
     pickVersion.current += 1;
     return () => {
@@ -172,6 +183,9 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         if (version !== pickVersion.current) return;
         const selected = result && visibleRef.current.has(result.layer) ? result : null;
         setSelection(selected);
+        setPanel((previous) =>
+          selected ? "selection" : previous === "selection" ? null : previous,
+        );
         setPickError(null);
         onPick?.(selected);
       } catch (error) {
@@ -273,153 +287,230 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     };
   }, [zoomBy, reset, applyViewport]);
 
+  const warnings = [...scene.warnings, ...(compiled?.warnings ?? [])];
+  const closeSelection = () => {
+    setSelection(null);
+    setPanel(null);
+    onPick?.(null);
+  };
   return (
     <View style={styles.root}>
-      <View style={styles.toolbar}>
-        <View style={styles.zoomTools}>
-          <Tool label="缩小 PCB" text="−" onPress={() => zoomBy(0.8)} />
-          <Text style={styles.zoomLabel} accessibilityLiveRegion="polite">
-            {zoom}%
-          </Text>
-          <Tool label="放大 PCB" text="+" onPress={() => zoomBy(1.25)} />
+      <View
+        ref={surface}
+        collapsable={false}
+        focusable
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={`${scene.name}，PCB 画布。拖动平移，双指或滚轮缩放。键盘加减号缩放，方向键平移，0 适应窗口。`}
+        accessibilityActions={[
+          { name: "zoomIn", label: "放大" },
+          { name: "zoomOut", label: "缩小" },
+          { name: "reset", label: "适应窗口" },
+        ]}
+        onAccessibilityAction={({ nativeEvent }) => {
+          if (nativeEvent.actionName === "zoomIn") zoomBy(1.25);
+          else if (nativeEvent.actionName === "zoomOut") zoomBy(0.8);
+          else reset();
+        }}
+        onLayout={({ nativeEvent }) =>
+          setSize({ width: nativeEvent.layout.width, height: nativeEvent.layout.height })
+        }
+        style={styles.surface}
+        {...responder.panHandlers}
+      >
+        {compiled && compiled.scene === scene && !renderError && !fontError ? (
+          <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Group matrix={matrix}>
+              {compiled.pictures
+                .filter(({ layer }) => visible.has(layer.id))
+                .map(({ layer, picture }) => (
+                  <Picture key={layer.id} picture={picture} />
+                ))}
+            </Group>
+          </Canvas>
+        ) : (
+          <View style={styles.canvasMessage}>
+            {renderError || fontError ? (
+              <Text style={styles.error} accessibilityRole="alert">
+                {renderError || fontError}
+              </Text>
+            ) : (
+              <ActivityIndicator color="#9bc8ff" accessibilityLabel="正在构建 PCB 绘制缓存" />
+            )}
+          </View>
+        )}
+      </View>
+      <View style={[styles.tools, compact && styles.compactTools]}>
+        <View style={[styles.toolGroup, compact && styles.compactToolGroup]}>
+          <Tool
+            label="图层"
+            text="图层"
+            expanded={panel === "layers"}
+            onPress={() => setPanel(panel === "layers" ? null : "layers")}
+          />
+          <View style={[styles.separator, compact && styles.compactSeparator]} />
           <Tool label="适应窗口，快捷键 0" text="适应" onPress={reset} />
         </View>
-        <Text style={styles.count}>{scene.objectCount.toLocaleString()} 个图元</Text>
-      </View>
-      <View style={[styles.canvasContainer, compact && styles.canvasCompact]}>
-        <View
-          ref={surface}
-          collapsable={false}
-          focusable
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={`${scene.name}，PCB 画布。拖动平移，双指或滚轮缩放。键盘加减号缩放，方向键平移，0 适应窗口。`}
-          accessibilityActions={[
-            { name: "zoomIn", label: "放大" },
-            { name: "zoomOut", label: "缩小" },
-            { name: "reset", label: "适应窗口" },
-          ]}
-          onAccessibilityAction={({ nativeEvent }) => {
-            if (nativeEvent.actionName === "zoomIn") zoomBy(1.25);
-            else if (nativeEvent.actionName === "zoomOut") zoomBy(0.8);
-            else reset();
-          }}
-          onLayout={({ nativeEvent }) =>
-            setSize({ width: nativeEvent.layout.width, height: nativeEvent.layout.height })
-          }
-          style={styles.surface}
-          {...responder.panHandlers}
-        >
-          {compiled && compiled.scene === scene && !renderError && !fontError ? (
-            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-              <Group matrix={matrix}>
-                {compiled.pictures
-                  .filter(({ layer }) => visible.has(layer.id))
-                  .map(({ layer, picture }) => (
-                    <Picture key={layer.id} picture={picture} />
-                  ))}
-              </Group>
-            </Canvas>
-          ) : (
-            <View style={styles.canvasMessage}>
-              {renderError || fontError ? (
-                <Text style={styles.error} accessibilityRole="alert">
-                  {renderError || fontError}
-                </Text>
-              ) : (
-                <ActivityIndicator color="#56d6aa" accessibilityLabel="正在构建 PCB 绘制缓存" />
-              )}
-            </View>
-          )}
-          {!compact && (
-            <View style={styles.hint} pointerEvents="none">
-              <Text style={styles.hintText}>拖动平移 · 双指 / 滚轮缩放 · 点选图元</Text>
-            </View>
-          )}
+        <View style={styles.toolGroup}>
+          <Tool
+            label="查看器信息"
+            text={warnings.length ? `信息 · ${warnings.length}` : "信息"}
+            expanded={panel === "info"}
+            warning={warnings.length > 0}
+            onPress={() => setPanel(panel === "info" ? null : "info")}
+          />
         </View>
       </View>
-      <View style={[styles.layerSection, compact && styles.layerCompact]}>
-        {!compact && <Text style={styles.sectionLabel}>图层</Text>}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.layerRow}
-        >
-          {scene.layers
-            .slice()
-            .sort((a, b) => Number(b.visible) - Number(a.visible) || a.order - b.order)
-            .map((layer) => (
-              <Pressable
-                key={layer.id}
-                accessibilityRole="checkbox"
-                aria-checked={visible.has(layer.id)}
-                accessibilityLabel={layer.name}
-                onPress={() => {
-                  setVisible((previous) => {
-                    const next = new Set(previous);
-                    if (next.has(layer.id)) next.delete(layer.id);
-                    else next.add(layer.id);
-                    return next;
-                  });
-                  pickVersion.current += 1;
-                  setSelection(null);
-                  onPick?.(null);
-                }}
-                style={[styles.layer, !visible.has(layer.id) && styles.layerOff]}
-              >
-                <View style={[styles.dot, { backgroundColor: layer.color }]} />
-                <Text style={styles.layerText}>{layer.name}</Text>
-                <Text style={styles.check}>{visible.has(layer.id) ? "✓" : "−"}</Text>
-              </Pressable>
-            ))}
-        </ScrollView>
+      {!compact && (
+        <>
+          <View style={styles.orientation} pointerEvents="none">
+            <Text style={styles.orientationTitle}>俯视</Text>
+            <Text style={styles.caption}>二维 PCB</Text>
+          </View>
+          <View style={styles.hint} pointerEvents="none">
+            <Text style={styles.hintText}>拖动平移 · 双指 / 滚轮缩放 · 点选图元</Text>
+          </View>
+        </>
+      )}
+      <View style={styles.status} pointerEvents="none">
+        <Text style={styles.caption}>{scene.objectCount.toLocaleString()} 个图元</Text>
+        {!compact && (
+          <Text style={styles.caption}>
+            {visible.size} / {scene.layers.length} 图层
+          </Text>
+        )}
+      </View>
+      <View style={styles.zoomTools}>
+        <Tool label="缩小 PCB" text="−" onPress={() => zoomBy(0.8)} />
+        <Text style={styles.zoomLabel} accessibilityLiveRegion="polite">
+          {zoom}%
+        </Text>
+        <Tool label="放大 PCB" text="+" onPress={() => zoomBy(1.25)} />
       </View>
       {pickError && (
         <Text accessibilityRole="alert" style={styles.pickError}>
           {pickError}
         </Text>
       )}
-      {(scene.warnings.length > 0 || (compiled?.warnings.length ?? 0) > 0) && (
-        <ScrollView style={[styles.warnings, compact && styles.warningsCompact]}>
-          {[...scene.warnings, ...(compiled?.warnings ?? [])].map((warning, i) => (
-            <Text key={`${i}-${warning}`} style={styles.warning}>
-              {warning}
-            </Text>
-          ))}
-        </ScrollView>
-      )}
-      {!compact && (
-        <Text style={styles.metrics}>
-          载入 {Math.round(scene.metrics.loadMs)} ms · 解码 {Math.round(scene.metrics.parseMs)} ms ·
-          场景 {Math.round(scene.metrics.sceneMs)} ms
-        </Text>
-      )}
-      {selection && (
-        <View style={styles.selection}>
-          <View style={styles.selectionTitle}>
-            <Text selectable style={styles.selectionName}>
-              {selection.kind} · {selection.id}
-            </Text>
+      {panel && (
+        <View
+          style={[styles.panel, bottomPanel && styles.bottomPanel, compact && styles.compactPanel]}
+        >
+          <View style={styles.panelHeader}>
+            <View style={styles.panelHeading}>
+              <Text
+                accessibilityRole="header"
+                selectable
+                numberOfLines={2}
+                style={styles.panelTitle}
+              >
+                {panel === "layers"
+                  ? "图层"
+                  : panel === "info"
+                    ? "查看器信息"
+                    : `${selection?.kind} · ${selection?.id}`}
+              </Text>
+              {panel === "layers" && (
+                <Text style={styles.caption}>
+                  {visible.size} / {scene.layers.length} 层可见
+                </Text>
+              )}
+            </View>
             <Tool
-              text="×"
-              label="关闭图元属性"
-              onPress={() => {
-                setSelection(null);
-                onPick?.(null);
-              }}
+              label={
+                panel === "layers"
+                  ? "关闭图层面板"
+                  : panel === "info"
+                    ? "关闭查看器信息"
+                    : "关闭图元属性"
+              }
+              text="关闭"
+              onPress={panel === "selection" ? closeSelection : () => setPanel(null)}
             />
           </View>
-          <ScrollView style={styles.properties}>
-            {selection.net && (
-              <Text selectable style={styles.property}>
-                网络：{selection.net}
-              </Text>
+          <ScrollView
+            style={styles.panelScroll}
+            contentContainerStyle={
+              panel === "layers" ? undefined : [styles.details, compact && styles.compactDetails]
+            }
+          >
+            {panel === "layers" ? (
+              layers.map((layer) => (
+                <Pressable
+                  key={layer.id}
+                  accessibilityRole="checkbox"
+                  aria-checked={visible.has(layer.id)}
+                  accessibilityLabel={layer.name}
+                  onPress={() => {
+                    setVisible((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(layer.id)) next.delete(layer.id);
+                      else next.add(layer.id);
+                      return next;
+                    });
+                    pickVersion.current += 1;
+                    setSelection(null);
+                    onPick?.(null);
+                  }}
+                  style={({ pressed }) => [
+                    styles.layer,
+                    visible.has(layer.id) && styles.layerOn,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={[styles.dot, { backgroundColor: layer.color }]} />
+                  <Text style={[styles.layerText, !visible.has(layer.id) && styles.layerOff]}>
+                    {layer.name}
+                  </Text>
+                  <Text style={[styles.visibility, visible.has(layer.id) && styles.visibilityOn]}>
+                    {visible.has(layer.id) ? "显示" : "隐藏"}
+                  </Text>
+                </Pressable>
+              ))
+            ) : panel === "info" ? (
+              <>
+                <Text selectable style={styles.selectionName}>
+                  {scene.name}
+                </Text>
+                {[
+                  ["场景图元", scene.objectCount.toLocaleString()],
+                  ["可见图层", `${visible.size} / ${scene.layers.length}`],
+                  ["载入耗时", `${Math.round(scene.metrics.loadMs)} ms`],
+                  ["解码耗时", `${Math.round(scene.metrics.parseMs)} ms`],
+                  ["场景构建", `${Math.round(scene.metrics.sceneMs)} ms`],
+                ].map(([label, value]) => (
+                  <View key={label} style={styles.infoRow}>
+                    <Text style={styles.caption}>{label}</Text>
+                    <Text selectable style={styles.infoValue}>
+                      {value}
+                    </Text>
+                  </View>
+                ))}
+                {warnings.length > 0 && (
+                  <Text style={styles.sectionLabel}>显示提示 · {warnings.length}</Text>
+                )}
+                {warnings.map((warning, i) => (
+                  <Text key={`${i}-${warning}`} style={styles.warning}>
+                    {warning}
+                  </Text>
+                ))}
+              </>
+            ) : (
+              selection && (
+                <>
+                  {selection.net && (
+                    <Text selectable style={styles.property}>
+                      网络：{selection.net}
+                    </Text>
+                  )}
+                  {Object.entries(selection.properties).map(([key, value]) => (
+                    <Text selectable key={key} style={styles.property}>
+                      {key}：{value}
+                    </Text>
+                  ))}
+                </>
+              )
             )}
-            {Object.entries(selection.properties).map(([key, value]) => (
-              <Text selectable key={key} style={styles.property}>
-                {key}：{value}
-              </Text>
-            ))}
           </ScrollView>
         </View>
       )}
@@ -427,71 +518,105 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
   );
 }
 
-function Tool({ label, text, onPress }: { label: string; text: string; onPress: () => void }) {
+function Tool({
+  label,
+  text,
+  onPress,
+  expanded,
+  warning = false,
+}: {
+  label: string;
+  text: string;
+  onPress: () => void;
+  expanded?: boolean;
+  warning?: boolean;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      aria-expanded={expanded}
       onPress={onPress}
-      style={({ pressed }) => [styles.tool, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.tool,
+        expanded && styles.toolActive,
+        pressed && styles.pressed,
+      ]}
     >
-      <Text style={styles.toolText}>{text}</Text>
+      <Text style={[styles.toolText, warning && styles.warningText, expanded && styles.activeText]}>
+        {text}
+      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 0, backgroundColor: "#fff" },
-  toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 8,
-    flexWrap: "wrap",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e9eeec",
+  root: { flex: 1, minHeight: 0, backgroundColor: "#0b121a" },
+  surface: { ...StyleSheet.absoluteFill, overflow: "hidden", backgroundColor: "#0b121a" },
+  tools: { position: "absolute", top: 16, left: 12, gap: 10 },
+  compactTools: { top: 12, flexDirection: "row" },
+  toolGroup: {
+    padding: 4,
+    borderRadius: 13,
+    backgroundColor: "#202b39f5",
+    borderWidth: 1,
+    borderColor: "#ffffff14",
+    boxShadow: "0 4px 18px #00000026",
   },
-  zoomTools: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    flexWrap: "wrap",
-    flexShrink: 1,
-  },
+  compactToolGroup: { flexDirection: "row", alignItems: "center" },
+  separator: { height: 1, backgroundColor: "#ffffff12", margin: 4 },
+  compactSeparator: { width: 1, height: 24 },
   tool: {
     minWidth: 44,
     minHeight: 44,
     paddingHorizontal: 10,
+    borderRadius: 9,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 10,
   },
-  pressed: { backgroundColor: "#e9f5ef" },
-  toolText: { color: "#183e32", fontSize: 21, fontWeight: "500" },
+  toolText: { color: "#d5dfe9", fontSize: 13, fontWeight: "500" },
+  toolActive: { backgroundColor: "#70b5ff26" },
+  activeText: { color: "#a9d3ff" },
+  warningText: { color: "#edc17d" },
+  pressed: { backgroundColor: "#ffffff18" },
+  zoomTools: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 3,
+    backgroundColor: "#202b39f5",
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#ffffff14",
+  },
   zoomLabel: {
-    color: "#52665e",
-    minWidth: 56,
+    color: "#d5dfe9",
+    minWidth: 48,
     textAlign: "center",
-    fontSize: 13,
+    fontSize: 12,
     fontVariant: ["tabular-nums"],
   },
-  count: { fontSize: 12, color: "#66786f" },
-  canvasContainer: { flex: 1, minHeight: 80 },
-  canvasCompact: { minHeight: 48 },
-  surface: { flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "#0b121a" },
-  canvasMessage: {
-    ...StyleSheet.absoluteFill,
+  orientation: {
+    position: "absolute",
+    top: 16,
+    right: 16,
     alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
+    gap: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#ffffff14",
+    backgroundColor: "#202b39cc",
+    padding: 12,
   },
-  error: { color: "#ffb2a5", fontSize: 14, lineHeight: 22 },
-  hint: { position: "absolute", bottom: 12, left: 12, right: 12, alignItems: "center" },
+  orientationTitle: { color: "#e1e8f0", fontSize: 13, fontWeight: "600" },
+  caption: { color: "#9eadbd", fontSize: 11, lineHeight: 18 },
+  status: { position: "absolute", left: 16, bottom: 16, gap: 1 },
+  hint: { position: "absolute", bottom: 80, left: 12, right: 12, alignItems: "center" },
   hintText: {
-    color: "#b0c6bc",
-    fontSize: 11,
+    color: "#95a6b6",
+    fontSize: 10,
     lineHeight: 18,
     textAlign: "center",
     backgroundColor: "#0b121acc",
@@ -499,52 +624,75 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
-  layerSection: { borderBottomWidth: 1, borderBottomColor: "#edf0ee", paddingTop: 10 },
-  layerCompact: { paddingTop: 0 },
-  sectionLabel: { paddingHorizontal: 16, fontSize: 12, fontWeight: "600", color: "#5a6b62" },
-  layerRow: { paddingHorizontal: 12, paddingBottom: 10, paddingTop: 4, gap: 8 },
-  layer: {
-    minHeight: 44,
+  canvasMessage: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  error: { color: "#ffb2a5", fontSize: 14, lineHeight: 22 },
+  pickError: {
+    position: "absolute",
+    top: 12,
+    left: 92,
+    right: 12,
+    padding: 12,
+    backgroundColor: "#4b2828",
+    borderRadius: 10,
+    fontSize: 12,
+    color: "#ffc9bc",
+  },
+  panel: {
+    position: "absolute",
+    top: 16,
+    right: 12,
+    bottom: 80,
+    width: 288,
+    maxHeight: 520,
+    borderRadius: 16,
+    backgroundColor: "#202b39fa",
+    borderWidth: 1,
+    borderColor: "#ffffff1f",
+    overflow: "hidden",
+    boxShadow: "0 8px 32px #00000040",
+  },
+  bottomPanel: { top: "auto", left: 12, right: 12, width: "auto", maxHeight: "56%" },
+  compactPanel: { top: 12, bottom: 70 },
+  panelHeader: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#dae8e0",
-    borderRadius: 10,
-    backgroundColor: "#f3f8f5",
+    paddingLeft: 16,
+    paddingRight: 6,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ffffff14",
   },
-  layerOff: { backgroundColor: "#fafbfa", borderColor: "#ecf0ed", opacity: 0.6 },
-  dot: { width: 9, height: 9, borderRadius: 5 },
-  layerText: { fontSize: 12, color: "#31473d" },
-  check: { fontSize: 12, color: "#21835d" },
-  pickError: { paddingHorizontal: 16, paddingVertical: 8, fontSize: 12, color: "#ad4937" },
-  selection: {
-    position: "absolute",
-    top: 8,
-    right: 12,
-    width: 300,
-    maxWidth: "92%",
-    maxHeight: "85%",
-    borderRadius: 10,
-    backgroundColor: "#fff",
+  panelHeading: { flex: 1, paddingVertical: 10 },
+  panelTitle: { color: "#edf2f7", fontSize: 13, fontWeight: "600", lineHeight: 20 },
+  panelScroll: { flexGrow: 0, flexShrink: 1 },
+  details: { padding: 16, gap: 10 },
+  compactDetails: { paddingVertical: 8 },
+  sectionLabel: { color: "#edc17d", fontSize: 12, fontWeight: "600", marginTop: 8 },
+  layer: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     paddingHorizontal: 16,
-    paddingBottom: 10,
-    borderWidth: 1,
-    borderColor: "#e9eeec",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ffffff0a",
   },
-  selectionTitle: { flexDirection: "row", alignItems: "center", gap: 8 },
-  selectionName: { flex: 1, fontSize: 13, color: "#1f4635", fontWeight: "600" },
-  properties: { flexGrow: 0 },
-  property: { fontSize: 12, lineHeight: 20, color: "#52665d" },
-  warnings: { flexGrow: 0, maxHeight: 84, backgroundColor: "#fff8eb" },
-  warningsCompact: { maxHeight: 44 },
-  warning: {
-    paddingHorizontal: 16,
-    paddingVertical: 5,
-    color: "#805e1c",
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  metrics: { fontSize: 10, color: "#819087", paddingHorizontal: 16, paddingVertical: 7 },
+  layerOn: { backgroundColor: "#70b5ff08" },
+  dot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: "#ffffff40" },
+  layerText: { flex: 1, color: "#e0e8ef", fontSize: 12, lineHeight: 20 },
+  layerOff: { color: "#98a7b7" },
+  visibility: { fontSize: 10, color: "#98a7b7" },
+  visibilityOn: { color: "#a9d3ff" },
+  selectionName: { color: "#edf2f7", fontSize: 13, fontWeight: "600", lineHeight: 20 },
+  property: { color: "#c0cddb", fontSize: 12, lineHeight: 20 },
+  infoRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  infoValue: { color: "#d5dfe9", fontSize: 12, lineHeight: 18, fontVariant: ["tabular-nums"] },
+  warning: { color: "#edc17d", fontSize: 12, lineHeight: 20 },
 });

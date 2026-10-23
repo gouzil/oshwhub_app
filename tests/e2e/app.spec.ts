@@ -15,6 +15,53 @@ async function expectViewport(page: Page) {
   expect(dimensions.appHeight).toBeLessThanOrEqual(dimensions.viewportHeight + 1);
 }
 
+test("PCB workspace panels preserve the canvas view and layer choices", async ({
+  page,
+  bridge,
+}) => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: "PCB 实验室", exact: true }).click();
+  await page.getByRole("button", { name: "打开示例板", exact: true }).click();
+  const surface = page.getByRole("img", { name: /^自制中文测试 PCB，PCB 画布/ });
+  await expect(page.locator("canvas")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "发现", exact: true })).toHaveCount(0);
+  const bounds = await surface.boundingBox();
+  const viewport = page.viewportSize();
+  if (!bounds || !viewport) throw new Error("Missing workspace dimensions");
+  expect(bounds.width).toBeGreaterThan(viewport.width - 8);
+  expect(bounds.height).toBeGreaterThan(viewport.height * 0.7);
+  await page.getByRole("button", { name: "放大 PCB", exact: true }).click();
+  await expect(page.getByText("125%", { exact: true })).toBeVisible();
+  const layers = page.getByRole("button", { name: "图层", exact: true });
+  await expect(layers).toHaveAttribute("aria-expanded", "false");
+  await layers.click();
+  await expect(layers).toHaveAttribute("aria-expanded", "true");
+  const copper = page.getByRole("checkbox", { name: "顶层铜", exact: true });
+  await copper.click();
+  await expect(copper).not.toBeChecked();
+  await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  expect(await surface.boundingBox()).toEqual(bounds);
+  await expect(page.getByText("125%", { exact: true })).toBeVisible();
+  await layers.click();
+  await expect(copper).not.toBeChecked();
+  await page.getByRole("button", { name: "查看器信息", exact: true }).click();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByText("载入耗时", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "关闭查看器信息", exact: true }).click();
+  await surface.tap();
+  await expect(page.getByText("焊盘 · self-bottom-pad", { exact: true })).toBeVisible();
+  await expect(page.getByText("网络：GND", { exact: true })).toBeInViewport({ ratio: 1 });
+  await page.getByRole("button", { name: "关闭图元属性", exact: true }).click();
+  expect(bridge.requests.some((command) => command.command === "demo")).toBe(true);
+  await expectViewport(page);
+  await page.getByRole("button", { name: "返回上一页", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "PCB 实验室", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
 test("idle and hidden feed do not request extra pages; real fonts render in the demo", async ({
   page,
   bridge,
@@ -50,13 +97,17 @@ test("idle and hidden feed do not request extra pages; real fonts render in the 
   expect(initialColors.copper).toBeGreaterThan(canvasBounds.width * canvasBounds.height * 0.05);
   expect(initialColors.bottom).toBeGreaterThan(50);
   expect(initialColors.chinese).toBeGreaterThan(10);
+  await page.getByRole("button", { name: "图层", exact: true }).click();
   const copper = page.getByRole("checkbox", { name: "顶层铜", exact: true });
   await copper.click();
   await expect(copper).not.toBeChecked();
+  await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
   await expect
     .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
     .toBe(0);
+  await page.getByRole("button", { name: "图层", exact: true }).click();
   await copper.click();
+  await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
   await expect
     .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
     .toBeGreaterThan(100);
@@ -146,6 +197,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   const surface = page.getByRole("img", { name: /^自制中文测试 PCB，PCB 画布/ });
   await expect(page.locator("canvas")).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByRole("button", { name: "图层", exact: true }).click();
   const layerControls = page.getByRole("checkbox");
   const expectedLayerOrder = [
     "顶层铜",
@@ -160,6 +212,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
       elements.map((element) => element.getAttribute("aria-label")),
     );
   expect(await layerOrder()).toEqual(expectedLayerOrder);
+  await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
   const bounds = await surface.boundingBox();
   const viewport = page.viewportSize();
   if (!bounds || !viewport) throw new Error("Missing canvas dimensions");
@@ -216,6 +269,9 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   expect(pannedPick.y).toBeLessThan(40);
   if (viewport.height < 500) {
     await page.setViewportSize({ width: viewport.width, height: 240 });
+    await expect(page.getByRole("button", { name: "查看器信息", exact: true })).toBeInViewport({
+      ratio: 1,
+    });
     await expect(page.getByText("网络：GND", { exact: true })).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole("button", { name: "关闭图元属性", exact: true })).toBeInViewport({
       ratio: 1,
@@ -249,6 +305,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   await expect(page.getByText("150%", { exact: true })).toBeVisible();
   await surface.press("0");
   await touches.detach();
+  await page.getByRole("button", { name: "图层", exact: true }).click();
   await page.getByRole("checkbox", { name: "顶层铜", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "顶层铜", exact: true })).not.toBeChecked();
   expect(await layerOrder()).toEqual(expectedLayerOrder);
@@ -257,6 +314,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   await expect(technicalLayer).toBeChecked();
   expect(await layerOrder()).toEqual(expectedLayerOrder);
   await technicalLayer.click();
+  await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
   await expect
     .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
     .toBe(0);

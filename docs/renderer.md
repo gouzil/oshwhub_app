@@ -85,11 +85,27 @@ mask, paste, and technical layers remain selectable in layer controls.
 
 Fitting keeps world coordinates unchanged and caps each canvas margin at 15% of
 its available width/height, up to the requested padding. A short canvas must not
-shrink the board to a few pixels merely to preserve a fixed margin. Windows below
-500 logical pixels high omit the canvas hint, layer heading, and timing footer.
-Zoom and layer controls remain available. The property panel is anchored to the
-whole viewer rather than the canvas, so a short canvas cannot collapse its
-scrollable content; system font scaling remains enabled.
+shrink the board to a few pixels merely to preserve a fixed margin. The canvas
+fills the workspace below its compact document header. Viewer entry hides the
+application navigation on all sizes; returning restores the previous screen.
+
+Tools, zoom controls, and panels float over the canvas. Opening a panel does not
+resize the drawing surface, refit the board, or rebuild its pictures. Layers,
+scene information, and picked properties share one panel slot. At widths below
+600 logical pixels, portrait panels open above the bottom controls; other sizes
+use a right-side panel. Windows below 500 logical pixels high use horizontal
+tool groups, omit the canvas hint and orientation badge, and keep a bounded,
+scrollable side panel. The
+network appears first in picked properties so it remains visible at 240px height.
+System font scaling remains enabled. All tools have at least 44px touch targets.
+
+Layer order is memoized from the source defaults and does not jump when layers
+are toggled. Panel closure preserves layer visibility and the viewport. Timing
+metrics and nonfatal display warnings live in the information panel; its entry
+shows a warning count without taking space from the canvas. Picking and drawing
+errors remain directly visible. The dark canvas stays synchronized with the
+drill-mask color above; this UI change adds no grid, rendering passes, or blur to
+the drawing surface.
 
 ## Picture ownership
 
