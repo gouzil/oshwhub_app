@@ -26,6 +26,7 @@ import {
   ExternalLink,
   Loading,
 } from "./common";
+import { Skeleton, SkeletonBlock } from "./loading";
 import { FeedController, layoutFor, safeUrl } from "./model";
 import { ProjectPage } from "./ProjectPage";
 import { ViewerPage, type ViewerRoute } from "./ViewerPage";
@@ -311,7 +312,20 @@ function Discover({
       }}
       ListEmptyComponent={
         state.loading ? (
-          <Loading label="正在寻找好项目" />
+          <Skeleton
+            label="正在寻找好项目"
+            style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}
+          >
+            {["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+              .slice(0, layout.columns * 2)
+              .map((slot) => (
+                <View key={slot} style={{ width: layout.cardWidth, gap: 12, paddingBottom: 16 }}>
+                  <SkeletonBlock style={{ height: layout.cardWidth / 1.17 }} />
+                  <SkeletonBlock style={{ width: "86%", height: 20 }} />
+                  <SkeletonBlock style={{ width: "60%", height: 12 }} />
+                </View>
+              ))}
+          </Skeleton>
         ) : state.error ? (
           <ErrorPanel error={state.error} retry={() => void controller.loadMore()} />
         ) : (

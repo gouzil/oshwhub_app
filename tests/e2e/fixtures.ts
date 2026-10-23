@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { test as base, expect } from "@playwright/test";
 import type {
   Command,
+  ContentBlock,
   FeedPage,
   PickResult,
   ProjectDetail,
@@ -111,10 +112,26 @@ export const scene: Scene = {
 };
 
 export const test = base.extend<{
-  bridge: { requests: Command[]; failNextFeed: boolean; endlessFeed: boolean };
+  bridge: {
+    requests: Command[];
+    failNextFeed: boolean;
+    endlessFeed: boolean;
+    feedGate?: Promise<void>;
+    projectGate?: Promise<void>;
+    projectContent?: ContentBlock[];
+    projectCover?: string;
+  };
 }>({
   bridge: async ({ page }, use, testInfo) => {
-    const bridge = { requests: [] as Command[], failNextFeed: false, endlessFeed: false };
+    const bridge: {
+      requests: Command[];
+      failNextFeed: boolean;
+      endlessFeed: boolean;
+      feedGate?: Promise<void>;
+      projectGate?: Promise<void>;
+      projectContent?: ContentBlock[];
+      projectCover?: string;
+    } = { requests: [], failNextFeed: false, endlessFeed: false };
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
@@ -140,6 +157,7 @@ export const test = base.extend<{
       let data: unknown;
       switch (command.command) {
         case "feed": {
+          await bridge.feedGate;
           const response: FeedPage = {
             items: Array.from({ length: 20 }, (_, i) => summary((command.page - 1) * 20 + i + 1)),
             page: command.page,
@@ -149,9 +167,14 @@ export const test = base.extend<{
           data = response;
           break;
         }
-        case "project":
-          data = project(command.id);
+        case "project": {
+          await bridge.projectGate;
+          const detail = project(command.id);
+          if (bridge.projectContent) detail.content = bridge.projectContent;
+          if (bridge.projectCover) detail.summary.cover = bridge.projectCover;
+          data = detail;
           break;
+        }
         case "pcb":
         case "demo":
           data = scene;

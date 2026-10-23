@@ -1,14 +1,7 @@
 import { type Command, call, openExternal } from "@oshwhub/bridge";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type ViewStyle,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { RemoteImage } from "./images";
 import { safeUrl } from "./model";
 
 export const color = {
@@ -177,23 +170,19 @@ export function Cover({
   title: string;
   aspectRatio?: number;
 }) {
-  const [failedUri, setFailedUri] = useState<string | null>(null);
   const uri = safeUrl(url);
+  const fallback = (
+    <View style={common.coverFallback}>
+      <BoardMark />
+      <Text style={common.coverCaption}>开源硬件项目</Text>
+    </View>
+  );
   return (
     <View style={[common.cover, { aspectRatio }]}>
-      {uri && uri !== failedUri ? (
-        <Image
-          source={{ uri }}
-          accessibilityLabel={title}
-          resizeMode="cover"
-          onError={() => setFailedUri(uri)}
-          style={StyleSheet.absoluteFill}
-        />
+      {uri ? (
+        <RemoteImage url={uri} label={title} aspectRatio={aspectRatio} resizeMode="cover" />
       ) : (
-        <View style={common.coverFallback}>
-          <BoardMark />
-          <Text style={common.coverCaption}>开源硬件项目</Text>
-        </View>
+        fallback
       )}
     </View>
   );

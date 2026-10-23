@@ -1,6 +1,6 @@
 import type { FeedPage, ProjectSummary } from "@oshwhub/bridge";
 import { describe, expect, it } from "vitest";
-import { FeedController, layoutFor, safeUrl } from "./model";
+import { FeedController, imagePreviewUrl, layoutFor, safeUrl } from "./model";
 
 const project = (id: string): ProjectSummary => ({
   id,
@@ -114,5 +114,30 @@ describe("external content URLs", () => {
     ]) {
       expect(safeUrl(url)).toBeNull();
     }
+  });
+});
+
+describe("display-sized project images", () => {
+  const source = "https://image.lceda.cn/oshwhub/pullImage/self-made.png";
+  it("requests a bounded CDN rendition for the rendered pixel width", () => {
+    const preview = new URL(imagePreviewUrl(source, 900) as string);
+    expect(preview.searchParams.get("x-oss-process")).toBe(
+      "image/resize,w_960/quality,q_80/format,webp",
+    );
+    expect(new URL(imagePreviewUrl(source, 8000) as string).searchParams.get("x-oss-process")).toBe(
+      "image/resize,w_1920/quality,q_80/format,webp",
+    );
+  });
+  it("preserves signed URLs, existing renditions, and other hosts", () => {
+    for (const url of [
+      `${source}?token=secret&expires=123`,
+      `${source}?x-oss-process=image/resize,w_320`,
+      "https://example.com/original.png",
+      "https://image.lceda.cn.example.com/original.png",
+    ]) {
+      expect(imagePreviewUrl(url, 640)).toBe(url);
+    }
+    expect(imagePreviewUrl("javascript:alert(1)", 640)).toBeNull();
+    expect(imagePreviewUrl(source, Number.NaN)).toBe(source);
   });
 });

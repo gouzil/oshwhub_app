@@ -50,6 +50,16 @@ test("idle and hidden feed do not request extra pages; real fonts render in the 
   expect(initialColors.copper).toBeGreaterThan(canvasBounds.width * canvasBounds.height * 0.05);
   expect(initialColors.bottom).toBeGreaterThan(50);
   expect(initialColors.chinese).toBeGreaterThan(10);
+  const copper = page.getByRole("checkbox", { name: "顶层铜", exact: true });
+  await copper.click();
+  await expect(copper).not.toBeChecked();
+  await expect
+    .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
+    .toBe(0);
+  await copper.click();
+  await expect
+    .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
+    .toBeGreaterThan(100);
   await page.waitForTimeout(400);
   expect(bridge.requests.filter((command) => command.command === "feed")).toHaveLength(1);
 });
@@ -100,6 +110,9 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   await card.click();
   await expect(page.getByRole("heading", { name: "自制项目说明", exact: true })).toBeVisible();
   await expect(page.getByText(unsafeMarkup, { exact: true })).toBeVisible();
+  await page
+    .getByRole("link", { name: "查看原图：本地自制说明图片，在浏览器中打开", exact: true })
+    .scrollIntoViewIfNeeded();
   const articleImage = page.locator('img[alt="本地自制说明图片"]');
   await expect(articleImage).toBeAttached();
   expect(

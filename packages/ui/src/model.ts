@@ -100,3 +100,23 @@ export function safeUrl(value: string | null | undefined): string | null {
     return null;
   }
 }
+
+export function imagePreviewUrl(
+  value: string | null | undefined,
+  pixelWidth: number,
+): string | null {
+  const uri = safeUrl(value);
+  if (!uri) return null;
+  const url = new URL(uri);
+  // Existing queries may be signed or already sized by the author.
+  if (
+    url.hostname !== "image.lceda.cn" ||
+    url.search ||
+    !Number.isFinite(pixelWidth) ||
+    pixelWidth <= 0
+  )
+    return uri;
+  const width = [320, 640, 960, 1280, 1920].find((size) => size >= pixelWidth) ?? 1920;
+  url.searchParams.set("x-oss-process", `image/resize,w_${width}/quality,q_80/format,webp`);
+  return url.href;
+}
