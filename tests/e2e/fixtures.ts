@@ -183,6 +183,15 @@ export const test = base.extend<{
           data = detail;
           break;
         }
+        case "searchBom": {
+          const query = command.query.trim().toLowerCase();
+          data = command.items.flatMap((item, index) =>
+            Object.values(item).some((value) => String(value).toLowerCase().includes(query))
+              ? [index]
+              : [],
+          );
+          break;
+        }
         case "pcb":
         case "demo":
           data = scene;

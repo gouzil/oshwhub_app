@@ -1,6 +1,16 @@
 import type { BomItem } from "@oshwhub/bridge";
-import { Platform, ScrollView, StyleSheet, Text, View } from "react-native";
-import { color } from "./common";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { color, Empty, ErrorPanel, useCommand } from "./common";
 
 const columns = [
   { key: "name", label: "名称 / 参数", width: 128 },
@@ -14,98 +24,183 @@ const columns = [
 ] satisfies { key: keyof BomItem; label: string; width: number }[];
 
 export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
-  const rows = items.map((item, index) => (
-    <View
-      key={`${item.designator}-${index}`}
-      testID={`bom-item-${index}`}
-      role={Platform.OS === "web" && wide ? "row" : undefined}
-      style={wide ? [styles.tableRow, index % 2 === 1 && styles.alternate] : styles.card}
-    >
-      <Text
-        role={Platform.OS === "web" && wide ? "cell" : undefined}
-        style={wide ? [styles.cell, styles.sequence, styles.label] : styles.cardHeading}
-      >
-        {wide ? index + 1 : `物料 ${String(index + 1).padStart(2, "0")}`}
-      </Text>
-      {columns.map((column) => {
-        const value = String(item[column.key] ?? "").trim() || "未提供";
-        return (
-          <View
-            key={column.key}
-            testID={`bom-field-${column.key}`}
-            role={Platform.OS === "web" ? (wide ? "cell" : "group") : undefined}
-            accessible={Platform.OS !== "web"}
-            accessibilityLabel={`${column.label}：${value}`}
-            style={wide ? [styles.cell, { width: column.width }] : styles.field}
-          >
-            {!wide && <Text style={[styles.label, styles.fieldLabel]}>{column.label}</Text>}
-            <Text
-              selectable
-              style={[
-                styles.value,
-                column.key === "name" && styles.name,
-                column.key === "quantity" && styles.quantity,
-                value === "未提供" && styles.label,
-              ]}
-            >
-              {value}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  ));
-  if (!wide)
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(query.trim()), 180);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const command = useMemo(
+    () => ({ command: "searchBom" as const, items, query: search }),
+    [items, search],
+  );
+  const { value: matches, loading, error, retry } = useCommand<number[]>(command);
+  const pending = loading || query.trim() !== search;
+  const rows = (matches ?? []).map((index, row) => {
+    const item = items[index];
     return (
-      <View testID="bom-list" style={styles.cards}>
-        {rows}
+      <View
+        key={`${item.designator}-${index}`}
+        testID={`bom-item-${index}`}
+        role={Platform.OS === "web" && wide ? "row" : undefined}
+        style={wide ? [styles.tableRow, row % 2 === 1 && styles.alternate] : styles.card}
+      >
+        <Text
+          role={Platform.OS === "web" && wide ? "cell" : undefined}
+          style={wide ? [styles.cell, styles.sequence, styles.label] : styles.cardHeading}
+        >
+          {wide ? index + 1 : `物料 ${String(index + 1).padStart(2, "0")}`}
+        </Text>
+        {columns.map((column) => {
+          const value = String(item[column.key] ?? "").trim() || "未提供";
+          return (
+            <View
+              key={column.key}
+              testID={`bom-field-${column.key}`}
+              role={Platform.OS === "web" ? (wide ? "cell" : "group") : undefined}
+              accessible={Platform.OS !== "web"}
+              accessibilityLabel={`${column.label}：${value}`}
+              style={wide ? [styles.cell, { width: column.width }] : styles.field}
+            >
+              {!wide && <Text style={[styles.label, styles.fieldLabel]}>{column.label}</Text>}
+              <Text
+                selectable
+                style={[
+                  styles.value,
+                  column.key === "name" && styles.name,
+                  column.key === "quantity" && styles.quantity,
+                  value === "未提供" && styles.label,
+                ]}
+              >
+                {value}
+              </Text>
+            </View>
+          );
+        })}
       </View>
     );
+  });
   return (
-    <View testID="bom-list" style={styles.tableContainer}>
-      <Text style={styles.hint}>位号对应电路图上的元件编号；窄窗口可左右滑动表格。</Text>
-      <ScrollView
-        testID="bom-table-scroll"
-        horizontal
-        showsHorizontalScrollIndicator
-        tabIndex={Platform.OS === "web" ? 0 : undefined}
-        accessibilityLabel="物料表格，可左右滚动查看完整字段"
-        style={styles.tableScroll}
-      >
-        <View
-          role={Platform.OS === "web" ? "table" : undefined}
-          accessibilityLabel="物料清单"
-          style={{ width: 48 + columns.reduce((sum, column) => sum + column.width, 0) }}
-        >
-          <View
-            role={Platform.OS === "web" ? "row" : undefined}
-            style={[styles.tableRow, styles.tableHeader]}
+    <View testID="bom-list" style={styles.cards}>
+      <View style={styles.searchBox}>
+        <TextInput
+          accessibilityLabel="搜索物料清单"
+          placeholder="搜索名称、位号、型号或料号…"
+          placeholderTextColor={color.muted}
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={({ nativeEvent }) => {
+            setQuery(nativeEvent.text);
+            setSearch(nativeEvent.text.trim());
+          }}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+          maxLength={100}
+          clearButtonMode="never"
+          style={styles.searchInput}
+        />
+        {query.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="清除物料搜索"
+            onPress={() => {
+              setQuery("");
+              setSearch("");
+            }}
+            style={styles.clearSearch}
           >
-            <Text
-              role={Platform.OS === "web" ? "columnheader" : undefined}
-              style={[styles.cell, styles.sequence, styles.header]}
+            <Text style={styles.clearSearchText}>×</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.searchStatus}>
+        {pending && <ActivityIndicator size="small" color={color.green} />}
+        <Text testID="bom-search-count" accessibilityLiveRegion="polite" style={styles.hint}>
+          {pending
+            ? "正在筛选物料…"
+            : error
+              ? "物料搜索失败"
+              : `显示 ${matches?.length ?? 0} / ${items.length} 种物料`}
+        </Text>
+      </View>
+      {error ? (
+        <ErrorPanel error={error} retry={retry} />
+      ) : pending ? null : !rows.length ? (
+        <Empty
+          title="没有匹配的物料"
+          detail="试试名称、位号、封装、厂家或料号，或清除搜索查看全部。"
+        />
+      ) : !wide ? (
+        rows
+      ) : (
+        <View style={styles.tableContainer}>
+          <Text style={styles.hint}>位号对应电路图上的元件编号；窄窗口可左右滑动表格。</Text>
+          <ScrollView
+            testID="bom-table-scroll"
+            horizontal
+            showsHorizontalScrollIndicator
+            tabIndex={Platform.OS === "web" ? 0 : undefined}
+            accessibilityLabel="物料表格，可左右滚动查看完整字段"
+            style={styles.tableScroll}
+          >
+            <View
+              role={Platform.OS === "web" ? "table" : undefined}
+              accessibilityLabel="物料清单"
+              style={{ width: 48 + columns.reduce((sum, column) => sum + column.width, 0) }}
             >
-              序号
-            </Text>
-            {columns.map((column) => (
-              <Text
-                key={column.key}
-                role={Platform.OS === "web" ? "columnheader" : undefined}
-                style={[styles.cell, styles.header, { width: column.width }]}
+              <View
+                role={Platform.OS === "web" ? "row" : undefined}
+                style={[styles.tableRow, styles.tableHeader]}
               >
-                {column.label}
-              </Text>
-            ))}
-          </View>
-          {rows}
+                <Text
+                  role={Platform.OS === "web" ? "columnheader" : undefined}
+                  style={[styles.cell, styles.sequence, styles.header]}
+                >
+                  序号
+                </Text>
+                {columns.map((column) => (
+                  <Text
+                    key={column.key}
+                    role={Platform.OS === "web" ? "columnheader" : undefined}
+                    style={[styles.cell, styles.header, { width: column.width }]}
+                  >
+                    {column.label}
+                  </Text>
+                ))}
+              </View>
+              {rows}
+            </View>
+          </ScrollView>
         </View>
-      </ScrollView>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   cards: { gap: 12 },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: color.line,
+    borderRadius: 12,
+    backgroundColor: "#f3f6f3",
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: color.ink,
+  },
+  clearSearch: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
+  clearSearchText: { fontSize: 22, color: color.muted },
+  searchStatus: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 },
   card: {
     borderWidth: 1,
     borderColor: color.line,

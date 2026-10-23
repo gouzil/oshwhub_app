@@ -109,6 +109,7 @@ export type Command =
   | { command: "health" }
   | { command: "feed"; page: number; pageSize?: number; query?: string; sort?: Sort }
   | { command: "project"; id: string }
+  | { command: "searchBom"; items: BomItem[]; query: string }
   | { command: "pcb"; projectId: string; documentId: string }
   | { command: "demo" }
   | {

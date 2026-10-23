@@ -1,5 +1,6 @@
 //! Shared application business logic. Platform adapters only transport JSON.
 pub mod api;
+mod bom;
 pub mod client;
 pub mod diagnostics;
 pub mod error;
@@ -30,6 +31,10 @@ enum Command {
     },
     Project {
         id: String,
+    },
+    SearchBom {
+        items: Vec<model::BomItem>,
+        query: String,
     },
     Pcb {
         #[serde(rename = "projectId")]
@@ -91,6 +96,9 @@ async fn execute(command: Command) -> Result<Value> {
         Command::Project { id } => {
             let data = Api::new(http_client()?).project(&id).await?;
             serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::SearchBom { items, query } => {
+            serde_json::to_value(bom::search(&items, &query)?).map_err(serialization_error)
         }
         Command::Pcb {
             project_id,
@@ -178,6 +186,47 @@ mod tests {
                 .as_str()
                 .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok())
         );
+    }
+
+    #[tokio::test]
+    async fn bom_search_matches_each_field_without_network_and_keeps_original_indices() {
+        let items = json!([
+            {"name":"电容 10nF", "designator":"C6, C16", "footprint":"C0402",
+             "quantity":0, "partNumber":"CL05B103KB5NNNC", "manufacturer":"SAMSUNG(三星)",
+             "supplier":"LCSC", "supplierPart":"C15195"},
+            {"name":"电阻", "designator":"R1", "footprint":"0603", "quantity":7,
+             "partNumber":"", "manufacturer":"", "supplier":"", "supplierPart":""}
+        ]);
+        for (query, expected) in [
+            ("电容", json!([0])),
+            (" c16 ", json!([0])),
+            ("c0402", json!([0])),
+            ("0", json!([0, 1])),
+            ("7", json!([1])),
+            ("cl05b103", json!([0])),
+            ("samsung", json!([0])),
+            ("lcsc", json!([0])),
+            ("c15195", json!([0])),
+            ("R1", json!([1])),
+            ("  \u{3000}", json!([0, 1])),
+            ("未提供", json!([])),
+            ("does-not-exist", json!([])),
+        ] {
+            let input = json!({"command":"searchBom", "items":items, "query":query});
+            let value: Value =
+                serde_json::from_str(&dispatch_json(&input.to_string()).await).unwrap();
+            assert_eq!(value["ok"], true, "query {query}: {value}");
+            assert_eq!(value["data"], expected, "query {query}");
+        }
+        for query in ["x".repeat(101), "C6\n".into()] {
+            let input = json!({"command":"searchBom", "items":items, "query":query});
+            let value: Value =
+                serde_json::from_str(&dispatch_json(&input.to_string()).await).unwrap();
+            assert_eq!(value["error"]["code"], "INVALID_QUERY");
+        }
+        let input = json!({"command":"searchBom", "items":[], "query":"C6"});
+        let value: Value = serde_json::from_str(&dispatch_json(&input.to_string()).await).unwrap();
+        assert_eq!(value["data"], json!([]));
     }
 
     #[tokio::test]

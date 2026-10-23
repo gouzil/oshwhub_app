@@ -10,6 +10,10 @@
 - `page/pageSize/total/totalPage/lists` 来自官网响应。归一化按 UUID 保留第一次出现的记录；`hasMore` 按页元数据计算，不依赖去重后的行数。
 - 详情：`GET /api/project/{id}`。专业版再读取 `/api/project/{id}/proImages`；标准版此端点返回 104006，因此只展示详情，不错误调用专业版预览接口。
 
+## 本地物料搜索
+
+`searchBom` 是本地桥命令，不请求官网：`{ command: "searchBom", items: BomItem[], query: string }` 返回匹配行的零基索引数组。搜索名称、位号、封装、数量、制造商型号、制造商、供应商与供应商料号；去除首尾空白后按不区分大小写的子串匹配，空关键词返回所有索引。关键词最多 100 字符且禁止控制字符，违反时返回 `INVALID_QUERY`；请求沿用 1 MiB 桥大小上限。展示层的“未提供”占位文案不参与匹配。
+
 ## HTTP 边界
 
 只允许 HTTPS、443 端口、无用户名密码以及明确允许的 exact hostname。当前域名为 `oshwhub.com`、`pro.lceda.cn`、`modules.lceda.cn`、`image-pro.lceda.cn`、`image.lceda.cn`、`static.oshwhub.com`。不跟随重定向，避免允许域名跳转到任意目标。

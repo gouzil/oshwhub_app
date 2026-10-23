@@ -89,6 +89,7 @@ export function ProjectPage({
           <FlatList<ContentBlock>
             ref={list}
             testID="project-content-list"
+            keyboardShouldPersistTaps="handled"
             style={{ flex: 1 }}
             contentContainerStyle={[
               styles.content,
@@ -210,7 +211,7 @@ export function ProjectPage({
                             </View>
                             <Text style={styles.bomHeading}>物料清单 / BOM</Text>
                             {selected.bom.length ? (
-                              <BomList items={selected.bom} wide={width >= 720} />
+                              <BomList key={selected.id} items={selected.bom} wide={width >= 720} />
                             ) : (
                               <Empty title="暂无物料清单" detail="作者尚未公开此板的 BOM。" />
                             )}
