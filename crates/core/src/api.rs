@@ -372,6 +372,8 @@ fn parse_bom(raw: Option<&Value>) -> Result<Vec<BomItem>> {
                     .as_str()
                     .unwrap_or_default()
                     .to_owned(),
+                manufacturer: row["Manufacturer"].as_str().unwrap_or_default().to_owned(),
+                supplier: row["Supplier"].as_str().unwrap_or_default().to_owned(),
                 supplier_part: row["Supplier Part"].as_str().unwrap_or_default().to_owned(),
             })
         })

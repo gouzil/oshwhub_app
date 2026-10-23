@@ -40,6 +40,8 @@ pub struct BomItem {
     pub footprint: String,
     pub quantity: u32,
     pub part_number: String,
+    pub manufacturer: String,
+    pub supplier: String,
     pub supplier_part: String,
 }
 

@@ -6,9 +6,9 @@
 
 | 检查 | 结果与边界 |
 | --- | --- |
-| `pnpm check` | Biome、TypeScript、29 项 Vitest、12 项构建脚本测试、Rust fmt/clippy/test 通过；Rust 核心 49 项、开发服务 1 项、FFI 1 项，2 项测试默认忽略 |
+| `pnpm check` | Biome、TypeScript、29 项 Vitest、12 项构建脚本测试、Rust fmt/clippy/test 通过；Rust 核心 50 项、开发服务 1 项、FFI 1 项，2 项测试默认忽略 |
 | `prek run --all-files` | 全部 5 个 hook 通过；已安装本地提交 hook |
-| `pnpm test:e2e` | 最新导航改进后 78/78 通过，1.2 分钟；使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
+| `pnpm test:e2e` | 最新 BOM 改进后 90/90 通过，2.1 分钟；使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
 | WebKit 补测 | 玻璃导航阶段 1440×900 下 6 项通过、1 项 CDP 透明度模拟显式跳过，4.6 秒；覆盖导航与全部加载回归。上一阶段另有示例板中文/实际像素、铜层隐藏与恢复证据；未在 WebKit 运行 Chromium CDP 手势和生命周期用例 |
 | 开发服务超限回归 | 新增真实 TCP HTTP 测试通过：普通非法命令、恰好 1 MiB 成功、超过 1 MiB 拒绝且保留错误码和独立 UUID |
 | CodeGraph | 已按用户授权初始化，本地索引不提交 |
@@ -101,6 +101,24 @@ iOS main.jsbundle  c38f215aa14ff7a98ed269effb84fea3760e3d8c5cb13b372999fd959578e
 ```
 
 未补测旧 Android/iOS 系统、真机 GPU/功耗、VoiceOver/TalkBack、Windows/Linux 原生外观；桌面仍是 CSS 近似，Android 为第三方 GPU 实现，均不宣称与 UIKit 材质完全相同。
+
+### BOM 字段与可读性
+
+对照 [官网实战派 ESP32-S31 工程](https://oshwhub.com/li-chuang-kai-fa-ban/project_wxwsirbz)，展开的 BOM 有 62 行物料、63 个表格行（含表头），没有物料图片元素；其公开 BOM 字段也没有图片地址。本次按官网字段拆开名称 / 参数、位号、封装、数量、制造商型号、制造商、供应商和供应商料号。详情可用宽度达到 720px 时使用中文表头宽表，手机使用标签和值逐行对应的卡片；空字段显示“未提供”，长值完整换行，数量 0 保留。
+
+新增 Rust 契约测试先复现制造商/供应商字段丢失，再验证独立映射、缺失字段和数量 0。六个视口各增加 2 项 BOM 回归，验证字段和值的无障碍对应、空值、长位号/型号、表内横向滚动、键盘操作、宽桌面全部列可见、无全页横向溢出，以及改变窗口尺寸后保留所选板子。最终 `pnpm check`、5 个 prek hook 和全量 90 项 Chromium E2E 通过；新增 BOM 截图使用自制数据。
+
+Android（含 arm64-v8a/x86_64 Rust 库）、iOS 模拟器和 macOS Release 均重新构建成功。macOS 正式包打开上述真实工程，核对 62 种物料 / 231 个元件、中文表头、长位号换行和独立厂家/供应商字段；首项为 10nF、C6、C0402、数量 1、CL05B103KB5NNNC、SAMSUNG(三星)、LCSC、C15195。iPhone 18 Pro Max / iOS 27.0 安装并启动最终包，真实物料卡片的标签和值、缺失字段及第 62 项末尾可见。iPad Pro 11-inch (M5) / iPadOS 27.0 安装同一包，实际宽表中的长封装换行正常，横向滑动后供应商和料号完整可见。Android 最终 APK 安装到重新启动的 emulator-5554，冷启动返回 `Status: ok`，本轮没有现场逐项核对 Android BOM。
+
+本轮未重测全部原生 PCB 手势、VoiceOver/TalkBack、极大字体或上千种物料的性能；BOM 仍一次挂载，未新增虚拟化。Windows/Linux 的新构建结果以本次提交的 CI 为准。
+
+本次 BOM 修改最终产物 SHA-256：
+
+```text
+APK  ea8321a790980fb6ae0b91d83f6c8f5a34807543ec19a3703238678723a2510e
+DMG  f06e3fd8297dfb3ffbf873e06a82a736cd530154f0cdad847574a4af659c8ba3
+iOS main.jsbundle  4359e0d7447246eadb8f43f7c0536ceb0b054d51d6820479ead0b0144874b2d7
+```
 
 ### PCB 内存复测
 

@@ -214,6 +214,26 @@ fn rejects_missing_payload_fields_and_unsafe_project_paths() {
 }
 
 #[test]
+fn preserves_bom_manufacturer_and_supplier_as_distinct_fields() {
+    let mut images = fixture("images");
+    images["result"]["boards"][0]["schematic"]["boms"]["boms"] = json!([
+        {"Name":"10nF", "Quantity":1, "Manufacturer":"SAMSUNG(三星)",
+         "Manufacturer Part":"CL05B103KB5NNNC", "Supplier":"LCSC", "Supplier Part":"C15195"},
+        {"Name":"自制器件", "Quantity":0}
+    ]);
+    let detail = normalize_project(&fixture("detail"), Some(&images)).unwrap();
+    let detail = serde_json::to_value(detail).unwrap();
+    let bom = &detail["boards"][0]["bom"];
+    assert_eq!(bom[0]["manufacturer"], "SAMSUNG(三星)");
+    assert_eq!(bom[0]["partNumber"], "CL05B103KB5NNNC");
+    assert_eq!(bom[0]["supplier"], "LCSC");
+    assert_eq!(bom[0]["supplierPart"], "C15195");
+    assert_eq!(bom[1]["manufacturer"], "");
+    assert_eq!(bom[1]["supplier"], "");
+    assert_eq!(bom[1]["quantity"], 0);
+}
+
+#[test]
 fn converts_nested_html_once_without_scripts_or_unsafe_links() {
     let detail = normalize_project(&fixture("detail"), Some(&fixture("images"))).unwrap();
     let texts: Vec<_> = detail.content.iter().map(|b| b.text.as_str()).collect();

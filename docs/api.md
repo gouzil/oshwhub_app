@@ -23,6 +23,7 @@
 - 正文按 HTML 解析成标题、段落、代码、图片和链接；脚本、样式、iframe、对象和嵌入内容丢弃。正文链接仅接受无凭据的 http/https URL。树深度、正文大小和内容块数量受限；每个文本节点只抽取一次，避免嵌套 div 重复。
 - `proImages` 是板版本、PCB ID、缩略图和 BOM 元数据，不是矢量 PCB。本轮真实 PCB 由独立 EDA 历史链路提供。
 - BOM 为官网嵌套 JSON 字符串；严格检查数组与数量，损坏数据报告 `INVALID_BOM`。板上 BOM 缺失可以为空，不把解析失败伪装成空表。
+- BOM 的 `Name/Designator/Footprint/Quantity/Manufacturer Part/Manufacturer/Supplier/Supplier Part` 分别映射为 `name/designator/footprint/quantity/partNumber/manufacturer/supplier/supplierPart`。制造商与供应商单独保留，缺失的可选文本为 `""`；展示层统一标注“未提供”，不与其他字段合并。2026-10-23 对照 ESP32-S31 原网页，展开的 62 行 BOM 为纯文字，其公开 BOM 数据没有物料图片字段。
 - 官网列表 `members` 是字符串数组，搜索/详情同字段为对象数组，桥摘要不保留该不稳定字段。标签仅取已有名称，不把项目分类 UUID 展示为名称。
 
 ## 实测边界

@@ -137,7 +137,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   await expect(page.getByRole("link", { name: "无效脚本链接" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "无效附件" })).toHaveCount(0);
   await page.getByRole("tab", { name: "板子与 BOM (2)", exact: true }).click();
-  await expect(page.getByText("中文微控制器 · QFN-32", { exact: true })).toBeVisible();
+  await expect(page.getByText("中文微控制器", { exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "选择板子 自制扩展板", exact: true }).click();
   await expect(page.getByText("暂无物料清单", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "未公开 PCB 文件", exact: true })).toBeDisabled();

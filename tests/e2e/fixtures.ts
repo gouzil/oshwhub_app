@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { test as base, expect } from "@playwright/test";
 import type {
+  BomItem,
   Command,
   ContentBlock,
   FeedPage,
@@ -49,6 +50,8 @@ const project = (id: string): ProjectDetail => ({
           footprint: "QFN-32",
           quantity: 1,
           partNumber: "SELF-MCU-001",
+          manufacturer: "自制半导体",
+          supplier: "测试供应商",
           supplierPart: "TEST-001",
         },
         {
@@ -57,6 +60,8 @@ const project = (id: string): ProjectDetail => ({
           footprint: "0603",
           quantity: 2,
           partNumber: "",
+          manufacturer: "",
+          supplier: "",
           supplierPart: "",
         },
       ],
@@ -120,6 +125,7 @@ export const test = base.extend<{
     projectGate?: Promise<void>;
     projectContent?: ContentBlock[];
     projectCover?: string;
+    projectBom?: BomItem[];
   };
 }>({
   bridge: async ({ page }, use, testInfo) => {
@@ -131,6 +137,7 @@ export const test = base.extend<{
       projectGate?: Promise<void>;
       projectContent?: ContentBlock[];
       projectCover?: string;
+      projectBom?: BomItem[];
     } = { requests: [], failNextFeed: false, endlessFeed: false };
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
@@ -172,6 +179,7 @@ export const test = base.extend<{
           const detail = project(command.id);
           if (bridge.projectContent) detail.content = bridge.projectContent;
           if (bridge.projectCover) detail.summary.cover = bridge.projectCover;
+          if (bridge.projectBom) detail.boards[0].bom = bridge.projectBom;
           data = detail;
           break;
         }

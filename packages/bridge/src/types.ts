@@ -31,6 +31,8 @@ export interface BomItem {
   footprint: string;
   quantity: number;
   partNumber: string;
+  manufacturer: string;
+  supplier: string;
   supplierPart: string;
 }
 export interface Board {

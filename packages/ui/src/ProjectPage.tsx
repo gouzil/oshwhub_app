@@ -1,6 +1,7 @@
 import type { Board, ContentBlock, ProjectDetail } from "@oshwhub/bridge";
 import { useMemo, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { BomList } from "./BomList";
 import {
   BoardMark,
   Button,
@@ -209,27 +210,7 @@ export function ProjectPage({
                             </View>
                             <Text style={styles.bomHeading}>物料清单 / BOM</Text>
                             {selected.bom.length ? (
-                              selected.bom.map((item, i) => (
-                                <View key={`${item.designator}-${i}`} style={styles.bomRow}>
-                                  <View style={styles.bomRowHeader}>
-                                    <Text selectable style={styles.designator}>
-                                      {item.designator || item.name || "元件"}
-                                    </Text>
-                                    <Text style={styles.quantity}>× {item.quantity}</Text>
-                                  </View>
-                                  <Text selectable style={styles.bomText}>
-                                    {[item.name, item.footprint].filter(Boolean).join(" · ") ||
-                                      "未提供型号 / 封装"}
-                                  </Text>
-                                  {!!(item.partNumber || item.supplierPart) && (
-                                    <Text selectable style={styles.partNumber}>
-                                      {[item.partNumber, item.supplierPart]
-                                        .filter(Boolean)
-                                        .join(" / ")}
-                                    </Text>
-                                  )}
-                                </View>
-                              ))
+                              <BomList items={selected.bom} wide={width >= 720} />
                             ) : (
                               <Empty title="暂无物料清单" detail="作者尚未公开此板的 BOM。" />
                             )}
@@ -460,15 +441,4 @@ const styles = StyleSheet.create({
   boardPanelName: { flexShrink: 1, gap: 6 },
   boardCount: { color: color.muted, fontSize: 12 },
   bomHeading: { fontSize: 12, color: color.muted, letterSpacing: 0.5, marginBottom: 8 },
-  bomRow: { borderBottomWidth: 1, borderBottomColor: color.line, paddingVertical: 16, gap: 6 },
-  bomRowHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  designator: { color: color.ink, fontSize: 14, lineHeight: 22, fontWeight: "600", flex: 1 },
-  quantity: { fontSize: 13, color: color.green, lineHeight: 22 },
-  bomText: { color: "#66796c", fontSize: 13, lineHeight: 22 },
-  partNumber: { color: "#909e95", fontSize: 11, lineHeight: 19 },
 });
