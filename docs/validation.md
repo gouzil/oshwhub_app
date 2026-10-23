@@ -254,7 +254,18 @@ iOS main.jsbundle  d5132bfc72637d766e159f74caa7173e4c15a03e994a99cf1f40589198717
 
 实际界面检查使用重启后的 Rust 开发核心与浏览器界面，重新从公开搜索进入 ESP32-S31 V0.3（7,569 图元、62 层）。195% 缩放下隐藏/恢复 Top Layer 后，铜面变化正确且相机不重置；点选 R41 的焊盘显示“R41 · 焊盘 1”、网络 `$4N53`、封装 `R0402`。展开技术详情能查看原始属性，收起后内部关联 ID 不再出现在主卡片。截图保存在本次 Codex 可视化目录，未提交真实工程响应。
 
-修复后的源码已重新构建 macOS `.app`/DMG、iOS Simulator Release 和 Android Release，均成功。iPhone/iPad 模拟器安装成功；Android emulator-5554 安装成功，冷启动 `Status: ok`。本轮 Mac 再次锁屏，原生界面复验尚未完成，不能沿用上一阶段的设备界面结论。
+修复后的源码已重新构建 macOS `.app`/DMG、iOS Simulator Release 和 Android Release，均成功。iPhone/iPad 模拟器安装成功；Android emulator-5554 安装成功，冷启动 `Status: ok`。首次原生补验曾被 Mac 锁屏阻挡；2026-10-23 解锁后，使用相同正式产物完成以下检查，没有沿用上一阶段的设备界面结论：
+
+| 运行环境 | 本阶段原生界面补验 |
+| --- | --- |
+| macOS Apple Silicon Release | 从公开搜索重新打开真实 ESP32-S31 V0.3（7,569 图元、62 层）。195% 下隐藏/恢复 Top Layer，铜面变化正确，视图位置和比例保持不变；复位后点选显示“U1 · 焊盘 2”和中文“封装 / ANT-SMD_L3.2-W1.6”。技术详情可展开、关闭，重新点选后收起 |
+| iPhone 18 Pro Max / iOS 27 模拟器 Release | 本地示例放大到 596% 并拖动，隐藏/恢复 Bottom Copper 后蓝色圆弧正确消失/恢复，相机保持不变。底部紧凑卡显示“焊盘 1”“网络 / 3V3”，关闭按钮可达；展开技术详情后可关闭，重新点选默认收起 |
+| iPad Pro 11-inch (M5) / iPadOS 27 模拟器 Release | 同一真实 ESP32-S31 V0.3，244% 下隐藏/恢复 Top Layer，视图比例和位置不变。点选 U1 焊盘后的侧卡字段、技术详情展开/关闭及重选收起正确；旋转到横屏后仍显示当前选中项，关闭入口和缩放工具可见 |
+| Android API 34 / SwiftShader 模拟器 Release | 沿用本阶段安装与冷启动结果，本轮未补验原生手势、切层动画和属性卡外观 |
+
+macOS 前两次真实工程请求分别在 34,004ms 和 33,154ms 后返回可重试的 `TIMEOUT`，再次重试成功；成功日志记录 23 段历史、9,906,972 字节、282,807 条记录，加载总计 37,190ms，其中解析 438ms、场景构建 71ms。现有失败日志没有定位到具体上游请求，不能据此归因；该总耗时也不是画布交互帧时间。未修改超时策略。
+
+三端属性卡及切层前后截图保存在本次 Codex 可视化目录，未提交真实工程响应。本轮仅补原生验收与文档，未改源码或重复全套本机测试；产物校验值与前次构建一致。仍未取得真机持续手势 FPS、功耗和峰值内存数据，也未补验 Windows/Linux 原生界面。
 
 本阶段最终产物 SHA-256：
 
@@ -281,6 +292,8 @@ iOS main.jsbundle  dab8e611c510a7ce7473da20fa0497106a977aa0b7f18f53619be2668cf3c
 代码 `1ac8b68286b12a9142fe65b9d59d788ff804c635` 已推送并触发 [CI #39890604300](https://github.com/gouzil/oshwhub_app/actions/runs/39890604300)。2026-10-23 本轮记录时仍在执行；上面的 60 项 E2E、WebKit 6 项、统一检查、prek 及 Android/iOS/macOS Release 均为本机结果。文档提交跳过 CI，避免取消正在执行的代码构建。
 
 玻璃导航代码 `c6d3184c74abf78f811440436f81245154390dc8` 已推送至 `main`，HTTPS 读回远端 SHA 一致；[CI #39894586310](https://github.com/gouzil/oshwhub_app/actions/runs/39894586310) 已触发，记录时为 pending，尚无成功结论。此前加载优化 CI 的 quality、iOS 和三个桌面构建均已成功，Android 仍停留在 Gradle Release 构建中；本轮 72 项 E2E、WebKit、prek 与三个本机 Release 的证据见“本轮玻璃导航”。
+
+图层切换与选中属性代码 `6f0f9675b5eab516de7c54d8ed50c58e09d624f9` 的 [CI #39957917251](https://github.com/gouzil/oshwhub_app/actions/runs/39957917251) 已结束，整体为 `success`：quality、Android、iOS 和 Windows/Linux/macOS 三个桌面构建全部成功。2026-10-23 原生补验时再次通过 GitHub API 核对了运行 SHA 和各任务结论。
 
 系统已解锁，本轮 macOS 正式包界面与外链验证已继续完成；此前锁屏阻挡已解除。文档更新与源码构建证据按各自版本区分。
 
