@@ -2,6 +2,7 @@ import type { Scene, SceneLayer } from "@oshwhub/bridge";
 import {
   PaintStyle,
   type SkFont,
+  type SkImage,
   Skia,
   type SkPaint,
   type SkPicture,
@@ -10,8 +11,36 @@ import {
   StrokeJoin,
 } from "@shopify/react-native-skia";
 import { planLayers } from "./layers";
+import type { RasterPlan } from "./raster";
 
 export type LayerPicture = { layer: SceneLayer; picture: SkPicture };
+export type BoardRaster = RasterPlan & { image: SkImage; elapsedMs: number };
+
+export function rasterize(pictures: LayerPicture[], plan: RasterPlan): BoardRaster {
+  const started = performance.now();
+  // A CPU surface makes the snapshot portable between CanvasKit's WebGL contexts.
+  const surface = Skia.Surface.Make(plan.pixelWidth, plan.pixelHeight);
+  if (!surface) throw new Error("无法分配 PCB 绘制缓存。");
+  try {
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color("#0b121a"));
+    canvas.scale(plan.pixelWidth / plan.width, plan.pixelHeight / plan.height);
+    canvas.translate(-plan.x, -plan.y);
+    for (const { picture } of pictures) canvas.drawPicture(picture);
+    surface.flush();
+    const image = surface.makeImageSnapshot();
+    const elapsedMs = performance.now() - started;
+    console.info("pcb.raster.built", {
+      layers: pictures.length,
+      width: plan.pixelWidth,
+      height: plan.pixelHeight,
+      elapsedMs: Math.round(elapsedMs),
+    });
+    return { ...plan, image, elapsedMs };
+  } finally {
+    surface.dispose();
+  }
+}
 
 export function buildPictures(scene: Scene, typeface?: SkTypeface) {
   if (scene.texts.length && !typeface) throw new Error("PCB 字体尚未加载。");

@@ -107,7 +107,44 @@ errors remain directly visible. The dark canvas stays synchronized with the
 drill-mask color above; this UI change adds no grid, rendering passes, or blur to
 the drawing surface.
 
-## Picture ownership
+## Interaction raster cache
+
+Layer pictures retain the complete vector geometry. Replaying them on every
+camera update is expensive on complex boards, so interaction draws an overview
+image plus an optional viewport-detail image. One shared camera value updates
+scale and translation atomically. The Canvas subtree is memoized independently
+of panels, zoom labels, and picking results.
+
+The overview covers the board with a 10% margin and a maximum 2048-pixel side.
+After 180 ms without camera input, detail is rasterized from the original
+pictures at viewport scale times device pixel ratio, with a 12.5% viewport margin.
+An existing detail is reused while it covers the view at sufficient density;
+returning to overview density releases the detail reference. Active touch
+gestures cancel refinement until release. While moving, the overview remains
+underneath the previous detail, so moving outside that detail never exposes an
+uncached part of the board. Motion can temporarily look softer until refinement.
+
+Each image is bounded to 4096 pixels per side and 4,194,304 pixels total. At four
+bytes per pixel, the two retained images have a nominal pixel budget of at most
+32 MiB. This excludes GPU copies, intermediate allocations, retained vector
+pictures, and replacement images awaiting garbage collection. High-DPI views
+can reach the pixel cap and have less than one image pixel per physical pixel.
+
+`Surface.Make` uses a CPU raster surface on both backends; its snapshot can be
+uploaded by a different CanvasKit WebGL context. The surface is disposed after
+the snapshot is taken. Images use the same opaque background as drill masks, so
+detail replaces overview pixels without blending duplicate geometry. Scene,
+font, or visible-layer changes rebuild the overview and invalidate detail.
+Refinement failure keeps the overview available and reports a warning; overview
+failure displays an error, cleared after a successful rebuild.
+
+`pcb.raster.built` logs layer count, pixel dimensions, and build time;
+`pcb.raster.refine_failed` includes the scene ID and error. The information panel
+also shows overview/detail sizes and build times. Picking still uses Rust vector
+geometry and the inverse camera transform. Future editing must invalidate the
+pictures and images for changed geometry before publishing an updated scene.
+
+## Picture and image ownership
 
 `buildPictures` explicitly releases temporary paths, paints, fonts, and recorders,
 and disposes partially built pictures if compilation fails. Once pictures are
@@ -116,12 +153,12 @@ retain them beyond the owning React effect's cleanup. Cleanup must not manually
 dispose those published handles: Fast Refresh preserves React state while
 restarting effects, so a pending draw could otherwise receive a deleted picture.
 
-Published pictures follow their reachable Skia handles. CanvasKit's Embind
-`sk_sp<Picture>` wrappers register with `FinalizationRegistry`; native
-`JsiSkPicture` objects release their smart pointers during JSI garbage collection,
+Published pictures and snapshot images follow their reachable Skia handles.
+CanvasKit's Embind `sk_sp<Picture>` and `sk_sp<Image>` wrappers register with
+`FinalizationRegistry`; native JSI objects release their smart pointers during garbage collection,
 scheduling GPU resource release on the creating thread. Browser lifecycle tests
 exercise StrictMode, three consecutive Fast Refresh updates, unmounting, real
-canvas pixels, and picture finalizers after forced test GC. Collection timing is
+canvas pixels, and picture/image finalizers after forced test GC. Collection timing is
 not deterministic in normal use, and releasing live resources does not guarantee
 an immediate reduction in process RSS/PSS.
 

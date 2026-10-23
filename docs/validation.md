@@ -6,9 +6,9 @@
 
 | 检查 | 结果与边界 |
 | --- | --- |
-| `pnpm check` | Biome、TypeScript、29 项 Vitest、12 项构建脚本测试、Rust fmt/clippy/test 通过；Rust 核心 51 项、开发服务 1 项、FFI 1 项，2 项测试默认忽略 |
+| `pnpm check` | Biome、TypeScript、31 项 Vitest、12 项构建脚本测试、Rust fmt/clippy/test 通过；Rust 核心 51 项、开发服务 1 项、FFI 1 项，2 项测试默认忽略 |
 | `prek run --all-files` | 全部 5 个 hook 通过；已安装本地提交 hook |
-| `pnpm test:e2e` | PCB 工作区全量回归 107/108，首页极速输入用例失败；最终短横屏修复后的查看器回归 18/18 通过，详见“PCB 工作区改版验证”。使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
+| `pnpm test:e2e` | 本轮性能优化最终全量 126/126 通过（2.0 分钟），包括此前偶发的首页极速输入用例。使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体；历史分阶段结果分别保留在下文 |
 | WebKit 补测 | 玻璃导航阶段 1440×900 下 6 项通过、1 项 CDP 透明度模拟显式跳过，4.6 秒；覆盖导航与全部加载回归。上一阶段另有示例板中文/实际像素、铜层隐藏与恢复证据；未在 WebKit 运行 Chromium CDP 手势和生命周期用例 |
 | 开发服务超限回归 | 新增真实 TCP HTTP 测试通过：普通非法命令、恰好 1 MiB 成功、超过 1 MiB 拒绝且保留错误码和独立 UUID |
 | CodeGraph | 已按用户授权初始化，本地索引不提交 |
@@ -198,6 +198,49 @@ iOS main.jsbundle  4b5d40b84255d750d3456f870d1f89dd17386b452cfadd6b50c1e82392334
 ```
 
 本次没有改动 Rust 解析/拾取或 Picture 绘制算法，未重复真机 GPU/功耗/内存基准、VoiceOver/TalkBack、极大字体和 Windows/Linux 原生视觉检查；模拟器与浏览器布局结果不代表这些项目已验收。PCB 仍为二维只读查看器。
+
+## PCB 交互性能优化
+
+用户反馈所有板子的缩放、平移和选择都卡顿。本轮定位到两个共享路径：每次相机变化重新重放可见层的完整矢量 Picture，且 scale/x/y 三次 shared-value 写入触发重复提交；菜单和属性状态变化也会重建 Canvas。现在操作期间绘制有界全板/视区图片，一次更新完整相机，停止 180ms 后从原始矢量补充细节，面板变化复用 Canvas。完整数据、原始图层和 Rust 几何拾取保留；缓存预算、生命周期与暂时模糊边界见 [renderer.md](renderer.md#interaction-raster-cache)。
+
+### 相同真实板的 WebKit 基准
+
+本机 Playwright 无头 WebKit，1440×900、DPR 2，同一 ESP32-S31 V0.3 PCB（7,569 图元、62 层、默认可见 9 层），等待首帧后在画布中心依次发 20 次 wheel(0,-25) 和 20 次 wheel(0,25)，在发送操作期间采样 `requestAnimationFrame` 间隔及 CanvasKit `drawPicture` / `flush` 同步调用。前后同环境、同输入，计时不含网络下载和首次缓存构建，也不含输入结束后的空闲细化。
+
+| 指标 | 修改前 | 修改后 |
+| --- | ---: | ---: |
+| 40 次输入完成耗时 | 50,738 ms | 472 ms |
+| rAF 间隔 P50 / P95 | 428 / 1,759 ms | 12 / 13 ms |
+| flush P95 / 最大值 | 331 / 670 ms | 2 / 3 ms |
+| flush 调用次数 | 118 | 40 |
+| drawPicture 调用次数 | 1,882 | 40 |
+
+这些是一次受控浏览器样本：rAF 不是屏幕实际呈现统计，flush 同步耗时不等于 GPU 完成时间，输入完成耗时还包含自动化调度。不能由此声称 iPhone、Android 或 macOS 正式包达到同样 FPS。真实场景响应只用于本地测量，没有提交到仓库。
+
+### 回归与原生包
+
+缓存重放回归先在旧路径失败，再在新路径通过；不使用受 CI 机器负载影响的绝对 FPS 阈值。新增测试验证操作帧不重复重放每层矢量，开关面板不重绘板子，931% 缩放停止后创建细节，平移越过旧细节边界后的中心像素与实际图层一致，隐藏图层使旧缓存失效。一次性注入分配失败先复现错误无法恢复，再修复并验证下次图层重建恢复画布。图片回收检查扩展现有 StrictMode / 三次 Fast Refresh / 卸载测试，以实际像素和强制测试 GC 后的 Image finalizer 检查所有权；六视口最终相关 E2E 24/24 通过（52.7 秒）。
+
+最终 `pnpm check` 通过（31 项 Vitest、12 项脚本测试、51 项 Rust 核心及开发服务/FFI 各 1 项，2 项忽略）。最终全量 Chromium E2E 126/126 通过（2.0 分钟），包括已有首页、正文懒加载、BOM、导航和查看器用例；之前记录的首页极速输入用例此次通过，不据此宣称其历史偶发性已定位或修复。
+
+最终源码重新构建 macOS `.app` / DMG、iOS Simulator Release、Android Release，均成功。Android 构建初次缺少 ANDROID_HOME，使用本机已有 SDK 后通过；APK 安装到 emulator-5554 成功，冷启动 `Status: ok`。
+
+| 平台 | 本轮现场检查 |
+| --- | --- |
+| macOS Apple Silicon Release | 退出旧进程后打开新包，真实 ESP32-S31 板连续滚轮放大到 1678%、拖动、缩小至 100%、点选属性成功。全板缓存 2047×1410 / 56ms，停下后的视区细节 2668×1571 / 23ms，边缘与孔洞可见 |
+| iPad Pro 11-inch (M5) / iPadOS 27 模拟器 Release | 同一真实板，连续放大到 931%、拖动、Top Layer 隐藏/恢复后的像素正确，复位并点选 STRING 成功。全板缓存 2047×1410 / 21ms，视区细节 1784×2349 / 15ms |
+| iPhone 18 Pro Max / iOS 27 模拟器 Release | 本地示例连续放大到 931%、拖动、信息面板、复位和 PAD / 3V3 属性成功；关闭 Bottom Copper 后蓝色曲线消失，返回后系统导航恢复。全板缓存 2048×1430 / 3ms，视区细节 1518×2761 / 5ms |
+| Android API 34 / SwiftShader 模拟器 Release | 安装、冷启动成功，本轮未取得原生手势/帧时间验收结果 |
+
+上述缓存构建时间均为单次样本。尝试 Instruments Animation Hitches 附加 iOS 模拟器时返回 `Hitches is not supported on this platform`，没有得到可用原生 FPS 统计。本轮未测真机持续手势、功耗和长时间峰值内存，也未复验 Windows/Linux 原生界面；模拟器功能与 WebKit 采样不能替代这些测量。
+
+本轮最终产物 SHA-256：
+
+```text
+APK  f9212ac0ae1e30e2a0d2da89563be3d0e332925dc5fb354f615f22aeb749eb4b
+DMG  5b166946fc6bb886d7f9ee85534804a61ad2923ea3c608a9b28e7c434acb9522
+iOS main.jsbundle  d5132bfc72637d766e159f74caa7173e4c15a03e994a99cf1f40589198717e20
+```
 
 ## 交付与后续
 

@@ -3,7 +3,7 @@ import {
   Canvas,
   type DataSource,
   Group,
-  Picture,
+  Image,
   Skia,
   useTypeface,
 } from "@shopify/react-native-skia";
@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   type GestureResponderEvent,
   PanResponder,
+  PixelRatio,
   Platform,
   Pressable,
   ScrollView,
@@ -23,7 +24,8 @@ import {
 } from "react-native";
 import { useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { defaultFontSource } from "./fontSource";
-import { buildPictures, type LayerPicture } from "./pictures";
+import { type BoardRaster, buildPictures, type LayerPicture, rasterize } from "./pictures";
+import { coversView, detailBounds, planRaster } from "./raster";
 import {
   fitViewport,
   gestureViewport,
@@ -47,6 +49,7 @@ type Gesture = {
   pointers: number;
   moved: boolean;
 };
+type RasterCache = { pictures: LayerPicture[]; base: BoardRaster; detail: BoardRaster | null };
 const touchPoints = (event: GestureResponderEvent): Point[] =>
   Array.from(event.nativeEvent.touches).map((touch) => ({
     x: touch.locationX,
@@ -88,6 +91,10 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
   );
   const [pickError, setPickError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
+  const [cache, setCache] = useState<RasterCache | null>(null);
+  const cacheRef = useRef<RasterCache | null>(null);
+  const [rasterWarning, setRasterWarning] = useState<string | null>(null);
+  const refinement = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const surface = useRef<ViewInstance>(null);
   const current = useRef<Viewport>({ scale: 1, x: 0, y: 0 });
   const fitted = useRef<Viewport>({ scale: 1, x: 0, y: 0 });
@@ -97,24 +104,62 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
   visibleRef.current = visible;
   const gesture = useRef<Gesture | null>(null);
   const pickVersion = useRef(0);
-  const scale = useSharedValue(1);
-  const offsetX = useSharedValue(0);
-  const offsetY = useSharedValue(0);
+  const camera = useSharedValue<Viewport>(current.current);
   // Vite has no worklet transform, so the Web mapper needs explicit dependencies.
   const matrix = useDerivedValue(() => {
     const result = Skia.Matrix();
-    result.translate(offsetX.value, offsetY.value);
-    result.scale(scale.value, scale.value);
+    const view = camera.value;
+    result.translate(view.x, view.y);
+    result.scale(view.scale, view.scale);
     return result;
-  }, [scale, offsetX, offsetY]);
+  }, [camera]);
+  const cancelRefinement = useCallback(() => clearTimeout(refinement.current), []);
+  const refine = useCallback(() => {
+    cancelRefinement();
+    refinement.current = setTimeout(() => {
+      const source = cacheRef.current;
+      const { width, height } = dimensions.current;
+      if (!source || !width || !height || gesture.current) return;
+      const view = current.current;
+      const density = view.scale * PixelRatio.get();
+      const baseDensity = Math.min(
+        source.base.pixelWidth / source.base.width,
+        source.base.pixelHeight / source.base.height,
+      );
+      if (density <= baseDensity * 1.1) {
+        if (source.detail) {
+          const next = { ...source, detail: null };
+          cacheRef.current = next;
+          setCache(next);
+        }
+        return;
+      }
+      const plan = planRaster(detailBounds(view, width, height), density);
+      if (
+        source.detail &&
+        source.detail.pixelWidth / source.detail.width >= (plan.pixelWidth / plan.width) * 0.9 &&
+        coversView(source.detail, view, width, height)
+      )
+        return;
+      try {
+        const next = { ...source, detail: rasterize(source.pictures, plan) };
+        cacheRef.current = next;
+        setCache(next);
+        setRasterWarning(null);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "PCB 细节缓存构建失败。";
+        console.warn("pcb.raster.refine_failed", { sceneId: scene.id, message });
+        setRasterWarning(`${message} 当前保留全板预览，可继续操作。`);
+      }
+    }, 180);
+  }, [cancelRefinement, scene.id]);
   const applyViewport = useCallback(
     (next: Viewport) => {
       current.current = next;
-      scale.value = next.scale;
-      offsetX.value = next.x;
-      offsetY.value = next.y;
+      camera.value = next;
+      refine();
     },
-    [scale, offsetX, offsetY],
+    [camera, refine],
   );
   const updateZoom = useCallback(
     () => setZoom(Math.round((current.current.scale / fitted.current.scale) * 100)),
@@ -161,6 +206,43 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     };
   }, [scene, typeface]);
 
+  const pictures = useMemo(
+    () =>
+      compiled?.scene === scene
+        ? compiled.pictures.filter(({ layer }) => visible.has(layer.id))
+        : null,
+    [compiled, scene, visible],
+  );
+  useEffect(() => {
+    if (!pictures) return;
+    try {
+      const bounds = scene.bounds;
+      const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1);
+      const margin = span * 0.1;
+      const plan = planRaster(
+        {
+          minX: bounds.minX - margin,
+          minY: bounds.minY - margin,
+          maxX: bounds.maxX + margin,
+          maxY: bounds.maxY + margin,
+        },
+        2048 / (span + margin * 2),
+      );
+      const next = { pictures, base: rasterize(pictures, plan), detail: null };
+      cacheRef.current = next;
+      setCache(next);
+      setRenderError(null);
+      setRasterWarning(null);
+      refine();
+    } catch (error) {
+      setRenderError(error instanceof Error ? error.message : "PCB 绘制缓存构建失败。");
+    }
+    return () => {
+      cacheRef.current = null;
+      cancelRefinement();
+    };
+  }, [pictures, scene.bounds, refine, cancelRefinement]);
+
   useEffect(() => {
     if (!size.width || !size.height) return;
     fitted.current = fitViewport(scene.bounds, size.width, size.height);
@@ -202,6 +284,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (event) => {
+          cancelRefinement();
           const points = touchPoints(event);
           if (!points.length) return;
           pickVersion.current += 1;
@@ -240,16 +323,18 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
           const start = gesture.current;
           gesture.current = null;
           updateZoom();
+          refine();
           if (start && !start.moved && isTap(start.first, start.last, start.pointers))
             void pick(start.last);
         },
         onPanResponderTerminate: () => {
           gesture.current = null;
           updateZoom();
+          refine();
         },
         onPanResponderTerminationRequest: () => false,
       }),
-    [applyViewport, pick, updateZoom],
+    [applyViewport, pick, updateZoom, refine, cancelRefinement],
   );
 
   useEffect(() => {
@@ -287,7 +372,35 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     };
   }, [zoomBy, reset, applyViewport]);
 
-  const warnings = [...scene.warnings, ...(compiled?.warnings ?? [])];
+  const drawing = useMemo(
+    () =>
+      cache && (
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Group matrix={matrix}>
+            {[cache.base, cache.detail].map(
+              (raster) =>
+                raster && (
+                  <Image
+                    key={raster === cache.base ? "overview" : "detail"}
+                    image={raster.image}
+                    x={raster.x}
+                    y={raster.y}
+                    width={raster.width}
+                    height={raster.height}
+                    fit="fill"
+                  />
+                ),
+            )}
+          </Group>
+        </Canvas>
+      ),
+    [cache, matrix],
+  );
+  const warnings = [
+    ...scene.warnings,
+    ...(compiled?.warnings ?? []),
+    ...(rasterWarning ? [rasterWarning] : []),
+  ];
   const closeSelection = () => {
     setSelection(null);
     setPanel(null);
@@ -318,16 +431,8 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         style={styles.surface}
         {...responder.panHandlers}
       >
-        {compiled && compiled.scene === scene && !renderError && !fontError ? (
-          <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Group matrix={matrix}>
-              {compiled.pictures
-                .filter(({ layer }) => visible.has(layer.id))
-                .map(({ layer, picture }) => (
-                  <Picture key={layer.id} picture={picture} />
-                ))}
-            </Group>
-          </Canvas>
+        {cache && cache.pictures === pictures && !renderError && !fontError ? (
+          drawing
         ) : (
           <View style={styles.canvasMessage}>
             {renderError || fontError ? (
@@ -478,6 +583,22 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
                   ["载入耗时", `${Math.round(scene.metrics.loadMs)} ms`],
                   ["解码耗时", `${Math.round(scene.metrics.parseMs)} ms`],
                   ["场景构建", `${Math.round(scene.metrics.sceneMs)} ms`],
+                  ...(cache
+                    ? [
+                        [
+                          "全板预览",
+                          `${cache.base.pixelWidth} × ${cache.base.pixelHeight} · ${Math.round(cache.base.elapsedMs)} ms`,
+                        ],
+                      ]
+                    : []),
+                  ...(cache?.detail
+                    ? [
+                        [
+                          "视区细节",
+                          `${cache.detail.pixelWidth} × ${cache.detail.pixelHeight} · ${Math.round(cache.detail.elapsedMs)} ms`,
+                        ],
+                      ]
+                    : []),
                 ].map(([label, value]) => (
                   <View key={label} style={styles.infoRow}>
                     <Text style={styles.caption}>{label}</Text>

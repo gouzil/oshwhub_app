@@ -1,7 +1,7 @@
 import { expect, scene, test } from "./fixtures";
 import { canvasColors } from "./pixels";
 
-type PictureGc = { created: number; finalized: number };
+type PictureGc = { created: number; finalized: number; images: number; releasedImages: number };
 declare global {
   interface Window {
     __pictureGc: PictureGc;
@@ -9,7 +9,7 @@ declare global {
   }
 }
 
-test("SkPicture ownership survives StrictMode, consecutive Fast Refresh, and unmount", async ({
+test("SkPicture and raster image ownership survive StrictMode, Fast Refresh, and unmount", async ({
   page,
   bridge,
 }) => {
@@ -23,18 +23,20 @@ test("SkPicture ownership survives StrictMode, consecutive Fast Refresh, and unm
   });
   await page.addInitScript(() => {
     const probe = window;
-    probe.__pictureGc = { created: 0, finalized: 0 };
-    const pictureHandle = (value: unknown) =>
-      (value as { Fd?: { ae?: { name?: string } } } | null)?.Fd?.ae?.name === "sk_sp<Picture>";
+    probe.__pictureGc = { created: 0, finalized: 0, images: 0, releasedImages: 0 };
+    const handleName = (value: unknown) =>
+      (value as { Fd?: { ae?: { name?: string } } } | null)?.Fd?.ae?.name;
     globalThis.FinalizationRegistry = new Proxy(globalThis.FinalizationRegistry, {
       construct(target, [cleanup]) {
         const registry = new target((value: unknown) => {
-          if (pictureHandle(value)) probe.__pictureGc.finalized++;
+          if (handleName(value) === "sk_sp<Picture>") probe.__pictureGc.finalized++;
+          if (handleName(value) === "sk_sp<Image>") probe.__pictureGc.releasedImages++;
           cleanup(value);
         });
         const register = registry.register.bind(registry);
         registry.register = (target, value, token) => {
-          if (pictureHandle(value)) probe.__pictureGc.created++;
+          if (handleName(value) === "sk_sp<Picture>") probe.__pictureGc.created++;
+          if (handleName(value) === "sk_sp<Image>") probe.__pictureGc.images++;
           register(target, value, token);
         };
         return registry;
@@ -124,6 +126,12 @@ test("SkPicture ownership survives StrictMode, consecutive Fast Refresh, and unm
       return page.evaluate(() => window.__pictureGc.finalized);
     })
     .toBeGreaterThanOrEqual(scene.layers.length);
+  await expect
+    .poll(async () => {
+      await cdp.send("HeapProfiler.collectGarbage");
+      return page.evaluate(() => window.__pictureGc.releasedImages);
+    })
+    .toBeGreaterThanOrEqual(3);
   await test.info().attach("picture-gc", {
     body: JSON.stringify(await page.evaluate(() => window.__pictureGc)),
     contentType: "application/json",
