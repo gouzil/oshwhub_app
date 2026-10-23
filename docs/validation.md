@@ -8,7 +8,7 @@
 | --- | --- |
 | `pnpm check` | Biome、TypeScript、29 项 Vitest、12 项构建脚本测试、Rust fmt/clippy/test 通过；Rust 核心 49 项、开发服务 1 项、FFI 1 项，2 项测试默认忽略 |
 | `prek run --all-files` | 全部 5 个 hook 通过；已安装本地提交 hook |
-| `pnpm test:e2e` | 72/72 通过，最后一次 52.7 秒；使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
+| `pnpm test:e2e` | 最新导航改进后 78/78 通过，1.2 分钟；使用自制接口响应，实际加载 CanvasKit WASM 和完整中文字体 |
 | WebKit 补测 | 玻璃导航阶段 1440×900 下 6 项通过、1 项 CDP 透明度模拟显式跳过，4.6 秒；覆盖导航与全部加载回归。上一阶段另有示例板中文/实际像素、铜层隐藏与恢复证据；未在 WebKit 运行 Chromium CDP 手势和生命周期用例 |
 | 开发服务超限回归 | 新增真实 TCP HTTP 测试通过：普通非法命令、恰好 1 MiB 成功、超过 1 MiB 拒绝且保留错误码和独立 UUID |
 | CodeGraph | 已按用户授权初始化，本地索引不提交 |
@@ -77,6 +77,30 @@ APK  3b4e12d0950925a98b2325b1f235b17d92342bd7a4ba427424ac5f4acb463369
 DMG  5c45991bd44820dbb98fd966a2feab31091f657e771b36d4f827744ad4d386dd
 iOS main.jsbundle  6a1aae0fa6f20b3d33f08a7cf646ef02e24db6711ff3a61419f93dbfdbf58365
 ```
+
+### 系统 Tab Bar、选中层与 Android 折射材质
+
+用户反馈手机和桌面材质均不够接近系统效果。本次 iOS 窄屏改为已有 Expo 模块注册的真正 `UITabBar`，由 UIKit 提供 SF Symbols、选中镜片和触摸反馈；iPad 宽屏侧栏采用 clear 材质。共享侧栏降低白底不透明度、加入透光渐变和细亮边，替换字符图标，选中层按实际导航项边界移动。Android 新接入固定版本 `expo-android-glass-view` 1.0.2，以 RenderNode 背景缓存和 AGSL 提供折射与模糊。候选库比较、兼容范围和性能取舍见 [design.md](design.md#android-玻璃材质选型)。
+
+最终源码的 `pnpm check`、全部 5 项 prek hook 通过；Chromium 六个视口 78/78 E2E 通过（1.2 分钟），包含选中层边界对齐、暂停 JS 动画帧、减少动态效果和降低透明度回退。生产 Web 构建在 Chromium 与 WebKit 的导航补测为 5 项通过、1 项 CDP 模拟显式跳过（6.9 秒）。新增暂停动画帧用例先复现 JS 弹簧不再推进，再验证直接更新 CSS 目标位置；最终 Web 使用 CSS left/top 过渡，原生选中层使用原生驱动 transform。
+
+iPhone 18 Pro Max / iOS 27.0 模拟器实际看到系统胶囊、灰色选中镜片和按压反馈，切页及进入 PCB 后底栏隐藏通过。iPad Pro 11-inch (M5) / iPadOS 27.0 竖屏使用系统底栏、横屏恢复侧栏，保留当前页面。最终 iOS Release 重新构建成功，并安装、启动到两台模拟器。
+
+macOS 最终 `.app` 与 DMG 均重新构建成功。解锁后用户在正式包前台手动确认「PCB 实验室 → 关于」白色胶囊正常跟随，随后实际正式包截图也显示镜片与 PCB 实验室选中项对齐。后台自动化曾见页面/文字已切换而镜片停留在上一项；临时诊断取得正确的项布局和目标 inline 样式。CSS transform 与 left/top 都曾在后台截图中停留，不能把现象归因于 transform 本身，也不能用后台截图或浏览器通过代替前台验证。没有保留调试文本、周期性强制布局或刷新定时器。此前锁屏时 DMG 打包卡在 Finder 的尝试已被本次成功产物替代；后台恢复的长期稳定性仍需补测。
+
+Android Release 在 Expo 58 / RN 0.88 下构建成功（含新库 Kotlin/Compose），安装到 API 34 的 emulator-5554 并冷启动。真实信息流中可见图片颜色透射、边缘折射、线条图标与独立选中层；点击 PCB 实验室后，页面文字与原生 selected 状态一致。临时把 `transition_animation_scale` 从 1.0 改为 0，导航退为实色，非图标区域 16×16 像素全部匹配 `#f6f9f7`（每通道容差 1）；点击关于后正文和 selected 状态正确，随后恢复设置为 1.0。此测试检查实际像素和交互，不以原生 View 类名判断材质。 从 PCB 实验室打开本地示例后，原生树中玻璃导航已移除；返回后玻璃面板和 PCB 实验室选中态恢复，本段回归的崩溃日志为空。此次只补验导航卸载/恢复，不重复声称完整重测真实 PCB 的所有操作。
+
+静置 PCB 实验室约 48.6 秒，`dumpsys gfxinfo` 总帧数保持 106，支持该静态页面没有持续重绘。模拟器使用 SwiftShader 软件 GPU，动态样本与实色对照均出现秒级帧耗时；它们不能证明真机帧率、功耗或组件之间的性能排名。首次着色器编译、内容更新和虚拟机调度也混在该短样本内；需用真实 Android GPU 对固定输入单独测量。
+
+最终产物 SHA-256：
+
+```text
+APK  467404fa150e02405f036e6082851ef69c629dd33ce1ee4ba17397fec961fdd2
+DMG  8b378465dedd326563376e44a6e66c6a2ff7621b8853f300096f279291e1cc2c
+iOS main.jsbundle  c38f215aa14ff7a98ed269effb84fea3760e3d8c5cb13b372999fd959578e24f
+```
+
+未补测旧 Android/iOS 系统、真机 GPU/功耗、VoiceOver/TalkBack、Windows/Linux 原生外观；桌面仍是 CSS 近似，Android 为第三方 GPU 实现，均不宣称与 UIKit 材质完全相同。
 
 ### PCB 内存复测
 

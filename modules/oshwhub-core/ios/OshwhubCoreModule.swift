@@ -17,5 +17,14 @@ public class OshwhubCoreModule: Module {
         return String(cString: response)
       }
     }
+    View(LiquidTabBar.self) {
+      Events("onSelect")
+      Prop("items") { (view, items: [NavigationItem]) in
+        view.setItems(items)
+      }
+      Prop("selectedIndex") { (view, index: Int) in
+        view.select(index)
+      }
+    }
   }
 }

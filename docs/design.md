@@ -40,11 +40,33 @@ UI -> bridge -> Rust core；渲染器只消费 Rust 准备的场景，不直接�
 
 ## 玻璃导航
 
-窄屏使用悬浮胶囊式底部导航，宽度最多 480px；宽度达到 1024px 时切换为总宽 216px 的圆角玻璃侧栏。保留绿色选中胶囊、图标、文字和可访问的 tab 选中状态，触控目标至少 44px。底部导航避开系统安全区域，内容可以从材质下方滚过；信息流、详情的加载/错误/正文以及静态页按导航实际测量高度添加末尾留白，文字缩放后重新测量。移动端 PCB 查看器收起导航，使用完整安全区域。
+窄屏使用悬浮胶囊式底部导航，宿主宽度最多 480px；宽度达到 1024px 时切换为总宽 216px 的圆角玻璃侧栏。保留绿色强调色、统一线条图标、文字和可访问的 tab 选中状态，触控目标至少 44px。底部导航避开系统安全区域，内容可以从材质下方滚过；信息流、详情的加载/错误/正文以及静态页按导航实际测量高度添加末尾留白，文字缩放后重新测量。移动端 PCB 查看器收起导航，使用完整安全区域。
 
-iOS 使用与 Expo SDK 58 匹配的 `expo-glass-effect` 58.0.4，检查 Liquid Glass 与原生 API 可用性后启用 `GlassView` 的 regular 材质。在 iOS 27 模拟器上验证了原生效果；旧系统、缺少原生 API 或用户开启“降低透明度”时使用不透明浅色面板。首次读取无障碍设置前也使用实色，订阅设置变化并在卸载时清理监听。不能仅靠 Metro 热更新接入这个新原生依赖，需重新安装 pods 并构建开发客户端或 Release 包。API 依据见 [Expo GlassEffect](https://docs.expo.dev/versions/latest/sdk/glass-effect/)。
+iOS 底栏通过已有 Expo 原生模块中的 `LiquidTabBar` 挂载真正的 `UITabBar`。标签、SF Symbol 名称和选中项来自 React Native；Swift 只设置控件并转发选择事件，不持有页面或业务状态。玻璃镜片、按压/拖动反馈、图标与文字排布、无障碍材质由 UIKit 管理，取消手绘绿色底块和额外玻璃外框。iOS 26+ 使用系统 Liquid Glass，旧系统自动使用当时的原生外观。此处选择系统控件，是因为单层 `GlassView` 无法自动提供系统 Tab Bar 的选中镜片和触摸行为；没有为此替换应用路由。平台行为依据见 [Apple UIKit 新设计](https://developer.apple.com/videos/play/wwdc2025/284/)。
 
-桌面 WebView 和开发浏览器用 CSS `backdrop-filter` 模糊、饱和度、细亮边与阴影实现对应风格；这不等同于 UIKit 的折射材质。浏览器不支持滤镜或匹配 `prefers-reduced-transparency: reduce` 时回退为实色。Android 目前使用同形状的实色面板，避免引入另一个实时模糊渲染链路。每种布局仅一块玻璃面板，不对每个导航项嵌套模糊，不在 JS 中逐帧更新滤镜；PCB 的场景和绘制缓存不参与导航材质计算。真机帧率、功耗及各 WebView 的材质差异仍需分别采样。
+iPad 宽屏侧栏仍使用与 Expo SDK 58 匹配的 `expo-glass-effect` 58.0.4，检查 Liquid Glass 与原生 API 可用性后启用 `GlassView` 的 clear 材质。旧系统、缺少原生 API 或用户开启“降低透明度”时使用不透明浅色面板。首次读取无障碍设置前也使用实色，订阅设置变化并在卸载时清理监听。iPad 竖屏改为系统底栏，横屏恢复侧栏并保留当前页面。原生控件新增或更新后需重新安装 pods 并构建开发客户端或 Release 包；只更新 Metro 不能添加原生视图。API 依据见 [Expo GlassEffect](https://docs.expo.dev/versions/latest/sdk/glass-effect/)。
+
+桌面 WebView 和开发浏览器用 CSS `backdrop-filter` 模糊、饱和度、渐变透光、细亮边与阴影实现对应风格。侧栏背景增加轻微青/蓝色调，使透明面板有层次；去掉原先 74% 不透明白底。共享选中层按实际导航项边界移动：Web 直接提交目标位置，由 CSS 负责过渡，避免 JS 动画帧暂停后选中层留在旧位置；Android 和 iPad 侧栏使用原生驱动弹簧，只更新 transform。开启“减少动态效果”时立即定位，原生与骨架共用设置监听逻辑。图标由少量静态 View 线条组成，不加载字体或另启 Skia 画布。浏览器不支持滤镜或匹配 `prefers-reduced-transparency: reduce` 时面板和选中层都使用实色。Android 材质见下文。
+
+桌面 CSS 效果仍是近似，不能提供 UIKit 的光学折射或系统触摸形变。桌面与 iOS 未增加逐帧截图或嵌套模糊；每种布局仅一块背景材质，PCB 的场景和绘制缓存不参与导航计算。真机帧率、功耗及各 WebView 的材质差异仍需分别采样。
+
+
+### Android 玻璃材质选型
+
+使用固定版本 [`expo-android-glass-view` 1.0.2](https://github.com/kagantemizkan/expo-android-glass-view)，Apache-2.0，复用 Kyant 的玻璃着色器。通过 `GlassSurface.android.tsx` 仅替换底栏/侧栏背景；保留 RN 的 tab、文字、触控和原生驱动选中层，不接管页面路由。Android 13+ 使用 AGSL 折射，Android 12 使用模糊，更老系统使用实色；启用系统减少动态效果时也回退实色，并立即定位选中层。首次读取该设置前先用实色。移动端进入 PCB 后底栏卸载，释放背景材质。
+
+接入前核对 npm 发布源码：`ViewBackdrop` 把窗口背景记录到 RenderNode，只缓存导航边界和 32dp 余量；移动、滚动或玻璃挂载变化时重录，静止时复用，其他背景子树由 RenderNode 引用更新。`ViewBackdropCapture` 排除玻璃子树，避免把自身采进背景造成循环。没有后台定时截屏、整屏 Bitmap 软件绘制或 CPU 像素回读；退出时移除监听并释放缓存。不引入额外 JNI ABI，Compose 运行时由 Gradle 统一解析。该实现仍有 GPU 模糊/折射开销，且库尚年轻，不能从源码推断所有设备都流畅。
+
+同轮比较的替代方案：
+
+| 组件 | 本次未采用的原因 |
+| --- | --- |
+| [`@sbaiahmed1/react-native-blur` 6.0.3](https://github.com/sbaiahmed1/react-native-blur/blob/main/website/src/content/docs/liquid-glass-view.mdx) | Android 路径定时软件绘制缩小后的整屏 Bitmap；共享捕获可减小开销，但不符合当前优先避免持续 CPU 采样的选择 |
+| [`react-native-android-liquid-glass` 0.2.1](https://github.com/sssajjad007/react-native-liquid-glass-android) | 桥接版本固定上游 v2.0.0；动态背景需要持续重采样，x86_64 路径与 ARM 原生模糊不同 |
+| [`Kyant0/AndroidLiquidGlass`](https://github.com/Kyant0/AndroidLiquidGlass) | 效果实现本身适用，但直接接入需要自行维护 Compose 与 RN 背景采样桥；所选 Expo 库已完成这部分适配 |
+| [`liquid-glass-kit` 1.0.0](https://github.com/Abdullajon1881/LiquidGlass) | RenderNode 方案也可行，但需要额外背景 Provider，发布和维护样本较少 |
+
+版本与实现核对日期：2026-10-23。上述比较是具体版本的源码观察，不是跨设备性能排名。自带原生 BottomTabs 等控件暂未采用，以保留现有导航可访问性与页面状态行为。
 
 ## 数据与错误处理
 

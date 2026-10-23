@@ -1,12 +1,6 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import {
-  AccessibilityInfo,
-  Animated,
-  Platform,
-  type StyleProp,
-  View,
-  type ViewStyle,
-} from "react-native";
+import { type ReactNode, useEffect, useRef } from "react";
+import { Animated, Platform, type StyleProp, View, type ViewStyle } from "react-native";
+import { useReducedMotion } from "./useReducedMotion";
 
 export function Skeleton({
   children,
@@ -18,24 +12,7 @@ export function Skeleton({
   style?: StyleProp<ViewStyle>;
 }) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const [reducedMotion, setReducedMotion] = useState(true);
-  useEffect(() => {
-    let active = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then(
-      (reduce) => {
-        if (active) setReducedMotion(reduce);
-      },
-      () => {},
-    );
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      setReducedMotion,
-    );
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
     if (reducedMotion) {
       opacity.setValue(1);

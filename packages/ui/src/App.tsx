@@ -1,10 +1,12 @@
 import { call, type FeedPage, type ProjectSummary, type Sort } from "@oshwhub/bridge";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
+  Animated,
   BackHandler,
   FlatList,
   Image,
   type LayoutChangeEvent,
+  type LayoutRectangle,
   Platform,
   Pressable,
   ScrollView,
@@ -30,14 +32,17 @@ import {
 import { GlassSurface } from "./GlassSurface";
 import { Skeleton, SkeletonBlock } from "./loading";
 import { FeedController, layoutFor, safeUrl } from "./model";
+import { NativeTabBar } from "./NativeTabBar";
+import { NavigationIcon } from "./NavigationIcon";
 import { ProjectPage } from "./ProjectPage";
+import { useReducedMotion } from "./useReducedMotion";
 import { ViewerPage, type ViewerRoute } from "./ViewerPage";
 
 type Tab = "discover" | "lab" | "about";
-const navigation: { id: Tab; label: string; icon: string }[] = [
-  { id: "discover", label: "发现", icon: "◈" },
-  { id: "lab", label: "PCB 实验室", icon: "▦" },
-  { id: "about", label: "关于", icon: "i" },
+const navigation: { id: Tab; label: string; symbol: string }[] = [
+  { id: "discover", label: "发现", symbol: "safari" },
+  { id: "lab", label: "PCB 实验室", symbol: "cpu" },
+  { id: "about", label: "关于", symbol: "info.circle" },
 ];
 const sorts: { value: Sort; label: string }[] = [
   { value: "recommend", label: "为你推荐" },
@@ -95,13 +100,13 @@ function Shell() {
       edges={showDock ? ["top", "left", "right"] : ["top", "left", "right", "bottom"]}
     >
       <StatusBar barStyle="dark-content" />
-      <View style={styles.shell}>
+      <View nativeID="app-shell" style={styles.shell}>
         {layout.sidebar > 0 && (
           <View style={[styles.sidebar, { width: layout.sidebar }]}>
             <GlassSurface style={styles.sidebarGlass}>
               <View style={styles.brand}>
                 <View style={styles.brandIcon}>
-                  <Text style={styles.brandSymbol}>▦</Text>
+                  <NavigationIcon kind="cpu" color="#fff" />
                 </View>
                 <Text style={styles.brandName}>OSHWHub</Text>
               </View>
@@ -182,24 +187,84 @@ function Shell() {
   );
 }
 
-function Navigation({
-  tab,
-  navigate,
-  desktop = false,
-  onLayout,
-}: {
+type NavigationProps = {
   tab: Tab;
   navigate: (tab: Tab) => void;
   desktop?: boolean;
   onLayout?: (event: LayoutChangeEvent) => void;
-}) {
+};
+
+function Navigation(props: NavigationProps) {
+  if (Platform.OS === "ios" && !props.desktop) {
+    return (
+      <NativeTabBar
+        items={navigation}
+        selectedIndex={navigation.findIndex((item) => item.id === props.tab)}
+        onSelect={({ nativeEvent }) => {
+          const item = navigation[nativeEvent.index];
+          if (item) props.navigate(item.id);
+        }}
+        onLayout={props.onLayout}
+        style={styles.nativeBottomNav}
+      />
+    );
+  }
+  return <GlassNavigation {...props} />;
+}
+
+function GlassNavigation({ tab, navigate, desktop = false, onLayout }: NavigationProps) {
   const Surface = desktop ? View : GlassSurface;
+  const Lens = Platform.OS === "web" ? View : Animated.View;
+  const [layouts, setLayouts] = useState<Partial<Record<Tab, LayoutRectangle>>>({});
+  const bounds = layouts[tab];
+  const position = useRef(new Animated.ValueXY()).current;
+  const positioned = useRef(false);
+  const reducedMotion = useReducedMotion();
+  useEffect(() => {
+    if (!bounds || Platform.OS === "web") return;
+    const target = { x: bounds.x, y: bounds.y };
+    if (!positioned.current || reducedMotion) {
+      position.setValue(target);
+      positioned.current = true;
+      return;
+    }
+    const slide = Animated.spring(position, {
+      toValue: target,
+      stiffness: 300,
+      damping: 30,
+      mass: 1,
+      useNativeDriver: true,
+      isInteraction: false,
+    });
+    slide.start();
+    return () => slide.stop();
+  }, [bounds, position, reducedMotion]);
   return (
     <Surface
       style={desktop ? styles.sideNav : styles.bottomNav}
       accessibilityRole="tablist"
       onLayout={onLayout}
     >
+      {bounds && (
+        <Lens
+          nativeID="navigation-lens"
+          testID="navigation-lens"
+          pointerEvents="none"
+          aria-hidden
+          accessibilityElementsHidden
+          style={[
+            styles.navLens,
+            {
+              width: bounds.width,
+              height: bounds.height,
+              borderRadius: bounds.height / 2,
+              ...(Platform.OS === "web"
+                ? { left: bounds.x, top: bounds.y }
+                : { transform: position.getTranslateTransform() }),
+            },
+          ]}
+        />
+      )}
       {navigation.map((item) => (
         <Pressable
           key={item.id}
@@ -207,18 +272,15 @@ function Navigation({
           aria-selected={tab === item.id}
           accessibilityLabel={item.label}
           onPress={() => navigate(item.id)}
+          onLayout={({ nativeEvent: { layout } }) =>
+            setLayouts((previous) => ({ ...previous, [item.id]: layout }))
+          }
           style={({ pressed }) => [
             desktop ? styles.sideNavItem : styles.bottomNavItem,
-            tab === item.id && styles.navItemSelected,
-            pressed && common.pressed,
+            pressed && styles.navPressed,
           ]}
         >
-          <Text
-            style={[styles.navIcon, tab === item.id && styles.navSelected]}
-            accessibilityElementsHidden
-          >
-            {item.icon}
-          </Text>
+          <NavigationIcon kind={item.symbol} color={tab === item.id ? color.green : "#53645c"} />
           <Text
             style={[
               styles.navText,
@@ -525,9 +587,9 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingBottom: 20,
     borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "#ffffffc7",
-    boxShadow: "0 8px 28px rgba(26, 58, 40, 0.10)",
+    borderWidth: 0.5,
+    borderColor: "#ffffffab",
+    boxShadow: "0 8px 32px rgba(31, 52, 44, 0.08)",
   },
   brand: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandIcon: {
@@ -538,7 +600,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  brandSymbol: { color: "#fff", fontSize: 27 },
   brandName: {
     fontSize: 20,
     letterSpacing: -0.6,
@@ -557,11 +618,19 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 25,
   },
-  navItemSelected: { backgroundColor: "#daede2cc" },
-  navIcon: { color: "#5f7568", fontSize: 24, minWidth: 24, textAlign: "center" },
+  navLens: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    backgroundColor: Platform.OS === "web" ? undefined : "#ffffff80",
+    borderWidth: 0.5,
+    borderColor: "#ffffffc7",
+    boxShadow: "0 2px 6px rgba(31, 52, 44, 0.06)",
+  },
+  navPressed: { transform: [{ scale: 0.96 }] },
   navText: { fontSize: 12, color: "#4b5f52", fontWeight: "500", flexShrink: 1 },
   sideNavText: { fontSize: 14 },
-  navSelected: { color: color.green, fontWeight: "700" },
+  navSelected: { color: color.green, fontWeight: "600" },
   sidebarFoot: {
     marginTop: "auto",
     flexDirection: "row",
@@ -579,13 +648,12 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 480,
     flexDirection: "row",
-    borderWidth: 1,
-    borderColor: "#ffffffc7",
     borderRadius: 36,
     padding: 6,
     gap: 4,
-    boxShadow: "0 8px 28px rgba(26, 58, 40, 0.16)",
+    boxShadow: "0 8px 32px rgba(31, 52, 44, 0.12)",
   },
+  nativeBottomNav: { width: "100%", maxWidth: 480, height: 74 },
   bottomNavItem: {
     flex: 1,
     minHeight: 56,

@@ -9,6 +9,27 @@ async function scrollToEnd(target: Locator) {
   });
 }
 
+test("selected lens keeps up when JavaScript animation frames are suspended", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.requestAnimationFrame = () => 0;
+  });
+  await page.goto("/");
+  const navigation = page.getByTestId("navigation-glass");
+  const selected = navigation.getByRole("tab", { name: "关于", exact: true });
+  await expect(navigation.getByTestId("navigation-lens")).toBeVisible();
+  await selected.click();
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+  await expect
+    .poll(async () => {
+      const lens = await navigation.getByTestId("navigation-lens").boundingBox();
+      const target = await selected.boundingBox();
+      return lens && target
+        ? Math.max(Math.abs(lens.x - target.x), Math.abs(lens.y - target.y))
+        : Infinity;
+    })
+    .toBeLessThan(1);
+});
+
 test("glass navigation switches pages and leaves page endings reachable", async ({
   page,
   bridge,
@@ -20,6 +41,8 @@ test("glass navigation switches pages and leaves page endings reachable", async 
     await navigation.evaluate((element) => getComputedStyle(element).backdropFilter),
   ).toContain("blur(");
   const desktop = (page.viewportSize()?.width ?? 0) >= 1024;
+  const lens = navigation.getByTestId("navigation-lens");
+  await expect(lens).toBeVisible();
   const bounds = await navigation.boundingBox();
   if (!bounds) throw new Error("Missing navigation bounds");
   if (desktop) {
@@ -36,6 +59,19 @@ test("glass navigation switches pages and leaves page endings reachable", async 
     await expect(tab).toHaveAttribute("aria-selected", "true");
     const item = await tab.boundingBox();
     expect(item?.height).toBeGreaterThanOrEqual(44);
+    await expect
+      .poll(async () => {
+        const active = await lens.boundingBox();
+        const selected = await tab.boundingBox();
+        if (!active || !selected) return Infinity;
+        return Math.max(
+          Math.abs(active.x - selected.x),
+          Math.abs(active.y - selected.y),
+          Math.abs(active.width - selected.width),
+          Math.abs(active.height - selected.height),
+        );
+      })
+      .toBeLessThan(1);
   }
 
   // Short landscape screens must be able to scroll the last action above the dock.
@@ -68,6 +104,9 @@ test("glass navigation switches pages and leaves page endings reachable", async 
   await expect(page.getByText("选择板子", { exact: true })).toBeVisible();
   expect(bridge.requests.some((command) => command.command === "project")).toBe(true);
   await page.screenshot({ path: test.info().outputPath("glass-navigation.png") });
+  await navigation.getByRole("tab", { name: "PCB 实验室", exact: true }).click();
+  await expect(page.getByRole("button", { name: "打开示例板", exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("navigation-lab.png") });
 });
 
 test("reduced transparency uses an opaque navigation surface", async ({ page, browserName }) => {
@@ -79,6 +118,7 @@ test("reduced transparency uses an opaque navigation surface", async ({ page, br
   await session.send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
   });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   const navigation = page.getByTestId("navigation-glass");
   await expect(navigation).toBeVisible();
@@ -92,4 +132,12 @@ test("reduced transparency uses an opaque navigation surface", async ({ page, br
     .toEqual({ filter: "none", background: "rgb(246, 249, 247)" });
   await navigation.getByRole("tab", { name: "PCB 实验室", exact: true }).click();
   await expect(page.getByRole("button", { name: "打开示例板", exact: true })).toBeAttached();
+  const lens = navigation.getByTestId("navigation-lens");
+  await expect(lens).toHaveCSS("background-color", "rgb(230, 238, 234)");
+  // With reduced motion the selected lens must settle without a spring running afterward.
+  const selected = navigation.getByRole("tab", { name: "PCB 实验室", exact: true });
+  const activeBounds = await lens.boundingBox();
+  const selectedBounds = await selected.boundingBox();
+  expect(activeBounds?.x).toBeCloseTo(selectedBounds?.x ?? Infinity, 0);
+  expect(activeBounds?.y).toBeCloseTo(selectedBounds?.y ?? Infinity, 0);
 });

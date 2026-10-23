@@ -34,9 +34,8 @@ export function GlassSurface({ style, ...props }: ViewProps) {
       {...props}
       testID="navigation-glass"
       style={style}
-      glassEffectStyle="regular"
+      glassEffectStyle="clear"
       colorScheme="light"
-      isInteractive
     />
   );
 }
