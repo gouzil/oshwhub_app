@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
+import { BackHandler, Platform, StatusBar, useWindowDimensions, View } from "react-native";
 import {
-  BackHandler,
-  Platform,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Uniwind } from "uniwind";
+  SafeAreaProvider as NativeSafeAreaProvider,
+  SafeAreaView as NativeSafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import { Uniwind, withUniwind } from "uniwind";
 import { Navigation, type Tab } from "./components/navigation";
+import { Text } from "./components/ui/text";
 import { GlassSurface } from "./GlassSurface";
+import { cn } from "./lib/utils";
 import { layoutFor } from "./model";
 import { NavigationIcon } from "./NavigationIcon";
 import { AboutPage } from "./screens/AboutPage";
@@ -19,13 +17,15 @@ import { DiscoverPage } from "./screens/DiscoverPage";
 import { LabPage } from "./screens/LabPage";
 import { ProjectPage } from "./screens/ProjectPage";
 import { ViewerPage, type ViewerRoute } from "./screens/ViewerPage";
-import { color } from "./theme";
+
+const SafeAreaProvider = withUniwind(NativeSafeAreaProvider);
+const SafeAreaView = withUniwind(NativeSafeAreaView);
 
 Uniwind.setTheme("light");
 
 export function App() {
   return (
-    <SafeAreaProvider style={styles.provider}>
+    <SafeAreaProvider className="h-full flex-1">
       <Shell />
     </SafeAreaProvider>
   );
@@ -69,32 +69,43 @@ function Shell() {
   const hiddenFeed = tab !== "discover" || projectId !== null || viewer !== null;
   return (
     <SafeAreaView
-      style={[styles.app, viewer && { backgroundColor: "#0b121a" }]}
+      className={cn("flex-1 bg-[#edf4ef]", viewer && "bg-viewer")}
       edges={showDock ? ["top", "left", "right"] : ["top", "left", "right", "bottom"]}
     >
       <StatusBar barStyle={viewer ? "light-content" : "dark-content"} />
-      <View nativeID="app-shell" style={styles.shell}>
+      <View
+        nativeID="app-shell"
+        className="min-h-0 flex-1 flex-row web:min-[1024px]:[background:radial-gradient(ellipse_at_0%_0%,#d5e9e6_0,transparent_55%),radial-gradient(ellipse_at_5%_85%,#dce4ee_0,transparent_45%),#edf2ef]"
+      >
         {layout.sidebar > 0 && !viewer && (
-          <View style={[styles.sidebar, { width: layout.sidebar }]}>
-            <GlassSurface style={styles.sidebarGlass}>
-              <View style={styles.brand}>
-                <View style={styles.brandIcon}>
-                  <NavigationIcon kind="cpu" color="#fff" />
+          <View className="p-3" style={{ width: layout.sidebar }}>
+            <GlassSurface className="flex-1 rounded-[28px] border-[0.5px] border-[#ffffffab] px-3 pt-6 pb-5 shadow-[0_8px_32px_rgba(31,52,44,0.08)]">
+              <View className="flex-row items-center gap-2">
+                <View className="size-[34px] items-center justify-center rounded-[10px] bg-primary">
+                  <NavigationIcon
+                    kind="cpu"
+                    strokeClassName="border-white"
+                    fillClassName="bg-white"
+                  />
                 </View>
-                <Text style={styles.brandName}>OSHWHub</Text>
+                <Text className="shrink text-[20px] font-bold tracking-[-0.6px] text-foreground">
+                  OSHWHub
+                </Text>
               </View>
-              <Text style={styles.brandNote}>让硬件想法发生</Text>
+              <Text className="mt-2 ml-[42px] text-[11px] text-muted-foreground">
+                让硬件想法发生
+              </Text>
               <Navigation tab={tab} navigate={navigate} desktop />
-              <View style={styles.sidebarFoot}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.sidebarFootText}>公开浏览 · 无需登录</Text>
+              <View className="mt-auto flex-row items-center gap-1.5 pl-2">
+                <View className="size-[5px] rounded-[3px] bg-[#80a68e]" />
+                <Text className="text-[10px] text-[#8a958e]">公开浏览 · 无需登录</Text>
               </View>
             </GlassSurface>
           </View>
         )}
-        <View style={styles.main}>
+        <View className="min-h-0 min-w-0 flex-1 bg-background">
           <View
-            style={styles.fill}
+            className="min-h-0 flex-1"
             pointerEvents={hiddenFeed ? "none" : "auto"}
             aria-hidden={hiddenFeed}
             importantForAccessibility={hiddenFeed ? "no-hide-descendants" : "auto"}
@@ -107,18 +118,18 @@ function Shell() {
             />
           </View>
           {tab === "lab" && !viewer && (
-            <View style={styles.overlay}>
+            <View className="absolute inset-0 bg-background">
               <LabPage onOpen={() => setViewer({ demo: true })} bottomInset={bottomInset} />
             </View>
           )}
           {tab === "about" && (
-            <View style={styles.overlay}>
+            <View className="absolute inset-0 bg-background">
               <AboutPage bottomInset={bottomInset} />
             </View>
           )}
           {projectId && (
             <View
-              style={styles.overlay}
+              className="absolute inset-0 bg-background"
               pointerEvents={viewer ? "none" : "auto"}
               aria-hidden={!!viewer}
               importantForAccessibility={viewer ? "no-hide-descendants" : "auto"}
@@ -135,7 +146,7 @@ function Shell() {
             </View>
           )}
           {viewer && (
-            <View style={styles.overlay}>
+            <View className="absolute inset-0 bg-background">
               <ViewerPage route={viewer} onBack={() => setViewer(null)} />
             </View>
           )}
@@ -144,10 +155,8 @@ function Shell() {
       {showDock && (
         <View
           pointerEvents="box-none"
-          style={[
-            styles.dock,
-            { bottom: dockBottom, left: insets.left + 16, right: insets.right + 16 },
-          ]}
+          className="absolute items-center"
+          style={{ bottom: dockBottom, left: insets.left + 16, right: insets.right + 16 }}
         >
           <Navigation
             tab={tab}
@@ -159,55 +168,3 @@ function Shell() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  provider: { flex: 1, height: "100%" },
-  app: { flex: 1, backgroundColor: "#edf4ef" },
-  shell: { flex: 1, flexDirection: "row", minHeight: 0 },
-  fill: { flex: 1, minHeight: 0 },
-  main: { flex: 1, minWidth: 0, minHeight: 0, backgroundColor: "#fff" },
-  overlay: { ...StyleSheet.absoluteFill, backgroundColor: "#fff" },
-  sidebar: {
-    padding: 12,
-  },
-  sidebarGlass: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingTop: 24,
-    paddingBottom: 20,
-    borderRadius: 28,
-    borderWidth: 0.5,
-    borderColor: "#ffffffab",
-    boxShadow: "0 8px 32px rgba(31, 52, 44, 0.08)",
-  },
-  brand: { flexDirection: "row", alignItems: "center", gap: 8 },
-  brandIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: color.green,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  brandName: {
-    fontSize: 20,
-    letterSpacing: -0.6,
-    fontWeight: "700",
-    color: color.ink,
-    flexShrink: 1,
-  },
-  brandNote: { color: color.muted, fontSize: 11, marginLeft: 42, marginTop: 8 },
-  sidebarFoot: {
-    marginTop: "auto",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingLeft: 8,
-  },
-  onlineDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#80a68e" },
-  sidebarFootText: { color: "#8a958e", fontSize: 10 },
-  dock: {
-    position: "absolute",
-    alignItems: "center",
-  },
-});

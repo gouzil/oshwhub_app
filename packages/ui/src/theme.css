@@ -5,6 +5,11 @@
 
 @theme {
   --color-background: #ffffff;
+  --color-canvas: #f7f9f7;
+  --color-surface: #f6f9f7;
+  --color-skeleton: #e5ede7;
+  --color-viewer: #0b121a;
+  --color-viewer-panel: #1b242f;
   --color-foreground: #192d26;
   --color-card: #ffffff;
   --color-card-foreground: #192d26;

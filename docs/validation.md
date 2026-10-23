@@ -2,6 +2,33 @@
 
 首轮日期：2026-10-23（Asia/Shanghai）。当时范围为公开项目浏览、搜索、详情、BOM 和专业版二维 PCB 查看。后续三维阶段记录如下；账号、写入和 PCB 编辑仍待后续迭代。
 
+## 2026-10-24 非渲染器 UI 全量 Tailwind 迁移
+
+应用壳、导航、全部页面、BOM、封面/图片、骨架和异步状态的静态样式迁到 UniWind / Tailwind；共享 UI 已无 `StyleSheet`。普通操作、文本和状态面板复用 Reusables，复合卡片/单选项保留 UniWind `Pressable`。剩余 `style` 仅传递测量宽度、底部安全区、图片比例和动画值；SafeArea、Expo 玻璃及原生 tab 宿主通过 `withUniwind` 接入。渲染器 `packages/pcb-viewer`、Rust 和原生图形代码相对此轮起点均无 diff。
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| `pnpm check` | Biome、TypeScript、Rust fmt/clippy 通过；47 项 Vitest、21 项 Node、71 项 Rust 测试通过。2 项既有忽略分别为日志测试子进程入口和在线 API 测试 |
+| `prek run --all-files` | 全部 5 项通过 |
+| Chromium 六视口完整 E2E | 最终 174/174 通过，2.4 分钟；保留 5273 独立服务，未修改用例、阈值或重试次数 |
+| Web 生产构建、Expo Android / iOS JS 导出 | 最新源码均通过；JS 导出不代表设备运行验收 |
+| macOS ARM64 Electron `.app` / DMG / ZIP | 最新源码重新构建通过，仍未签名、公证 |
+| 最新 macOS 实包冒烟与截图 | `oshwhub://app/`、preload 隔离、真实 Rust 健康检查/示例、Tailwind 按钮和 44px 触控目标、本地字体、2D 125% 缩放及 3D 模式通过；已查看实验室和 2D/3D 截图 |
+| 独立源码审查 | 无阻断项；修正 Android/iOS 占位文字颜色，使用 `placeholderTextColorClassName` 的 accent 类映射 |
+
+前两次全量 E2E 各有 3 项超时，系统日志分别记录了同期休眠；第二轮三份失败 trace 均有约 958 秒空档，与约 960 秒系统休眠对应。失败用例独立重复 18/18 通过；最终使用仅随测试进程生效的 `caffeinate -di pnpm test:e2e` 完整通过，未更改系统设置或渲染代码。手机详情页、实验室及导航截图已检查。
+
+另读回原 PR 的 Linux CI 日志，AppImage 因 scoped 包名推导出 `@oshwhubdesktop` 而拒绝生成。使用实际 `LinuxPackager` 和 AppImage 校验器在本机复现失败；设置 Linux `executableName: "oshwhub"` 后同一校验通过。完整 Linux 产物仍以新提交的原生 CI 构建为准。
+
+本轮最新 macOS 产物 SHA-256（下方 Electron 迁移阶段的旧产物校验值仅作历史记录）：
+
+```text
+DMG  3e3bfd95f008df89eabf35c4b3f91d62d51aa948d5a5fc5a77502b9014344250
+ZIP  5942406dde5d03881b3516d8282cbc4c304f55c82e10af097f17cb680871ae0a
+```
+
+本轮未运行 Windows/Linux 实包或移动模拟器/真机，也未补测原生无障碍和真机性能。
+
 ## 2026-10-24 Electron 与共享组件迁移
 
 本轮用 Electron + React Native Web 替换桌面 Tauri，手机和平板继续使用 Expo / React Native；两端共享 React Native Reusables 的 UniWind 组件和 Tailwind CSS 4 主题。基础控件、搜索、TabBar、项目卡片、正文、导航和异步状态分别封装，页面与应用壳分离，公开入口与扩展说明见 [ui.md](ui.md)。Rust 核心、移动原生桥、系统玻璃导航以及 PCB 渲染逻辑保留。
@@ -10,7 +37,7 @@
 
 | 检查 | 本轮结果 |
 | --- | --- |
-| `pnpm check` | Biome、TypeScript、Rust fmt/clippy 通过；47 项 Vitest、21 项 Node 脚本测试、71 项 Rust 测试通过，2 项既有在线测试忽略 |
+| `pnpm check` | Biome、TypeScript、Rust fmt/clippy 通过；47 项 Vitest、21 项 Node 脚本测试、71 项 Rust 测试通过，日志测试子进程入口和在线 API 测试各忽略 1 项 |
 | `prek run --all-files` | 所有钩子通过；最终新增文件另由全目录 Biome 检查覆盖 |
 | Chromium 六视口完整 E2E | 174/174 通过，2.6 分钟；覆盖搜索、分页、详情、BOM、导航、加载与 PCB 2D/3D。独立 5273 端口启动当前工作树，拒绝复用其他 checkout 的预览服务 |
 | Web 生产构建 | 通过，CanvasKit WASM 与中文字体随包生成 |

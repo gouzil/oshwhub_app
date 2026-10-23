@@ -1,15 +1,18 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { Animated, Platform, type StyleProp, View, type ViewStyle } from "react-native";
+import { cn } from "./lib/utils";
 import { useReducedMotion } from "./useReducedMotion";
 
 export function Skeleton({
   children,
   label,
   style,
+  className,
 }: {
   children: ReactNode;
   label: string;
   style?: StyleProp<ViewStyle>;
+  className?: string;
 }) {
   const opacity = useRef(new Animated.Value(1)).current;
   const reducedMotion = useReducedMotion();
@@ -43,6 +46,7 @@ export function Skeleton({
       accessibilityRole="progressbar"
       accessibilityLabel={label}
       accessibilityState={{ busy: true }}
+      className={className}
       style={[style, { opacity }]}
     >
       {children}
@@ -50,13 +54,20 @@ export function Skeleton({
   );
 }
 
-export function SkeletonBlock({ style }: { style?: StyleProp<ViewStyle> }) {
+export function SkeletonBlock({
+  style,
+  className,
+}: {
+  style?: StyleProp<ViewStyle>;
+  className?: string;
+}) {
   return (
     <View
       testID="skeleton-block"
       accessible={false}
       aria-hidden
-      style={[{ height: 16, borderRadius: 8, backgroundColor: "#e5ede7" }, style]}
+      className={cn("h-4 rounded-lg bg-skeleton", className)}
+      style={style}
     />
   );
 }

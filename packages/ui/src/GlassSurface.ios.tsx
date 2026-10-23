@@ -1,10 +1,17 @@
-import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from "expo-glass-effect";
+import {
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+  GlassView as NativeGlassView,
+} from "expo-glass-effect";
 import { useEffect, useState } from "react";
 import { AccessibilityInfo, View, type ViewProps } from "react-native";
+import { withUniwind } from "uniwind";
+import { cn } from "./lib/utils";
 
 const available = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
+const GlassView = withUniwind(NativeGlassView);
 
-export function GlassSurface({ style, ...props }: ViewProps) {
+export function GlassSurface({ className, ...props }: ViewProps) {
   const [reduceTransparency, setReduceTransparency] = useState(true);
   useEffect(() => {
     if (!available) return;
@@ -25,15 +32,13 @@ export function GlassSurface({ style, ...props }: ViewProps) {
     };
   }, []);
   if (!available || reduceTransparency) {
-    return (
-      <View {...props} testID="navigation-glass" style={[style, { backgroundColor: "#f6f9f7" }]} />
-    );
+    return <View {...props} testID="navigation-glass" className={cn(className, "bg-surface")} />;
   }
   return (
     <GlassView
       {...props}
       testID="navigation-glass"
-      style={style}
+      className={className}
       glassEffectStyle="clear"
       colorScheme="light"
     />

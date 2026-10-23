@@ -1,6 +1,6 @@
 import type { ContentBlock, ProjectDetail } from "@oshwhub/bridge";
 import { useMemo, useRef, useState } from "react";
-import { FlatList, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, Platform, ScrollView, View } from "react-native";
 import { BomList } from "../BomList";
 import { ActionButton as Button } from "../components/action-button";
 import { BoardOption } from "../components/board-option";
@@ -10,9 +10,10 @@ import { PageHeader } from "../components/page-header";
 import { ProjectContent } from "../components/project-content";
 import { Empty, ErrorPanel } from "../components/states";
 import { TabBar } from "../components/tab-bar";
+import { Text } from "../components/ui/text";
 import { useCommand } from "../hooks/use-command";
+import { cn } from "../lib/utils";
 import { Skeleton, SkeletonBlock } from "../loading";
-import { color } from "../theme";
 
 export function ProjectPage({
   id,
@@ -43,41 +44,42 @@ export function ProjectPage({
   const selected = project?.boards.find((board) => board.id === boardId) ?? project?.boards[0];
   const wide = width >= 900;
   return (
-    <View style={styles.root}>
+    <View className="min-h-0 flex-1">
       <PageHeader title={project?.summary.name ?? "项目详情"} onBack={onBack} />
       {loading ? (
         <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            { padding: width < 400 ? 16 : 28, paddingBottom: 40 + bottomInset },
-          ]}
+          contentContainerClassName={cn(
+            "w-full max-w-[1120px] self-center",
+            width < 400 ? "p-4" : "p-7",
+          )}
+          contentContainerStyle={{ paddingBottom: 40 + bottomInset }}
         >
-          <Skeleton label="正在打开项目" style={{ gap: 24 }}>
-            <View style={[styles.hero, wide && styles.heroWide]}>
+          <Skeleton label="正在打开项目" className="gap-6">
+            <View className={cn("gap-6", wide && "flex-row items-start gap-8")}>
               <SkeletonBlock
-                style={[
-                  styles.heroCover,
-                  wide && styles.heroCoverWide,
-                  { height: wide ? 260 : 190 },
-                ]}
+                className={cn(
+                  "h-[190px] w-full overflow-hidden rounded-[18px]",
+                  wide && "h-[260px] w-[44%]",
+                )}
               />
-              <View style={styles.heroInfo}>
-                <SkeletonBlock style={{ width: "30%", height: 12 }} />
-                <SkeletonBlock style={{ width: "85%", height: 30 }} />
-                <SkeletonBlock style={{ width: "50%" }} />
+              <View className="min-w-0 flex-1 gap-3">
+                <SkeletonBlock className="h-3 w-[30%]" />
+                <SkeletonBlock className="h-[30px] w-[85%]" />
+                <SkeletonBlock className="w-1/2" />
                 <SkeletonBlock />
-                <SkeletonBlock style={{ width: "70%" }} />
+                <SkeletonBlock className="w-[70%]" />
               </View>
             </View>
-            <SkeletonBlock style={{ height: 44, width: "60%" }} />
+            <SkeletonBlock className="h-11 w-[60%]" />
             <SkeletonBlock />
             <SkeletonBlock />
-            <SkeletonBlock style={{ width: "70%" }} />
+            <SkeletonBlock className="w-[70%]" />
           </Skeleton>
         </ScrollView>
       ) : error ? (
         <ScrollView
-          contentContainerStyle={[styles.errorContent, { paddingBottom: 40 + bottomInset }]}
+          contentContainerClassName="grow justify-center p-5"
+          contentContainerStyle={{ paddingBottom: 40 + bottomInset }}
         >
           <ErrorPanel error={error} retry={retry} />
         </ScrollView>
@@ -87,11 +89,12 @@ export function ProjectPage({
             ref={list}
             testID="project-content-list"
             keyboardShouldPersistTaps="handled"
-            style={{ flex: 1 }}
-            contentContainerStyle={[
-              styles.content,
-              { padding: width < 400 ? 16 : 28, paddingBottom: 40 + bottomInset },
-            ]}
+            className="flex-1"
+            contentContainerClassName={cn(
+              "w-full max-w-[1120px] self-center",
+              width < 400 ? "p-4" : "p-7",
+            )}
+            contentContainerStyle={{ paddingBottom: 40 + bottomInset }}
             data={tab === "intro" ? project.content : []}
             keyExtractor={(item, index) => `${index}-${item.kind}`}
             initialNumToRender={4}
@@ -102,41 +105,46 @@ export function ProjectPage({
             viewabilityConfig={viewabilityConfig}
             extraData={readyThrough}
             renderItem={({ item, index }) => (
-              <View style={styles.articleBlock}>
+              <View className="pt-[18px]">
                 <ProjectContent block={item} visible={index <= readyThrough} />
               </View>
             )}
             ListHeaderComponent={
               <>
-                <View style={[styles.hero, wide && styles.heroWide]}>
-                  <View style={[styles.heroCover, wide && styles.heroCoverWide]}>
+                <View className={cn("gap-6", wide && "flex-row items-start gap-8")}>
+                  <View className={cn("w-full overflow-hidden rounded-[18px]", wide && "w-[44%]")}>
                     <Cover
                       url={project.summary.cover}
                       title={project.summary.name}
                       aspectRatio={wide ? 1.35 : 1.7}
                     />
                   </View>
-                  <View style={styles.heroInfo}>
-                    <Text style={styles.projectKicker}>开源项目</Text>
-                    <Text selectable style={styles.title}>
+                  <View className="min-w-0 flex-1 gap-3">
+                    <Text className="text-[11px] font-semibold tracking-[1px] text-primary">
+                      开源项目
+                    </Text>
+                    <Text
+                      selectable
+                      className="text-[25px] leading-[35px] font-bold text-foreground"
+                    >
                       {project.summary.name}
                     </Text>
-                    <Text style={styles.author}>
+                    <Text className="text-[13px] text-muted-foreground">
                       由 {project.summary.author || "开源创作者"} 分享
                     </Text>
                     {project.summary.description.length > 0 && (
-                      <Text selectable style={styles.description}>
+                      <Text selectable className="text-[14px] leading-6 text-[#56695e]">
                         {project.summary.description}
                       </Text>
                     )}
-                    <View style={styles.tags}>
+                    <View className="flex-row flex-wrap gap-1.5">
                       {[...new Set(project.summary.tags)].map((tag) => (
-                        <View key={tag} style={styles.tag}>
-                          <Text style={styles.tagText}>{tag}</Text>
+                        <View key={tag} className="rounded-[6px] bg-secondary px-[9px] py-[5px]">
+                          <Text className="text-[11px] text-[#568065]">{tag}</Text>
                         </View>
                       ))}
                     </View>
-                    <Text style={styles.stats}>
+                    <Text className="text-[12px] text-[#8a978e]">
                       ♡ {project.summary.likes.toLocaleString()} 喜欢{" "}
                       {project.summary.views.toLocaleString()} 次浏览
                     </Text>
@@ -158,14 +166,16 @@ export function ProjectPage({
                   className="mt-7 flex-wrap gap-3.5 border-b border-border"
                 />
                 {tab === "hardware" && (
-                  <View style={styles.hardware}>
+                  <View className="gap-4 pt-6">
                     {project.boards.length ? (
                       <>
-                        <Text style={styles.sectionTitle}>选择板子</Text>
+                        <Text className="text-[17px] leading-[26px] font-semibold text-foreground">
+                          选择板子
+                        </Text>
                         <ScrollView
                           horizontal
                           showsHorizontalScrollIndicator={false}
-                          contentContainerStyle={styles.boardOptions}
+                          contentContainerClassName="gap-3 py-1"
                         >
                           {project.boards.map((board) => (
                             <BoardOption
@@ -177,13 +187,13 @@ export function ProjectPage({
                           ))}
                         </ScrollView>
                         {selected && (
-                          <View style={styles.boardPanel}>
-                            <View style={styles.boardPanelHeading}>
-                              <View style={styles.boardPanelName}>
-                                <Text style={styles.sectionTitle}>
+                          <View className="border-t border-border pt-4">
+                            <View className="mb-[26px] flex-row flex-wrap items-center justify-between gap-4">
+                              <View className="shrink gap-1.5">
+                                <Text className="text-[17px] leading-[26px] font-semibold text-foreground">
                                   {selected.name || "未命名板子"}
                                 </Text>
-                                <Text style={styles.boardCount}>
+                                <Text className="text-[12px] text-muted-foreground">
                                   {selected.bom.length} 种物料 ·{" "}
                                   {selected.bom.reduce((sum, item) => sum + item.quantity, 0)}{" "}
                                   个元件
@@ -197,7 +207,9 @@ export function ProjectPage({
                                 }}
                               />
                             </View>
-                            <Text style={styles.bomHeading}>物料清单 / BOM</Text>
+                            <Text className="mb-2 text-[12px] tracking-[0.5px] text-muted-foreground">
+                              物料清单 / BOM
+                            </Text>
                             {selected.bom.length ? (
                               <BomList key={selected.id} items={selected.bom} wide={width >= 720} />
                             ) : (
@@ -220,10 +232,12 @@ export function ProjectPage({
             }
             ListFooterComponent={
               tab === "intro" ? (
-                <View style={styles.article}>
+                <View className="gap-[18px] pt-6">
                   {project.attachments.length > 0 && (
-                    <View style={styles.attachments}>
-                      <Text style={styles.sectionTitle}>项目附件</Text>
+                    <View className="border-t border-border pt-5">
+                      <Text className="text-[17px] leading-[26px] font-semibold text-foreground">
+                        项目附件
+                      </Text>
                       {project.attachments.map((attachment, i) => (
                         <ExternalLink
                           key={`${attachment.url}-${i}`}
@@ -252,45 +266,3 @@ export function ProjectPage({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 0 },
-  errorContent: { padding: 20, flexGrow: 1, justifyContent: "center" },
-  content: { width: "100%", maxWidth: 1120, alignSelf: "center", paddingBottom: 40 },
-  hero: { gap: 24 },
-  heroWide: { flexDirection: "row", alignItems: "flex-start", gap: 32 },
-  heroCover: { overflow: "hidden", borderRadius: 18, width: "100%" },
-  heroCoverWide: { width: "44%" },
-  heroInfo: { flex: 1, minWidth: 0, gap: 12 },
-  projectKicker: { fontSize: 11, color: color.green, fontWeight: "600", letterSpacing: 1 },
-  title: { color: color.ink, fontSize: 25, lineHeight: 35, fontWeight: "700" },
-  author: { color: color.muted, fontSize: 13 },
-  description: { color: "#56695e", fontSize: 14, lineHeight: 24 },
-  tags: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  tag: {
-    paddingVertical: 5,
-    paddingHorizontal: 9,
-    backgroundColor: color.greenLight,
-    borderRadius: 6,
-  },
-  tagText: { color: "#568065", fontSize: 11 },
-  stats: { color: "#8a978e", fontSize: 12 },
-  article: { paddingTop: 24, gap: 18 },
-  articleBlock: { paddingTop: 18 },
-  attachments: { paddingTop: 20, borderTopWidth: 1, borderTopColor: color.line },
-  sectionTitle: { color: color.ink, fontSize: 17, lineHeight: 26, fontWeight: "600" },
-  hardware: { paddingTop: 24, gap: 16 },
-  boardOptions: { gap: 12, paddingVertical: 4 },
-  boardPanel: { borderTopWidth: 1, borderTopColor: color.line, paddingTop: 16 },
-  boardPanelHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-    flexWrap: "wrap",
-    marginBottom: 26,
-  },
-  boardPanelName: { flexShrink: 1, gap: 6 },
-  boardCount: { color: color.muted, fontSize: 12 },
-  bomHeading: { fontSize: 12, color: color.muted, letterSpacing: 0.5, marginBottom: 8 },
-});

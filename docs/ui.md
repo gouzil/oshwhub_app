@@ -12,7 +12,7 @@
 | `packages/ui/src/hooks/` | 共享命令加载与重试 |
 | `packages/ui/src/App.tsx` | 当前页面、导航、安全区域和系统返回键 |
 | `packages/ui/src/theme.css` | 所有端共同编译的 Tailwind 主题和源码扫描入口 |
-| `packages/ui/src/theme.ts` | 既有原生动画、图形和 StyleSheet 使用的颜色 |
+| `packages/ui/src/theme.ts` | 保留既有 `color` 导出的兼容入口；新样式使用主题类 |
 
 组件通过 `packages/ui/src/index.ts` 统一导出。移动 Metro 和桌面 Vite 分别接入 UniWind；两个入口引用同一份主题，不在页面重复安装或配置 Tailwind。生成的 `uniwind-types.d.ts` 保留类型支持，由构建工具更新。
 
@@ -36,7 +36,11 @@ import { ActionButton, Button, Card, CardContent, Text } from "@oshwhub/ui";
 
 `SearchField` 复用于项目搜索和 BOM，支持受控 value 或非受控 defaultValue，并透传原生 input ref。首页保留非受控输入，防止 FlatList 重渲染覆盖正在输入的字符；搜索提交、清除和 BOM 防抖由页面负责。`TabBar` 复用于排序、详情分区及 2D/3D 模式，统一选中和禁用语义。
 
-颜色优先使用 `bg-primary`、`text-muted-foreground`、`border-border` 等语义类。`cn()` 会合并条件类并解决 Tailwind 冲突。根据原生能力差异使用平台变体；手势、Skia 画布、动态测量和系统玻璃仍保留合适的原生样式，不把每个图元做成 React 组件。当前应用统一使用浅色主题。
+颜色优先使用 `bg-primary`、`text-muted-foreground`、`border-border` 等语义类。`cn()` 会合并条件类并解决 Tailwind 冲突；条件分支必须写出完整类名，避免拼接无法扫描的工具类。当前应用统一使用浅色主题。
+
+应用壳、导航、页面、BOM、封面、图片、加载和错误状态均使用 UniWind 工具类，非渲染器 UI 已移除 `StyleSheet.create`。`RemoteImage`、`Skeleton` 和 `SkeletonBlock` 透传 `className`；列表使用 `contentContainerClassName` / `columnWrapperClassName`。静态尺寸、排版、状态色和 Web 玻璃效果都在组件中声明；桌面全局 CSS 只保留 Tailwind 导入与浏览器根节点、字体、焦点的基础规则。
+
+`style` 仅用于运行时计算的卡片/侧栏宽度、安全区域间距、图片宽高比和导航/骨架动画。第三方 SafeArea、Expo 玻璃和原生 tab 宿主通过 `withUniwind` 接入；系统玻璃 API、降低动态效果/透明度设置仍按平台处理。复合项目卡和板子单选项保留有语义的 `Pressable` 并使用 UniWind，普通操作、文本、输入、卡片和徽章复用 Reusables。`packages/pcb-viewer` 内的 Skia、WebGL、手势及查看器控件样式不在本次迁移范围。
 
 ## 扩展与检查
 

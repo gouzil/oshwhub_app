@@ -1,6 +1,5 @@
 import { Component, type ReactNode } from "react";
-import { ScrollView, StyleSheet } from "react-native";
-import { color } from "../theme";
+import { ScrollView } from "react-native";
 import { ErrorPanel } from "./states";
 
 export class ViewerBoundary extends Component<
@@ -13,7 +12,7 @@ export class ViewerBoundary extends Component<
   }
   render() {
     return this.state.error ? (
-      <ScrollView contentContainerStyle={styles.error}>
+      <ScrollView contentContainerClassName="grow justify-center bg-canvas p-5">
         <ErrorPanel
           error={this.state.error}
           retry={() => {
@@ -27,7 +26,3 @@ export class ViewerBoundary extends Component<
     );
   }
 }
-
-const styles = StyleSheet.create({
-  error: { padding: 20, flexGrow: 1, justifyContent: "center", backgroundColor: color.canvas },
-});

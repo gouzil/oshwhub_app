@@ -1,14 +1,8 @@
 import { useRef, useState } from "react";
-import {
-  Image,
-  PixelRatio,
-  Pressable,
-  type StyleProp,
-  StyleSheet,
-  Text,
-  View,
-  type ViewStyle,
-} from "react-native";
+import { Image, PixelRatio, type StyleProp, View, type ViewStyle } from "react-native";
+import { Button } from "./components/ui/button";
+import { Text } from "./components/ui/text";
+import { cn } from "./lib/utils";
 import { Skeleton, SkeletonBlock } from "./loading";
 import { imagePreviewUrl, safeUrl } from "./model";
 
@@ -20,6 +14,7 @@ export function RemoteImage({
   natural = false,
   resizeMode = "contain",
   style,
+  className,
 }: {
   url: string;
   label: string;
@@ -28,6 +23,7 @@ export function RemoteImage({
   natural?: boolean;
   resizeMode?: "contain" | "cover";
   style?: StyleProp<ViewStyle>;
+  className?: string;
 }) {
   const [width, setWidth] = useState(0);
   const [fallbackFor, setFallbackFor] = useState<string | null>(null);
@@ -58,22 +54,23 @@ export function RemoteImage({
   return (
     <View
       onLayout={(event) => setWidth(Math.round(event.nativeEvent.layout.width))}
-      style={[styles.frame, { aspectRatio: ratio }, style]}
+      className={cn("w-full overflow-hidden rounded-[10px] bg-[#f5f8f5]", className)}
+      style={[{ aspectRatio: ratio }, style]}
     >
       {failed ? (
-        <View style={styles.error}>
-          <Text style={styles.errorText}>图片暂时无法显示</Text>
-          <Pressable
-            accessibilityRole="button"
+        <View className="flex-1 items-center justify-center gap-2.5 p-4">
+          <Text className="text-[13px] text-muted-foreground">图片暂时无法显示</Text>
+          <Button
+            variant="link"
             accessibilityLabel={`重新加载图片：${label}`}
             onPress={() => {
               setFallbackFor(null);
               setAttempt((value) => value + 1);
             }}
-            style={styles.retry}
+            className="min-h-11 p-3"
           >
-            <Text style={styles.retryText}>重新加载图片</Text>
-          </Pressable>
+            <Text className="text-sm font-normal">重新加载图片</Text>
+          </Button>
         </View>
       ) : (
         <>
@@ -102,27 +99,19 @@ export function RemoteImage({
                   else Image.getSize(uri, updateRatio, () => {});
                 }
               }}
-              style={[StyleSheet.absoluteFill, !loaded && { opacity: 0 }]}
+              className={cn("absolute inset-0", !loaded && "opacity-0")}
             />
           )}
           {!loaded &&
             (enabled ? (
-              <Skeleton label={`正在加载图片：${label}`} style={StyleSheet.absoluteFill}>
-                <SkeletonBlock style={{ flex: 1, height: "100%" }} />
+              <Skeleton label={`正在加载图片：${label}`} className="absolute inset-0">
+                <SkeletonBlock className="h-full flex-1" />
               </Skeleton>
             ) : (
-              <SkeletonBlock style={StyleSheet.absoluteFill} />
+              <SkeletonBlock className="absolute inset-0 h-auto" />
             ))}
         </>
       )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  frame: { width: "100%", backgroundColor: "#f5f8f5", borderRadius: 10, overflow: "hidden" },
-  error: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 16 },
-  errorText: { color: "#738079", fontSize: 13 },
-  retry: { minHeight: 44, padding: 12, justifyContent: "center" },
-  retryText: { color: "#07845d", fontSize: 14 },
-});

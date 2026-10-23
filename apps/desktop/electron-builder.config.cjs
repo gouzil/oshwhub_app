@@ -25,6 +25,7 @@ module.exports = {
   },
   win: { target: ["nsis"], icon: "electron/icons/icon.ico" },
   linux: {
+    executableName: "oshwhub",
     target: ["AppImage", "deb"],
     category: "Development",
     icon: "electron/icons/icon.png",

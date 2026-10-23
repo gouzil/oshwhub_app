@@ -1,22 +1,33 @@
 import type { ContentBlock } from "@oshwhub/bridge";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Platform, View } from "react-native";
 import { RemoteImage } from "../images";
+import { cn } from "../lib/utils";
 import { safeUrl } from "../model";
-import { color } from "../theme";
 import { ExternalLink } from "./external-link";
+import { Text } from "./ui/text";
 
 export function ProjectContent({ block, visible }: { block: ContentBlock; visible: boolean }) {
   if (block.kind === "image") return <ContentImage block={block} visible={visible} />;
   if (block.kind === "heading")
     return (
-      <Text selectable style={styles.contentHeading} accessibilityRole="header">
+      <Text
+        selectable
+        className="mt-3 text-[21px] font-semibold leading-[31px]"
+        accessibilityRole="header"
+      >
         {block.text}
       </Text>
     );
   if (block.kind === "code")
     return (
-      <View style={styles.code}>
-        <Text selectable style={styles.codeText}>
+      <View className="rounded-[10px] bg-[#f2f5f2] p-4">
+        <Text
+          selectable
+          className={cn(
+            "text-xs leading-[21px] text-[#45574b]",
+            Platform.OS === "ios" ? "font-[Menlo]" : "font-[monospace]",
+          )}
+        >
           {block.text}
         </Text>
       </View>
@@ -24,7 +35,7 @@ export function ProjectContent({ block, visible }: { block: ContentBlock; visibl
   if (block.kind === "link" && block.url)
     return <ExternalLink url={block.url} label={block.text || "打开链接"} />;
   return (
-    <Text selectable style={styles.contentText}>
+    <Text selectable className="text-[15px] leading-[27px] text-[#42574b]">
       {block.text}
     </Text>
   );
@@ -34,44 +45,20 @@ function ContentImage({ block, visible }: { block: ContentBlock; visible: boolea
   const uri = safeUrl(block.url);
   if (!uri)
     return (
-      <Text style={styles.imageError}>图片暂时无法显示{block.text ? `：${block.text}` : ""}</Text>
+      <Text className="rounded-[10px] bg-canvas p-5 text-[13px] text-muted-foreground">
+        图片暂时无法显示{block.text ? `：${block.text}` : ""}
+      </Text>
     );
   return (
-    <View style={{ gap: 4 }}>
+    <View className="gap-1">
       <RemoteImage
         url={uri}
         label={block.text || "项目说明图片"}
         enabled={visible}
         natural
-        style={styles.contentImage}
+        className="max-w-[960px] self-center"
       />
       <ExternalLink url={uri} label={`查看原图：${block.text || "项目说明图片"}`} />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  contentText: { color: "#42574b", fontSize: 15, lineHeight: 27 },
-  contentHeading: {
-    color: color.ink,
-    fontWeight: "600",
-    fontSize: 21,
-    lineHeight: 31,
-    marginTop: 12,
-  },
-  contentImage: { maxWidth: 960, alignSelf: "center" },
-  imageError: {
-    padding: 20,
-    color: color.muted,
-    fontSize: 13,
-    backgroundColor: color.canvas,
-    borderRadius: 10,
-  },
-  code: { padding: 16, backgroundColor: "#f2f5f2", borderRadius: 10 },
-  codeText: {
-    color: "#45574b",
-    fontSize: 12,
-    lineHeight: 21,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-});

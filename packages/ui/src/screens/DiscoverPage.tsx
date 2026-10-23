@@ -7,15 +7,16 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { FlatList, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
+import { FlatList, ScrollView, type TextInput, View } from "react-native";
 import { ActionButton as Button } from "../components/action-button";
 import { ProjectCard } from "../components/project-card";
 import { SearchField } from "../components/search-field";
 import { Empty, ErrorPanel, Loading } from "../components/states";
 import { TabBar } from "../components/tab-bar";
+import { Text } from "../components/ui/text";
+import { cn } from "../lib/utils";
 import { Skeleton, SkeletonBlock } from "../loading";
 import { FeedController, layoutFor } from "../model";
-import { color } from "../theme";
 
 const sorts: { value: Sort; label: string }[] = [
   { value: "recommend", label: "为你推荐" },
@@ -61,19 +62,25 @@ export function DiscoverPage({
   const search = () => setQuery(latestDraft.current.trim());
   const header = (
     <View>
-      <View style={styles.discoverHeading}>
-        <Text style={styles.eyebrow}>OSHWHUB · 开源硬件社区</Text>
-        <Text style={styles.title}>发现下一个好想法</Text>
-        <Text style={styles.subtitle}>探索、学习，与创造者一起把灵感变成现实。</Text>
+      <View className="pt-7 pb-[22px]">
+        <Text className="mb-2.5 text-[10px] font-bold tracking-[1.4px] text-primary">
+          OSHWHUB · 开源硬件社区
+        </Text>
+        <Text className="text-[28px] leading-[37px] font-bold tracking-[-0.7px] text-foreground">
+          发现下一个好想法
+        </Text>
+        <Text className="mt-2 text-[12px] leading-5 text-muted-foreground">
+          探索、学习，与创造者一起把灵感变成现实。
+        </Text>
       </View>
-      <View style={styles.searchRow}>
+      <View className="flex-row items-center gap-2.5">
         {/* Keep native edits across list rerenders; clear() is the only write to the input. */}
         <SearchField
           ref={searchInput}
           containerClassName="flex-1"
           accessibilityLabel="搜索开源硬件项目"
           placeholder="搜索项目、开发板、灵感…"
-          placeholderTextColor="#8e9993"
+          placeholderTextColorClassName="accent-[#8e9993]"
           defaultValue={latestDraft.current}
           onChangeText={changeDraft}
           onSubmitEditing={({ nativeEvent }) => {
@@ -88,20 +95,22 @@ export function DiscoverPage({
             setQuery("");
           }}
         />
-        <Button label="搜索" onPress={search} style={styles.searchButton} />
+        <Button label="搜索" onPress={search} className="min-h-12 px-4" />
       </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.sortRow}
+        contentContainerClassName="gap-2 pt-5 pb-2"
         keyboardShouldPersistTaps="handled"
       >
         <TabBar items={sorts} value={sort} onValueChange={setSort} accessibilityLabel="项目排序" />
       </ScrollView>
-      <View style={styles.feedHeading}>
-        <Text style={styles.feedTitle}>{query ? `“${query}”的搜索结果` : "精选开源项目"}</Text>
+      <View className="flex-row flex-wrap items-center justify-between gap-3 pt-5 pb-1">
+        <Text className="shrink text-[17px] font-semibold text-foreground">
+          {query ? `“${query}”的搜索结果` : "精选开源项目"}
+        </Text>
         {state.total > 0 && (
-          <Text style={styles.feedCount}>{state.total.toLocaleString()} 个项目</Text>
+          <Text className="text-[11px] text-[#8a978e]">{state.total.toLocaleString()} 个项目</Text>
         )}
       </View>
     </View>
@@ -113,13 +122,10 @@ export function DiscoverPage({
       data={state.items}
       keyExtractor={(item) => item.id}
       numColumns={layout.columns}
-      style={styles.feed}
-      contentContainerStyle={{
-        paddingHorizontal: layout.padding,
-        paddingBottom: 32 + bottomInset,
-        gap: 18,
-      }}
-      columnWrapperStyle={{ gap: layout.gap }}
+      className="w-full max-w-[1440px] flex-1 self-center"
+      contentContainerClassName={cn("gap-[18px]", layout.padding === 16 ? "px-4" : "px-6")}
+      contentContainerStyle={{ paddingBottom: 32 + bottomInset }}
+      columnWrapperClassName={cn(layout.gap === 12 ? "gap-3" : "gap-4")}
       ListHeaderComponent={header}
       keyboardShouldPersistTaps="handled"
       renderItem={({ item }) => (
@@ -133,15 +139,15 @@ export function DiscoverPage({
         state.loading ? (
           <Skeleton
             label="正在寻找好项目"
-            style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}
+            className={cn("flex-row flex-wrap", layout.gap === 12 ? "gap-3" : "gap-4")}
           >
             {["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
               .slice(0, layout.columns * 2)
               .map((slot) => (
-                <View key={slot} style={{ width: layout.cardWidth, gap: 12, paddingBottom: 16 }}>
+                <View key={slot} className="gap-3 pb-4" style={{ width: layout.cardWidth }}>
                   <SkeletonBlock style={{ height: layout.cardWidth / 1.17 }} />
-                  <SkeletonBlock style={{ width: "86%", height: 20 }} />
-                  <SkeletonBlock style={{ width: "60%", height: 12 }} />
+                  <SkeletonBlock className="h-5 w-[86%]" />
+                  <SkeletonBlock className="h-3 w-[60%]" />
                 </View>
               ))}
           </Skeleton>
@@ -153,7 +159,7 @@ export function DiscoverPage({
       }
       ListFooterComponent={
         state.items.length ? (
-          <View style={styles.feedFooter}>
+          <View className="mt-4 pb-4">
             {state.error ? (
               <ErrorPanel error={state.error} retry={() => void controller.loadMore()} />
             ) : state.loading ? (
@@ -161,7 +167,9 @@ export function DiscoverPage({
             ) : state.hasMore ? (
               <Button label="加载更多项目" secondary onPress={() => void controller.loadMore()} />
             ) : (
-              <Text style={styles.endNote}>已经看到全部项目了</Text>
+              <Text className="py-5 text-center text-[12px] text-muted-foreground">
+                已经看到全部项目了
+              </Text>
             )}
           </View>
         ) : undefined
@@ -169,33 +177,3 @@ export function DiscoverPage({
     />
   );
 }
-
-const styles = StyleSheet.create({
-  feed: { flex: 1, width: "100%", maxWidth: 1440, alignSelf: "center" },
-  discoverHeading: { paddingTop: 28, paddingBottom: 22 },
-  eyebrow: {
-    color: color.green,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.4,
-    marginBottom: 10,
-  },
-  title: { fontSize: 28, lineHeight: 37, color: color.ink, fontWeight: "700", letterSpacing: -0.7 },
-  subtitle: { marginTop: 8, color: color.muted, fontSize: 12, lineHeight: 20 },
-  searchRow: { flexDirection: "row", gap: 10, alignItems: "center" },
-  searchButton: { minHeight: 48, paddingHorizontal: 16 },
-  sortRow: { gap: 8, paddingTop: 20, paddingBottom: 8 },
-  feedHeading: {
-    paddingTop: 20,
-    paddingBottom: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  feedTitle: { fontSize: 17, fontWeight: "600", color: color.ink, flexShrink: 1 },
-  feedCount: { fontSize: 11, color: "#8a978e" },
-  feedFooter: { marginTop: 16, paddingBottom: 16 },
-  endNote: { paddingVertical: 20, textAlign: "center", fontSize: 12, color: color.muted },
-});

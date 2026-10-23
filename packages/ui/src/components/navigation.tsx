@@ -4,16 +4,15 @@ import {
   type LayoutChangeEvent,
   type LayoutRectangle,
   Platform,
-  Pressable,
-  StyleSheet,
-  Text,
   View,
 } from "react-native";
 import { GlassSurface } from "../GlassSurface";
+import { cn } from "../lib/utils";
 import { NativeTabBar } from "../NativeTabBar";
 import { NavigationIcon } from "../NavigationIcon";
-import { color } from "../theme";
 import { useReducedMotion } from "../useReducedMotion";
+import { Button } from "./ui/button";
+import { Text } from "./ui/text";
 
 export type Tab = "discover" | "lab" | "about";
 
@@ -41,7 +40,7 @@ export function Navigation(props: NavigationProps) {
           if (item) props.navigate(item.id);
         }}
         onLayout={props.onLayout}
-        style={styles.nativeBottomNav}
+        className="h-[74px] w-full max-w-[480px]"
       />
     );
   }
@@ -77,7 +76,11 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
   }, [bounds, position, reducedMotion]);
   return (
     <Surface
-      style={desktop ? styles.sideNav : styles.bottomNav}
+      className={
+        desktop
+          ? "mt-11 gap-2"
+          : "w-full max-w-[480px] flex-row gap-1 rounded-[36px] p-1.5 shadow-[0_8px_32px_rgba(31,52,44,0.12)]"
+      }
       accessibilityRole="tablist"
       onLayout={onLayout}
     >
@@ -88,92 +91,52 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
           pointerEvents="none"
           aria-hidden
           accessibilityElementsHidden
-          style={[
-            styles.navLens,
-            {
-              width: bounds.width,
-              height: bounds.height,
-              borderRadius: bounds.height / 2,
-              ...(Platform.OS === "web"
-                ? { left: bounds.x, top: bounds.y }
-                : { transform: position.getTranslateTransform() }),
-            },
-          ]}
+          className="absolute top-0 left-0 border-[0.5px] border-[#ffffffc7] bg-[#ffffff80] shadow-[0_2px_6px_rgba(31,52,44,0.06)] web:bg-white/[0.18] web:bg-[linear-gradient(150deg,rgba(255,255,255,0.7),rgba(255,255,255,0.12))] web:[transition:left_320ms_cubic-bezier(0.2,0.8,0.2,1),top_320ms_cubic-bezier(0.2,0.8,0.2,1)] web:motion-reduce:transition-none! web:[@media(prefers-reduced-transparency:reduce)]:bg-[#e6eeea]! web:[@media(prefers-reduced-transparency:reduce)]:bg-none!"
+          style={{
+            width: bounds.width,
+            height: bounds.height,
+            borderRadius: bounds.height / 2,
+            ...(Platform.OS === "web"
+              ? { left: bounds.x, top: bounds.y }
+              : { transform: position.getTranslateTransform() }),
+          }}
         />
       )}
       {navigation.map((item) => (
-        <Pressable
+        <Button
           key={item.id}
+          role="tab"
           accessibilityRole="tab"
+          variant="link"
           aria-selected={tab === item.id}
           accessibilityLabel={item.label}
           onPress={() => navigate(item.id)}
           onLayout={({ nativeEvent: { layout } }) =>
             setLayouts((previous) => ({ ...previous, [item.id]: layout }))
           }
-          style={({ pressed }) => [
-            desktop ? styles.sideNavItem : styles.bottomNavItem,
-            pressed && styles.navPressed,
-          ]}
+          className={cn(
+            "active:scale-[0.96] web:whitespace-normal web:transition-none web:focus-visible:outline-2 web:focus-visible:outline-offset-[3px] web:focus-visible:outline-[#15964a] web:focus-visible:ring-0",
+            desktop
+              ? "min-h-[50px] justify-start gap-3 rounded-[25px] px-3 py-2.5"
+              : "min-h-14 flex-1 shrink flex-col gap-0.5 rounded-[28px] px-1 py-1",
+          )}
         >
-          <NavigationIcon kind={item.symbol} color={tab === item.id ? color.green : "#53645c"} />
+          <NavigationIcon
+            kind={item.symbol}
+            strokeClassName={tab === item.id ? "border-primary" : "border-[#53645c]"}
+            fillClassName={tab === item.id ? "bg-primary" : "bg-[#53645c]"}
+          />
           <Text
-            style={[
-              styles.navText,
-              desktop && styles.sideNavText,
-              tab === item.id && styles.navSelected,
-            ]}
+            className={cn(
+              "shrink font-medium text-[#4b5f52] group-active:no-underline web:hover:no-underline web:group-hover:no-underline",
+              desktop ? "text-[14px]" : "text-[12px]",
+              tab === item.id && "font-semibold text-primary",
+            )}
           >
             {item.label}
           </Text>
-        </Pressable>
+        </Button>
       ))}
     </Surface>
   );
 }
-
-const styles = StyleSheet.create({
-  sideNav: { marginTop: 44, gap: 8 },
-  sideNavItem: {
-    minHeight: 50,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 25,
-  },
-  navLens: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    backgroundColor: Platform.OS === "web" ? undefined : "#ffffff80",
-    borderWidth: 0.5,
-    borderColor: "#ffffffc7",
-    boxShadow: "0 2px 6px rgba(31, 52, 44, 0.06)",
-  },
-  navPressed: { transform: [{ scale: 0.96 }] },
-  navText: { fontSize: 12, color: "#4b5f52", fontWeight: "500", flexShrink: 1 },
-  sideNavText: { fontSize: 14 },
-  navSelected: { color: color.green, fontWeight: "600" },
-  bottomNav: {
-    width: "100%",
-    maxWidth: 480,
-    flexDirection: "row",
-    borderRadius: 36,
-    padding: 6,
-    gap: 4,
-    boxShadow: "0 8px 32px rgba(31, 52, 44, 0.12)",
-  },
-  nativeBottomNav: { width: "100%", maxWidth: 480, height: 74 },
-  bottomNavItem: {
-    flex: 1,
-    minHeight: 56,
-    gap: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-    borderRadius: 28,
-  },
-});

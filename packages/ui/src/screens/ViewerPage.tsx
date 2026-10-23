@@ -1,12 +1,13 @@
 import type { Scene } from "@oshwhub/bridge";
 import { Pcb3dViewer, PcbViewer } from "@oshwhub/pcb-viewer";
 import { useMemo, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 import { ErrorPanel, Loading } from "../components/states";
 import { TabBar } from "../components/tab-bar";
+import { Text } from "../components/ui/text";
 import { ViewerBoundary } from "../components/viewer-boundary";
 import { useCommand } from "../hooks/use-command";
-import { color } from "../theme";
+import { cn } from "../lib/utils";
 
 export type ViewerRoute =
   | { demo: true }
@@ -24,21 +25,25 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
   );
   const { value: scene, loading, error, retry } = useCommand<Scene>(command);
   return (
-    <View style={styles.root}>
-      <View style={styles.header}>
+    <View className="min-h-0 flex-1 bg-viewer">
+      <View className="min-h-[60px] flex-row items-center gap-3 border-b border-[#ffffff14] bg-viewer-panel px-3 py-1.5">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="返回上一页"
           onPress={onBack}
-          style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+          className="min-h-11 min-w-11 items-center justify-center rounded-[10px] active:bg-[#ffffff14]"
         >
-          <Text style={styles.backText}>返回</Text>
+          <Text className="text-[13px] font-medium text-[#b7d5f8]">返回</Text>
         </Pressable>
-        <View style={styles.document}>
-          <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+        <View className="min-w-0 flex-1 gap-[3px]">
+          <Text
+            accessibilityRole="header"
+            numberOfLines={1}
+            className="text-[14px] font-semibold text-[#edf2f7]"
+          >
             {scene?.name ?? (route.demo ? "PCB 示例板" : route.title || "PCB 查看器")}
           </Text>
-          <Text numberOfLines={1} style={styles.subtitle}>
+          <Text numberOfLines={1} className="text-[10px] text-[#9aaaba]">
             {route.demo ? "本地自制示例 · 只读" : `${route.title || "PCB 工作区"} · 只读`}
           </Text>
         </View>
@@ -61,19 +66,19 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
       {loading ? (
         <Loading label={route.demo ? "正在准备本地示例" : "正在下载并解析 PCB"} />
       ) : error ? (
-        <ScrollView contentContainerStyle={styles.error}>
+        <ScrollView contentContainerClassName="grow justify-center bg-canvas p-5">
           <ErrorPanel error={error} retry={retry} />
         </ScrollView>
       ) : (
         scene && (
           <ViewerBoundary key={`${scene.id}-${scene.revision}`} retry={retry}>
-            <View style={styles.workspace}>
+            <View className="min-h-0 flex-1">
               <View
                 ref={(node) => {
                   if (Platform.OS === "web" && node)
                     (node as unknown as HTMLElement).inert = mode !== "2d";
                 }}
-                style={[StyleSheet.absoluteFill, mode !== "2d" && styles.hidden]}
+                className={cn("absolute inset-0", mode !== "2d" && "opacity-0")}
                 pointerEvents={mode === "2d" ? "auto" : "none"}
                 aria-hidden={mode !== "2d"}
                 accessibilityElementsHidden={mode !== "2d"}
@@ -87,7 +92,7 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
                     if (Platform.OS === "web" && node)
                       (node as unknown as HTMLElement).inert = mode !== "3d";
                   }}
-                  style={[StyleSheet.absoluteFill, mode !== "3d" && styles.hidden]}
+                  className={cn("absolute inset-0", mode !== "3d" && "opacity-0")}
                   pointerEvents={mode === "3d" ? "auto" : "none"}
                   aria-hidden={mode !== "3d"}
                   accessibilityElementsHidden={mode !== "3d"}
@@ -103,33 +108,3 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 0, backgroundColor: "#0b121a" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 60,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 12,
-    backgroundColor: "#1b242f",
-    borderBottomWidth: 1,
-    borderBottomColor: "#ffffff14",
-  },
-  back: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-  },
-  pressed: { backgroundColor: "#ffffff14" },
-  backText: { color: "#b7d5f8", fontSize: 13, fontWeight: "500" },
-  document: { flex: 1, minWidth: 0, gap: 3 },
-  title: { color: "#edf2f7", fontSize: 14, fontWeight: "600" },
-  subtitle: { color: "#9aaaba", fontSize: 10 },
-  workspace: { flex: 1, minHeight: 0 },
-  hidden: { opacity: 0 },
-  error: { padding: 20, flexGrow: 1, justifyContent: "center", backgroundColor: color.canvas },
-});

@@ -1,9 +1,10 @@
 import type { Board } from "@oshwhub/bridge";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { RemoteImage } from "../images";
+import { cn } from "../lib/utils";
 import { safeUrl } from "../model";
-import { color } from "../theme";
 import { BoardMark } from "./board-mark";
+import { Text } from "./ui/text";
 
 export function BoardOption({
   board,
@@ -21,40 +22,22 @@ export function BoardOption({
       aria-checked={selected}
       accessibilityLabel={`选择板子 ${board.name}`}
       onPress={onPress}
-      style={[styles.boardOption, selected && styles.boardOptionSelected]}
+      className={cn(
+        "min-h-[154px] w-40 gap-2 rounded-xl border border-border p-3",
+        selected && "border-primary bg-[#f6fcf7]",
+      )}
     >
-      <View style={styles.boardThumbnail}>
+      <View className="h-[62px] items-center justify-center overflow-hidden">
         {thumbnail ? (
           <RemoteImage url={thumbnail} label={`${board.name}预览`} aspectRatio={2.2} />
         ) : (
           <BoardMark small />
         )}
       </View>
-      <Text numberOfLines={2} style={styles.boardOptionName}>
+      <Text numberOfLines={2} className="text-[13px] font-medium leading-5">
         {board.name || "未命名板子"}
       </Text>
-      <Text style={styles.boardOptionCount}>{board.bom.length} 种物料</Text>
+      <Text className="text-[11px] text-muted-foreground">{board.bom.length} 种物料</Text>
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  boardOption: {
-    width: 160,
-    minHeight: 154,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: color.line,
-    borderRadius: 12,
-    gap: 8,
-  },
-  boardOptionSelected: { borderColor: color.green, backgroundColor: "#f6fcf7" },
-  boardThumbnail: {
-    height: 62,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  boardOptionName: { color: color.ink, fontSize: 13, lineHeight: 20, fontWeight: "500" },
-  boardOptionCount: { color: color.muted, fontSize: 11 },
-});

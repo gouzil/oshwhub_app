@@ -1,70 +1,20 @@
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
+import { cn } from "../lib/utils";
 
 export function BoardMark({ small = false }: { small?: boolean }) {
   return (
-    <View accessible={false} style={[common.boardMark, small && common.boardMarkSmall]}>
-      <View style={common.boardChip} />
-      <View style={common.boardTraceA} />
-      <View style={common.boardTraceB} />
-      <View style={common.boardPinA} />
-      <View style={common.boardPinB} />
+    <View
+      accessible={false}
+      className={cn(
+        "h-12 w-16 -rotate-[7deg] rounded-[7px] border-[1.5px] border-[#a6c8b2]",
+        small && "h-11 w-[58px]",
+      )}
+    >
+      <View className="absolute left-5 top-[13px] size-[18px] rounded-[3px] border-[1.5px] border-[#89b39b] bg-[#d6e7db]" />
+      <View className="absolute left-[7px] top-[17px] h-[1.5px] w-3 bg-[#a6c8b2]" />
+      <View className="absolute right-[7px] top-[26px] h-[1.5px] w-4 bg-[#a6c8b2]" />
+      <View className="absolute right-2 top-[7px] size-1 rounded-[3px] bg-[#a6c8b2]" />
+      <View className="absolute bottom-[7px] left-2 size-1 rounded-[3px] bg-[#a6c8b2]" />
     </View>
   );
 }
-
-const common = StyleSheet.create({
-  boardMark: {
-    width: 64,
-    height: 48,
-    borderWidth: 1.5,
-    borderColor: "#a6c8b2",
-    borderRadius: 7,
-    transform: [{ rotate: "-7deg" }],
-  },
-  boardMarkSmall: { width: 58, height: 44 },
-  boardChip: {
-    position: "absolute",
-    width: 18,
-    height: 18,
-    left: 20,
-    top: 13,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderColor: "#89b39b",
-    backgroundColor: "#d6e7db",
-  },
-  boardTraceA: {
-    position: "absolute",
-    left: 7,
-    top: 17,
-    width: 12,
-    height: 1.5,
-    backgroundColor: "#a6c8b2",
-  },
-  boardTraceB: {
-    position: "absolute",
-    right: 7,
-    top: 26,
-    width: 16,
-    height: 1.5,
-    backgroundColor: "#a6c8b2",
-  },
-  boardPinA: {
-    position: "absolute",
-    right: 8,
-    top: 7,
-    width: 4,
-    height: 4,
-    borderRadius: 3,
-    backgroundColor: "#a6c8b2",
-  },
-  boardPinB: {
-    position: "absolute",
-    left: 8,
-    bottom: 7,
-    width: 4,
-    height: 4,
-    borderRadius: 3,
-    backgroundColor: "#a6c8b2",
-  },
-});
