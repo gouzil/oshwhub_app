@@ -19,11 +19,13 @@ import { safeUrl } from "./model";
 export function ProjectPage({
   id,
   width,
+  bottomInset,
   onBack,
   onPcb,
 }: {
   id: string;
   width: number;
+  bottomInset: number;
   onBack: () => void;
   onPcb: (documentId: string, name: string) => void;
 }) {
@@ -46,7 +48,12 @@ export function ProjectPage({
     <View style={styles.root}>
       <PageHeader title={project?.summary.name ?? "项目详情"} onBack={onBack} />
       {loading ? (
-        <ScrollView contentContainerStyle={[styles.content, { padding: width < 400 ? 16 : 28 }]}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            { padding: width < 400 ? 16 : 28, paddingBottom: 40 + bottomInset },
+          ]}
+        >
           <Skeleton label="正在打开项目" style={{ gap: 24 }}>
             <View style={[styles.hero, wide && styles.heroWide]}>
               <SkeletonBlock
@@ -71,7 +78,9 @@ export function ProjectPage({
           </Skeleton>
         </ScrollView>
       ) : error ? (
-        <ScrollView contentContainerStyle={styles.errorContent}>
+        <ScrollView
+          contentContainerStyle={[styles.errorContent, { paddingBottom: 40 + bottomInset }]}
+        >
           <ErrorPanel error={error} retry={retry} />
         </ScrollView>
       ) : (
@@ -80,7 +89,10 @@ export function ProjectPage({
             ref={list}
             testID="project-content-list"
             style={{ flex: 1 }}
-            contentContainerStyle={[styles.content, { padding: width < 400 ? 16 : 28 }]}
+            contentContainerStyle={[
+              styles.content,
+              { padding: width < 400 ? 16 : 28, paddingBottom: 40 + bottomInset },
+            ]}
             data={tab === "intro" ? project.content : []}
             keyExtractor={(item, index) => `${index}-${item.kind}`}
             initialNumToRender={4}

@@ -4,6 +4,7 @@ import {
   BackHandler,
   FlatList,
   Image,
+  type LayoutChangeEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -14,7 +15,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   BoardMark,
   Button,
@@ -26,6 +27,7 @@ import {
   ExternalLink,
   Loading,
 } from "./common";
+import { GlassSurface } from "./GlassSurface";
 import { Skeleton, SkeletonBlock } from "./loading";
 import { FeedController, layoutFor, safeUrl } from "./model";
 import { ProjectPage } from "./ProjectPage";
@@ -53,10 +55,15 @@ export function App() {
 
 function Shell() {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const layout = layoutFor(width);
   const [tab, setTab] = useState<Tab>("discover");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [viewer, setViewer] = useState<ViewerRoute | null>(null);
+  const [dockHeight, setDockHeight] = useState(70);
+  const showDock = layout.sidebar === 0 && !viewer;
+  const dockBottom = Math.max(insets.bottom, 12);
+  const bottomInset = showDock ? dockHeight + dockBottom + 16 : 0;
   const navigate = (next: Tab) => {
     setTab(next);
     setProjectId(null);
@@ -83,23 +90,28 @@ function Shell() {
   }, [viewer, projectId, tab]);
   const hiddenFeed = tab !== "discover" || projectId !== null || viewer !== null;
   return (
-    <SafeAreaView style={styles.app} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView
+      style={styles.app}
+      edges={showDock ? ["top", "left", "right"] : ["top", "left", "right", "bottom"]}
+    >
       <StatusBar barStyle="dark-content" />
       <View style={styles.shell}>
         {layout.sidebar > 0 && (
           <View style={[styles.sidebar, { width: layout.sidebar }]}>
-            <View style={styles.brand}>
-              <View style={styles.brandIcon}>
-                <Text style={styles.brandSymbol}>▦</Text>
+            <GlassSurface style={styles.sidebarGlass}>
+              <View style={styles.brand}>
+                <View style={styles.brandIcon}>
+                  <Text style={styles.brandSymbol}>▦</Text>
+                </View>
+                <Text style={styles.brandName}>OSHWHub</Text>
               </View>
-              <Text style={styles.brandName}>OSHWHub</Text>
-            </View>
-            <Text style={styles.brandNote}>让硬件想法发生</Text>
-            <Navigation tab={tab} navigate={navigate} desktop />
-            <View style={styles.sidebarFoot}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.sidebarFootText}>公开浏览 · 无需登录</Text>
-            </View>
+              <Text style={styles.brandNote}>让硬件想法发生</Text>
+              <Navigation tab={tab} navigate={navigate} desktop />
+              <View style={styles.sidebarFoot}>
+                <View style={styles.onlineDot} />
+                <Text style={styles.sidebarFootText}>公开浏览 · 无需登录</Text>
+              </View>
+            </GlassSurface>
           </View>
         )}
         <View style={styles.main}>
@@ -109,16 +121,21 @@ function Shell() {
             aria-hidden={hiddenFeed}
             importantForAccessibility={hiddenFeed ? "no-hide-descendants" : "auto"}
           >
-            <Discover width={width} active={!hiddenFeed} onProject={setProjectId} />
+            <Discover
+              width={width}
+              active={!hiddenFeed}
+              onProject={setProjectId}
+              bottomInset={bottomInset}
+            />
           </View>
           {tab === "lab" && !viewer && (
             <View style={styles.overlay}>
-              <Lab onOpen={() => setViewer({ demo: true })} />
+              <Lab onOpen={() => setViewer({ demo: true })} bottomInset={bottomInset} />
             </View>
           )}
           {tab === "about" && (
             <View style={styles.overlay}>
-              <About />
+              <About bottomInset={bottomInset} />
             </View>
           )}
           {projectId && (
@@ -131,6 +148,7 @@ function Shell() {
               <ProjectPage
                 id={projectId}
                 width={width - layout.sidebar}
+                bottomInset={bottomInset}
                 onBack={() => setProjectId(null)}
                 onPcb={(documentId, name) =>
                   setViewer({ projectId, documentId, title: name, demo: false })
@@ -145,7 +163,21 @@ function Shell() {
           )}
         </View>
       </View>
-      {layout.sidebar === 0 && !viewer && <Navigation tab={tab} navigate={navigate} />}
+      {showDock && (
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.dock,
+            { bottom: dockBottom, left: insets.left + 16, right: insets.right + 16 },
+          ]}
+        >
+          <Navigation
+            tab={tab}
+            navigate={navigate}
+            onLayout={({ nativeEvent }) => setDockHeight(nativeEvent.layout.height)}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -154,13 +186,20 @@ function Navigation({
   tab,
   navigate,
   desktop = false,
+  onLayout,
 }: {
   tab: Tab;
   navigate: (tab: Tab) => void;
   desktop?: boolean;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
+  const Surface = desktop ? View : GlassSurface;
   return (
-    <View style={desktop ? styles.sideNav : styles.bottomNav} accessibilityRole="tablist">
+    <Surface
+      style={desktop ? styles.sideNav : styles.bottomNav}
+      accessibilityRole="tablist"
+      onLayout={onLayout}
+    >
       {navigation.map((item) => (
         <Pressable
           key={item.id}
@@ -170,7 +209,7 @@ function Navigation({
           onPress={() => navigate(item.id)}
           style={({ pressed }) => [
             desktop ? styles.sideNavItem : styles.bottomNavItem,
-            desktop && tab === item.id && styles.sideNavSelected,
+            tab === item.id && styles.navItemSelected,
             pressed && common.pressed,
           ]}
         >
@@ -180,10 +219,18 @@ function Navigation({
           >
             {item.icon}
           </Text>
-          <Text style={[styles.navText, tab === item.id && styles.navSelected]}>{item.label}</Text>
+          <Text
+            style={[
+              styles.navText,
+              desktop && styles.sideNavText,
+              tab === item.id && styles.navSelected,
+            ]}
+          >
+            {item.label}
+          </Text>
         </Pressable>
       ))}
-    </View>
+    </Surface>
   );
 }
 
@@ -191,10 +238,12 @@ function Discover({
   width,
   active,
   onProject,
+  bottomInset,
 }: {
   width: number;
   active: boolean;
   onProject: (id: string) => void;
+  bottomInset: number;
 }) {
   const layout = layoutFor(width);
   const [query, setQuery] = useState("");
@@ -299,7 +348,11 @@ function Discover({
       keyExtractor={(item) => item.id}
       numColumns={layout.columns}
       style={styles.feed}
-      contentContainerStyle={{ paddingHorizontal: layout.padding, paddingBottom: 32, gap: 18 }}
+      contentContainerStyle={{
+        paddingHorizontal: layout.padding,
+        paddingBottom: 32 + bottomInset,
+        gap: 18,
+      }}
       columnWrapperStyle={{ gap: layout.gap }}
       ListHeaderComponent={header}
       keyboardShouldPersistTaps="handled"
@@ -402,9 +455,9 @@ function ProjectCard({
   );
 }
 
-function Lab({ onOpen }: { onOpen: () => void }) {
+function Lab({ onOpen, bottomInset }: { onOpen: () => void; bottomInset: number }) {
   return (
-    <ScrollView contentContainerStyle={styles.staticPage}>
+    <ScrollView contentContainerStyle={[styles.staticPage, { paddingBottom: 28 + bottomInset }]}>
       <Text style={styles.eyebrow}>PCB LAB</Text>
       <Text style={styles.title}>看清每一个连接</Text>
       <Text style={styles.staticDescription}>
@@ -428,9 +481,9 @@ function Lab({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-function About() {
+function About({ bottomInset }: { bottomInset: number }) {
   return (
-    <ScrollView contentContainerStyle={styles.staticPage}>
+    <ScrollView contentContainerStyle={[styles.staticPage, { paddingBottom: 28 + bottomInset }]}>
       <View style={styles.aboutLogo}>
         <Text style={styles.aboutLogoText}>▦</Text>
       </View>
@@ -458,19 +511,25 @@ function About() {
 
 const styles = StyleSheet.create({
   provider: { flex: 1, height: "100%" },
-  app: { flex: 1, backgroundColor: "#fff" },
+  app: { flex: 1, backgroundColor: "#edf4ef" },
   shell: { flex: 1, flexDirection: "row", minHeight: 0 },
   fill: { flex: 1, minHeight: 0 },
   main: { flex: 1, minWidth: 0, minHeight: 0, backgroundColor: "#fff" },
   overlay: { ...StyleSheet.absoluteFill, backgroundColor: "#fff" },
   sidebar: {
-    paddingHorizontal: 18,
-    paddingTop: 32,
-    paddingBottom: 20,
-    borderRightWidth: 1,
-    borderRightColor: color.line,
+    padding: 12,
   },
-  brand: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 6 },
+  sidebarGlass: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingTop: 24,
+    paddingBottom: 20,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#ffffffc7",
+    boxShadow: "0 8px 28px rgba(26, 58, 40, 0.10)",
+  },
+  brand: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandIcon: {
     width: 34,
     height: 34,
@@ -487,43 +546,55 @@ const styles = StyleSheet.create({
     color: color.ink,
     flexShrink: 1,
   },
-  brandNote: { color: color.muted, fontSize: 11, marginLeft: 51, marginTop: 8 },
+  brandNote: { color: color.muted, fontSize: 11, marginLeft: 42, marginTop: 8 },
   sideNav: { marginTop: 44, gap: 8 },
   sideNavItem: {
     minHeight: 50,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 25,
   },
-  sideNavSelected: { backgroundColor: color.greenLight },
-  navIcon: { color: "#839087", fontSize: 24, minWidth: 24, textAlign: "center" },
-  navText: { fontSize: 12, color: color.muted, fontWeight: "500", flexShrink: 1 },
+  navItemSelected: { backgroundColor: "#daede2cc" },
+  navIcon: { color: "#5f7568", fontSize: 24, minWidth: 24, textAlign: "center" },
+  navText: { fontSize: 12, color: "#4b5f52", fontWeight: "500", flexShrink: 1 },
+  sideNavText: { fontSize: 14 },
   navSelected: { color: color.green, fontWeight: "700" },
   sidebarFoot: {
     marginTop: "auto",
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingLeft: 12,
+    gap: 6,
+    paddingLeft: 8,
   },
   onlineDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#80a68e" },
   sidebarFootText: { color: "#8a958e", fontSize: 10 },
+  dock: {
+    position: "absolute",
+    alignItems: "center",
+  },
   bottomNav: {
+    width: "100%",
+    maxWidth: 480,
     flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: color.line,
-    backgroundColor: "#fff",
-    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "#ffffffc7",
+    borderRadius: 36,
+    padding: 6,
+    gap: 4,
+    boxShadow: "0 8px 28px rgba(26, 58, 40, 0.16)",
   },
   bottomNavItem: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 56,
     gap: 2,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderRadius: 28,
   },
   feed: { flex: 1, width: "100%", maxWidth: 1440, alignSelf: "center" },
   discoverHeading: { paddingTop: 28, paddingBottom: 22 },

@@ -113,9 +113,9 @@ test("failed thumbnails fall back to the original and can be retried independent
   await page.getByRole("button", { name: /^自制开源控制板 01，/ }).click();
   const list = page.getByTestId("project-content-list");
   await expect(list).toBeVisible();
-  await list.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  await list
+    .getByRole("tab", { name: "项目介绍", exact: true })
+    .evaluate((element) => element.scrollIntoView({ block: "start" }));
   const retry = page.getByRole("button", { name: "重新加载图片：可重试图片", exact: true });
   await expect(retry).toBeVisible();
   expect(new URL(requests[0]).searchParams.has("x-oss-process")).toBe(true);
@@ -166,9 +166,9 @@ test("tall article images keep a readable width and their natural aspect ratio",
   await page.goto("/");
   await page.getByRole("button", { name: /^自制开源控制板 01，/ }).click();
   const list = page.getByTestId("project-content-list");
-  await list.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  await list
+    .getByRole("tab", { name: "项目介绍", exact: true })
+    .evaluate((element) => element.scrollIntoView({ block: "start" }));
   const image = page.getByRole("img", { name: "长图说明", exact: true });
   await expect(image).toBeAttached();
   await expect

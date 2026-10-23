@@ -21,3 +21,21 @@ input {
   outline: 2px solid #15964a;
   outline-offset: 3px;
 }
+
+#navigation-glass {
+  background-color: #f6f9f7;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  #navigation-glass {
+    background-color: rgba(246, 249, 247, 0.74);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  #navigation-glass {
+    background-color: #f6f9f7;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

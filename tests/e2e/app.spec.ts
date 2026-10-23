@@ -89,7 +89,9 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
       ),
     )
     .toBe(true);
-  await page.getByRole("button", { name: /^自制开源控制板 20，/ }).scrollIntoViewIfNeeded();
+  await page
+    .getByRole("button", { name: /^自制开源控制板 20，/ })
+    .evaluate((element) => element.scrollIntoView({ block: "start" }));
   await expect
     .poll(() =>
       bridge.requests.some(
