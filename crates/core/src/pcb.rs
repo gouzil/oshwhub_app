@@ -1,7 +1,9 @@
-//! Read-only EasyEDA Pro state and independent 2D scene compiler.
+//! Read-only EasyEDA Pro state and independent 2D/3D scene compilers.
 mod geometry;
 mod history;
+mod models;
 mod scene;
+mod solid;
 
 use crate::{
     client::HttpClient,
@@ -216,6 +218,15 @@ pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> R
 }
 pub fn demo() -> Scene {
     scene::demo()
+}
+pub async fn prepare_3d(scene_id: String) -> Result<solid::Scene3d> {
+    tokio::task::spawn_blocking(move || scene::prepare_3d(&scene_id))
+        .await
+        .map_err(|_| AppError::new("internal", "三维板体处理失败"))?
+}
+pub async fn model_3d(client: &HttpClient, scene_id: &str, key: &str) -> Result<models::Model3d> {
+    let (bindings, thickness) = scene::model_bindings(scene_id)?;
+    models::load(client, key, bindings, thickness).await
 }
 pub fn pick(
     scene_id: &str,

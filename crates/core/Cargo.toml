@@ -21,6 +21,9 @@ flate2 = "1.1"
 hex = "0.4"
 base64 = "0.22"
 futures-util = "0.3"
+lyon_tessellation = "1.0"
+i_overlay = "9.1.0"
+tobj = "4"
 
 [[example]]
 name = "smoke"

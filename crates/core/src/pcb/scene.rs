@@ -37,9 +37,11 @@ struct Stored {
     grid: HashMap<(i32, i32), Vec<usize>>,
     broad: Vec<usize>,
     layers: Vec<SceneLayer>,
+    solid: solid::Seed,
+    bounds: Bounds,
 }
-fn cache() -> &'static Mutex<VecDeque<Stored>> {
-    static CACHE: OnceLock<Mutex<VecDeque<Stored>>> = OnceLock::new();
+fn cache() -> &'static Mutex<VecDeque<Arc<Stored>>> {
+    static CACHE: OnceLock<Mutex<VecDeque<Arc<Stored>>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
 }
 fn invalid() -> AppError {
@@ -171,6 +173,7 @@ struct Builder<'a> {
     solder: Option<&'a Value>,
     paste: Option<&'a Value>,
     path_bytes: usize,
+    solid: solid::Seed,
 }
 impl<'a> Builder<'a> {
     fn new(project: &'a Project, doc: &'a Document) -> Self {
@@ -286,6 +289,10 @@ impl<'a> Builder<'a> {
             solder,
             paste,
             path_bytes: 0,
+            solid: solid::Seed {
+                thickness: solid::stack_thickness(doc),
+                ..Default::default()
+            },
         }
     }
     fn warn(&mut self, message: impl Into<String>) {
@@ -941,6 +948,21 @@ impl<'a> Builder<'a> {
         let d = r.data.as_ref().unwrap();
         let id = rid(r);
         let attrs = self.attrs.get(&id).cloned();
+        self.solid.component_count += 1;
+        match models::binding(self.project, d, &attrs.clone().unwrap_or_default(), self.tf) {
+            Ok(Some(binding)) if self.solid.bindings.len() < 2000 => {
+                self.solid.bindings.push(binding)
+            }
+            Ok(Some(_)) => self
+                .solid
+                .warnings
+                .push("器件超过 2000 个，部分三维模型未装配".into()),
+            Ok(None) => {}
+            Err(_) => self
+                .solid
+                .warnings
+                .push("部分器件的模型关联或变换无效，未装配这些模型".into()),
+        }
         let get_attr = |key: &str| {
             attrs
                 .as_ref()
@@ -1097,6 +1119,16 @@ pub fn compile(
     let mut layers: Vec<_> = b.layers.into_values().collect();
     layers.sort_by_key(|l| l.order);
     let mut paints = b.paints;
+    let mut solid = b.solid;
+    for paint in &paints {
+        if paint.result.layer == 11 {
+            solid.outlines.extend(paint.geometry.contours.clone());
+        } else if paint.result.layer == 47 {
+            solid.holes.extend(paint.geometry.contours.clone());
+        }
+    }
+    solid.warnings.sort();
+    solid.warnings.dedup();
     paints.sort_by_key(|p| (order(p.result.layer), p.stage));
     let mut batches: Vec<DrawBatch> = Vec::new();
     let mut objects = Vec::new();
@@ -1187,17 +1219,59 @@ pub fn compile(
     let mut cache = cache()
         .lock()
         .map_err(|_| AppError::new("internal", "场景缓存不可用"))?;
-    cache.push_back(Stored {
+    cache.push_back(Arc::new(Stored {
         id,
         objects,
         grid,
         broad,
         layers,
-    });
+        solid,
+        bounds,
+    }));
     while cache.len() > 2 {
         cache.pop_front();
     }
     Ok(scene)
+}
+
+fn stored(scene_id: &str) -> Result<Arc<Stored>> {
+    cache()
+        .lock()
+        .map_err(|_| AppError::new("internal", "场景缓存不可用"))?
+        .iter()
+        .find(|s| s.id == scene_id)
+        .map(Arc::clone)
+        .ok_or_else(|| AppError::new("scene_expired", "场景已过期，请重新打开 PCB"))
+}
+
+pub fn prepare_3d(scene_id: &str) -> Result<solid::Scene3d> {
+    let start = Instant::now();
+    let s = stored(scene_id)?;
+    let result = solid::prepare(
+        &s.solid,
+        s.objects.iter().map(|o| {
+            (
+                o.result.layer,
+                o.fill,
+                o.width,
+                o.contours.clone(),
+                o.result.kind.clone(),
+            )
+        }),
+        s.bounds,
+    )?;
+    tracing::info!(
+        vertices = result.board.vertex_count,
+        models = result.model_keys.len(),
+        elapsed_ms = start.elapsed().as_millis() as u64,
+        "pcb.solid.complete"
+    );
+    Ok(result)
+}
+
+pub fn model_bindings(scene_id: &str) -> Result<(Vec<models::Binding>, f64)> {
+    let s = stored(scene_id)?;
+    Ok((s.solid.bindings.clone(), s.solid.thickness.unwrap_or(1.6)))
 }
 
 pub fn pick(

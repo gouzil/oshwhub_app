@@ -43,6 +43,15 @@ enum Command {
         document_id: String,
     },
     Demo,
+    Pcb3d {
+        #[serde(rename = "sceneId")]
+        scene_id: String,
+    },
+    Model3d {
+        #[serde(rename = "sceneId")]
+        scene_id: String,
+        key: String,
+    },
     Pick {
         #[serde(rename = "sceneId")]
         scene_id: String,
@@ -110,6 +119,13 @@ async fn execute(command: Command) -> Result<Value> {
             serde_json::to_value(data).map_err(serialization_error)
         }
         Command::Demo => serde_json::to_value(pcb::demo()).map_err(serialization_error),
+        Command::Pcb3d { scene_id } => {
+            serde_json::to_value(pcb::prepare_3d(scene_id).await?).map_err(serialization_error)
+        }
+        Command::Model3d { scene_id, key } => {
+            serde_json::to_value(pcb::model_3d(&http_client()?, &scene_id, &key).await?)
+                .map_err(serialization_error)
+        }
         Command::Pick {
             scene_id,
             x,
@@ -186,6 +202,19 @@ mod tests {
                 .as_str()
                 .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok())
         );
+    }
+
+    #[tokio::test]
+    async fn three_dimensional_commands_reject_expired_scenes_without_network() {
+        for input in [
+            r#"{"command":"pcb3d","sceneId":"expired"}"#,
+            r#"{"command":"model3d","sceneId":"expired","key":"untrusted"}"#,
+        ] {
+            let value: Value = serde_json::from_str(&dispatch_json(input).await).unwrap();
+            assert_eq!(value["ok"], false);
+            assert_eq!(value["error"]["code"], "scene_expired");
+            assert!(value["error"]["requestId"].is_string());
+        }
     }
 
     #[tokio::test]
