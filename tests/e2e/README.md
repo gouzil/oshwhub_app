@@ -7,7 +7,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-本地复用 `http://127.0.0.1:5173`；没有现有服务时自动启动桌面 Vite 开发服务，CI 启动独立服务。无需 Rust 核心或外部 API：测试拦截 `http://127.0.0.1:4318/bridge`，返回自制项目和 PCB 场景，并为正文图片提供本地自制 PNG；CanvasKit WASM 和完整 Noto Sans SC 字体仍由应用实际加载。Chromium 使用 SwiftShader 软件 WebGL。
+在独立端口 `http://127.0.0.1:5273` 自动启动当前工作树的 Vite 服务，禁止复用现有服务，避免误测另一个工作树。无需 Rust 核心或外部 API：测试拦截 `http://127.0.0.1:4318/bridge`，返回自制项目和 PCB 场景，并为正文图片提供本地自制 PNG；CanvasKit WASM 和完整 Noto Sans SC 字体仍由应用实际加载。Chromium 使用 SwiftShader 软件 WebGL。
 
 各尺寸覆盖以下流程（以 Playwright 的实际收集结果为准）：
 

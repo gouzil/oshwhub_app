@@ -2,6 +2,35 @@
 
 首轮日期：2026-10-23（Asia/Shanghai）。当时范围为公开项目浏览、搜索、详情、BOM 和专业版二维 PCB 查看。后续三维阶段记录如下；账号、写入和 PCB 编辑仍待后续迭代。
 
+## 2026-10-24 Electron 与共享组件迁移
+
+本轮用 Electron + React Native Web 替换桌面 Tauri，手机和平板继续使用 Expo / React Native；两端共享 React Native Reusables 的 UniWind 组件和 Tailwind CSS 4 主题。基础控件、搜索、TabBar、项目卡片、正文、导航和异步状态分别封装，页面与应用壳分离，公开入口与扩展说明见 [ui.md](ui.md)。Rust 核心、移动原生桥、系统玻璃导航以及 PCB 渲染逻辑保留。
+
+以下均为本工作树迁移后的本机结果；下方历史 Tauri 构建、CI 和设备记录不能作为 Electron 的验证结果。
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| `pnpm check` | Biome、TypeScript、Rust fmt/clippy 通过；47 项 Vitest、21 项 Node 脚本测试、71 项 Rust 测试通过，2 项既有在线测试忽略 |
+| `prek run --all-files` | 所有钩子通过；最终新增文件另由全目录 Biome 检查覆盖 |
+| Chromium 六视口完整 E2E | 174/174 通过，2.6 分钟；覆盖搜索、分页、详情、BOM、导航、加载与 PCB 2D/3D。独立 5273 端口启动当前工作树，拒绝复用其他 checkout 的预览服务 |
+| Web 生产构建 | 通过，CanvasKit WASM 与中文字体随包生成 |
+| Expo Android / iOS JS 导出 | 两个平台通过，包含本地字体；这不是原生包或设备运行验收 |
+| macOS ARM64 Electron 目录包、DMG / ZIP | `pnpm build:desktop --dir` 和 `pnpm build:desktop` 通过，Rust 可执行文件随包携带；未签名 |
+| macOS ARM64 实包冒烟 | `pnpm test:desktop 'apps/desktop/release/mac-arm64/OSHWHub.app/Contents/MacOS/OSHWHub'` 通过；生产 origin 为 `oshwhub://app/`，preload 仅暴露两个方法，渲染器无 Node，真实 Rust 健康检查与示例调用成功 |
+| 实包界面与资源 | 检查绿色 Tailwind 按钮与至少 44px 触控目标；2D 缩放到 125%，3D 板体就绪，模式选中状态正确；中文字体通过本地协议返回有效 TTF，2D 字形与 3D 板体截图已查看 |
+| 独立代码审查 | 覆盖 IPC 信任边界、资源路径隔离、stdio 关联/错误清理、宿主打包与组件复用，未发现阻挡交付的问题 |
+
+Electron 冒烟阻断远程渲染代码请求、以占位图替换远程图片；Rust 的公开项目请求仍可联网，不宣称完全断网。实际窗口使用默认 GPU，未强制软件渲染；截图位于 `.work/desktop-smoke/`。打包校验宿主系统、架构、Rust target 和二进制 hash；CI 已配置 macOS / Windows / Linux 原生构建矩阵，本轮尚未触发远端 CI。Linux DEB 的主页与维护者信息已补齐，并通过 electron-builder 自身的元数据校验；此检查不代表 Linux 实包构建或运行。
+
+macOS 产物在 `apps/desktop/release/`，SHA-256：
+
+```text
+DMG  f3c2fcbed88e561e446a53595510a5a77cb04280a00c39f9b376925ecdbddd6e
+ZIP  dd4cfced5577e7e368d982a3b79e2ce50ae2e9f052bd50580673f4aaff5cffa0
+```
+
+本轮未运行 Windows / Linux 实包、未重新安装移动原生包到模拟器或真机，也未补测真机性能、VoiceOver / TalkBack 或签名公证。桌面 Rust 子进程崩溃、协议损坏或超时后需要重启应用；不会自动重放请求。既有在线 API 的两项忽略测试没有作为已通过计数。
+
 ## 2026-10-24 三维查看阶段
 
 PCB 工作区新增 2D / 3D 切换，二维相机、图层和选中状态保留。三维支持单指旋转、双指平移/缩放、滚轮与键盘、顶底视角、适应窗口、器件显隐和模型重试。Rust 编译板体及模型装配，独立 WebGL / Expo GL 只在输入或资源变化时绘制；重复器件共享 GPU 缓冲，模型请求最多三个并发，GPU 缓冲限制为 64 MiB。设计与格式边界见 [3d.md](3d.md)。

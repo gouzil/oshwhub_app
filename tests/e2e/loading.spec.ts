@@ -47,7 +47,7 @@ test("article images load near the viewport with placeholders and an original li
       text: `分段正文 ${index + 1}。${"公开硬件的设计说明。".repeat(35)}`,
       url: null,
     })),
-    { kind: "image", text: "分块示意图", url: `http://127.0.0.1:5173${path}` },
+    { kind: "image", text: "分块示意图", url: `http://127.0.0.1:5273${path}` },
   ];
   let requests = 0;
   let imageReady!: () => void;
@@ -131,7 +131,7 @@ test("failed project covers can be retried without refetching the project", asyn
   bridge,
 }, testInfo) => {
   let failed = true;
-  bridge.projectCover = "http://127.0.0.1:5173/__e2e__/cover-retry.png";
+  bridge.projectCover = "http://127.0.0.1:5273/__e2e__/cover-retry.png";
   bridge.projectContent = [];
   await page.route("**/__e2e__/cover-retry.png", (route) =>
     route.fulfill(
@@ -155,7 +155,7 @@ test("tall article images keep a readable width and their natural aspect ratio",
   bridge,
 }, testInfo) => {
   bridge.projectContent = [
-    { kind: "image", text: "长图说明", url: "http://127.0.0.1:5173/__e2e__/tall.png" },
+    { kind: "image", text: "长图说明", url: "http://127.0.0.1:5273/__e2e__/tall.png" },
   ];
   await page.route("**/__e2e__/tall.png", (route) =>
     route.fulfill({

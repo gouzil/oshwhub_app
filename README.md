@@ -14,7 +14,7 @@ prek install
 pnpm dev
 ```
 
-打开 `http://127.0.0.1:5173`。浏览器开发预览通过本机 Rust 服务调用核心；移动和桌面安装包直接调用进程内 Rust。
+打开 `http://127.0.0.1:5173`。浏览器开发预览通过本机 Rust 服务调用核心；移动安装包调用进程内 Rust；桌面通过私有标准输入输出连接随包 Rust 子进程。
 
 ```sh
 pnpm check
@@ -27,17 +27,19 @@ prek run --all-files
 ```sh
 pnpm android    # Android SDK/NDK、JDK 21，默认 emulator-5554
 pnpm ios        # macOS、Xcode、CocoaPods
-pnpm desktop    # Tauri 开发窗口
-pnpm --filter @oshwhub/desktop tauri build
+pnpm desktop          # Electron + React Native Web 开发窗口
+pnpm build:desktop    # 当前系统与架构的安装包
+pnpm build:desktop --dir # 当前系统的可运行目录包
 ```
 
-Android 提供 arm64-v8a / x86_64；iOS 支持 iPhone 和 iPad；桌面使用 Windows WebView2、macOS WKWebView、Linux WebKitGTK。原生目录和 Rust 库由构建命令生成。详细依赖、签名和构建产物路径见开发文档。
+Android 提供 arm64-v8a / x86_64；iOS 支持 iPhone 和 iPad；桌面采用 Electron 自带 Chromium，支持 macOS、Windows、Linux。共享组件采用 React Native Reusables + UniWind / Tailwind CSS 4。原生目录和 Rust 库由构建命令生成。详细依赖、签名和构建产物路径见开发文档。
 
 ## 文档
 
 - [架构与设计](docs/design.md)
 - [实施阶段](docs/plan.md)
 - [开发、日志与平台构建](docs/development.md)
+- [共享组件与 Tailwind 使用](docs/ui.md)
 - [公开 API 契约](docs/api.md)
 - [独立 PCB 引擎、格式覆盖与性能边界](docs/renderer.md)
 - [三维设计、模型来源与限制](docs/3d.md)
@@ -45,4 +47,4 @@ Android 提供 arm64-v8a / x86_64；iOS 支持 iPhone 和 iPad；桌面使用 Wi
 
 当前 PCB 数据入口针对专业版公开工程。已实现图元和已知格式限制见渲染文档；无法完整解析的内容必须显示错误或警告。请附平台、工程 ID、错误码和 requestId 报告问题。
 
-本项目代码采用 MIT；随包字体使用 SIL OFL。公开工程的许可各自独立，不能据本仓库许可重新分发作者的 PCB 数据。
+本项目代码采用 MIT；React Native Reusables 组件保留上游 MIT 许可，随包字体使用 SIL OFL。公开工程的许可各自独立，不能据本仓库许可重新分发作者的 PCB 数据。

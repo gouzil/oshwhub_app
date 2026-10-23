@@ -14,7 +14,7 @@ test-results/
 output/
 apps/mobile/android/
 apps/mobile/ios/
-apps/desktop/src-tauri/gen/
+apps/desktop/release/
 modules/oshwhub-core/android/src/main/jniLibs/
 modules/oshwhub-core/android/build/
 .gradle/
@@ -22,3 +22,4 @@ modules/oshwhub-core/ios/lib/
 modules/oshwhub-core/ios/OshwhubRust.xcframework/
 packages/pcb-viewer/generated/
 .work/
+docs/superpowers/

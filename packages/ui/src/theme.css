@@ -1,0 +1,24 @@
+@import "tailwindcss";
+@import "uniwind";
+
+@source ".";
+
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #192d26;
+  --color-card: #ffffff;
+  --color-card-foreground: #192d26;
+  --color-primary: #07845d;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #eaf6ef;
+  --color-secondary-foreground: #07845d;
+  --color-muted: #f3f6f3;
+  --color-muted-foreground: #738079;
+  --color-accent: #eaf6ef;
+  --color-accent-foreground: #07845d;
+  --color-destructive: #b42318;
+  --color-border: #e9eeeb;
+  --color-input: #e3ebe5;
+  --color-ring: #07845d;
+  --radius-md: 0.6875rem;
+}

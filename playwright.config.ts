@@ -10,7 +10,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:5273",
     browserName: "chromium",
     hasTouch: true,
     launchOptions: {
@@ -28,9 +28,9 @@ export default defineConfig({
     { name: "landscape", use: { viewport: { width: 844, height: 390 } } },
   ],
   webServer: {
-    command: "pnpm --filter @oshwhub/desktop dev --host 127.0.0.1",
-    url: "http://127.0.0.1:5173",
-    reuseExistingServer: !process.env.CI,
+    command: "pnpm --filter @oshwhub/desktop exec vite --host 127.0.0.1 --port 5273 --strictPort",
+    url: "http://127.0.0.1:5273",
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

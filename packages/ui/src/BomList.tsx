@@ -1,16 +1,10 @@
 import type { BomItem } from "@oshwhub/bridge";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { color, Empty, ErrorPanel, useCommand } from "./common";
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SearchField } from "./components/search-field";
+import { Empty, ErrorPanel } from "./components/states";
+import { useCommand } from "./hooks/use-command";
+import { color } from "./theme";
 
 const columns = [
   { key: "name", label: "名称 / 参数", width: 128 },
@@ -82,38 +76,25 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
   });
   return (
     <View testID="bom-list" style={styles.cards}>
-      <View style={styles.searchBox}>
-        <TextInput
-          accessibilityLabel="搜索物料清单"
-          placeholder="搜索名称、位号、型号或料号…"
-          placeholderTextColor={color.muted}
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={({ nativeEvent }) => {
-            setQuery(nativeEvent.text);
-            setSearch(nativeEvent.text.trim());
-          }}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-          maxLength={100}
-          clearButtonMode="never"
-          style={styles.searchInput}
-        />
-        {query.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="清除物料搜索"
-            onPress={() => {
-              setQuery("");
-              setSearch("");
-            }}
-            style={styles.clearSearch}
-          >
-            <Text style={styles.clearSearchText}>×</Text>
-          </Pressable>
-        )}
-      </View>
+      <SearchField
+        accessibilityLabel="搜索物料清单"
+        placeholder="搜索名称、位号、型号或料号…"
+        placeholderTextColor={color.muted}
+        value={query}
+        onChangeText={setQuery}
+        onSubmitEditing={({ nativeEvent }) => {
+          setQuery(nativeEvent.text);
+          setSearch(nativeEvent.text.trim());
+        }}
+        autoCapitalize="none"
+        maxLength={100}
+        showClear={query.length > 0}
+        clearLabel="清除物料搜索"
+        onClear={() => {
+          setQuery("");
+          setSearch("");
+        }}
+      />
       <View style={styles.searchStatus}>
         {pending && <ActivityIndicator size="small" color={color.green} />}
         <Text testID="bom-search-count" accessibilityLiveRegion="polite" style={styles.hint}>
@@ -180,26 +161,6 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
 
 const styles = StyleSheet.create({
   cards: { gap: 12 },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: color.line,
-    borderRadius: 12,
-    backgroundColor: "#f3f6f3",
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 46,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: color.ink,
-  },
-  clearSearch: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  clearSearchText: { fontSize: 22, color: color.muted },
   searchStatus: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 },
   card: {
     borderWidth: 1,

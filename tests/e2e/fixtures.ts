@@ -35,7 +35,7 @@ const project = (id: string): ProjectDetail => ({
     { kind: "heading", text: "自制项目说明", url: null },
     { kind: "text", text: unsafeMarkup, url: null },
     { kind: "code", text: "const voltage = 3.3;", url: null },
-    { kind: "image", text: "本地自制说明图片", url: "http://127.0.0.1:5173/__e2e__/article.png" },
+    { kind: "image", text: "本地自制说明图片", url: "http://127.0.0.1:5273/__e2e__/article.png" },
     { kind: "link", text: "无效脚本链接", url: "javascript:window.__e2eUnsafe=true" },
   ],
   boards: [
@@ -190,7 +190,7 @@ export const test = base.extend<{
       if (/Failed to load resource:.*status of 418/.test(message.text())) return;
       errors.push(`console.error: ${message.text()}`);
     });
-    await page.route("http://127.0.0.1:5173/__e2e__/article.png", (route) =>
+    await page.route("http://127.0.0.1:5273/__e2e__/article.png", (route) =>
       route.fulfill({
         contentType: "image/png",
         path: join(testInfo.project.testDir, "assets", "article.png"),

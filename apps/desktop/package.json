@@ -1,19 +1,22 @@
 {
   "name": "@oshwhub/desktop",
   "version": "0.1.0",
+  "description": "Read-only client for the OSHWHub open hardware community",
+  "author": "OSHWHub contributors",
+  "homepage": "https://github.com/gouzil/oshwhub_app",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vite build",
-    "tauri": "tauri"
+    "electron": "electron .",
+    "package": "electron-builder --config electron-builder.config.cjs"
   },
   "dependencies": {
     "@oshwhub/bridge": "workspace:*",
     "@oshwhub/ui": "workspace:*",
     "@shopify/react-native-skia": "2.14.0",
-    "@tauri-apps/api": "2.12.4",
-    "@tauri-apps/plugin-opener": "2.7.2",
     "canvaskit-wasm": "0.41.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -23,8 +26,13 @@
     "react-native-worklets": "0.13.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.12.4",
+    "@tailwindcss/vite": "4.3.3",
     "@vitejs/plugin-react": "6.1.2",
-    "vite": "8.3.5"
-  }
+    "vite": "8.3.5",
+    "tailwindcss": "4.3.3",
+    "uniwind": "1.13.0",
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3"
+  },
+  "main": "electron/main.mjs"
 }

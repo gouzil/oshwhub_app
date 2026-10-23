@@ -2,7 +2,11 @@
 
 **目标：**交付可运行的公开工程浏览与二维 / 三维 PCB 查看客户端，并将每个可验证阶段提交到 `gouzil/oshwhub_app`。
 
-**架构：**[design.md](design.md)。React Native 共享 UI，Rust 共享业务；移动端本地桥、桌面 Tauri、开发环境 loopback 服务；Rust 几何与自研 Skia 二维渲染器。
+**架构：**[design.md](design.md)。React Native 共享 UI，Rust 共享业务；移动端本地桥、桌面 Electron + React Native Web / stdio 子进程、开发环境 loopback 服务；Rust 几何与自研 Skia 二维渲染器。
+
+## 桌面与共享组件迁移（2026-10-24）
+
+用户已确认：保留 macOS / Windows / Linux，移除 Tauri；移动使用 React Native，桌面使用 Electron + React Native Web。基础组件采用 React Native Reusables + UniWind / Tailwind CSS 4，共享主题、基础控件、业务组件和页面分别维护。组件用法见 [ui.md](ui.md)，本轮验证单独记入 [validation.md](validation.md)，历史 Tauri 结果不作为 Electron 证据。
 
 ## 三维查看阶段
 
@@ -56,7 +60,7 @@
 
 - [x] 测试先行：列表/详情/BOM模型、参数与 URL 校验、错误协议。
 - [x] 实现真实 API 请求与字段归一化；执行 Rust 单测。
-- [x] 实现 JNI/C ABI/Tauri/开发服务适配；桥往返测试。
+- [x] 实现 JNI/C ABI/原 Tauri/开发服务适配（Tauri 后由 Electron stdio 迁移替换）；桥往返测试。
 - [x] 构建原生 Android Rust 库和桌面核心，提交该阶段。
 
 ## 阶段 2：自适应公开浏览

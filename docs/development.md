@@ -2,7 +2,7 @@
 
 ## 工具链
 
-Node.js 24、pnpm 10.32.1、Rust 1.98.1（rust-toolchain.toml）、prek。移动界面采用 Expo 58 / React Native 0.88 / React 19.3；桌面采用 Tauri 2，图形使用 Skia 2.14 / CanvasKit。依赖以锁文件为准。
+Node.js 24、pnpm 10.32.1、Rust 1.98.1（rust-toolchain.toml）、prek。移动界面采用 Expo 58 / React Native 0.88 / React 19.3；桌面采用 Electron 45 + React Native Web，基础 UI 采用 React Native Reusables / UniWind / Tailwind CSS 4，图形使用 Skia 2.14 / CanvasKit。依赖以锁文件为准。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -10,7 +10,7 @@ prek install
 pnpm dev
 ```
 
-开发预览在 http://127.0.0.1:5173；Rust 核心仅绑定 127.0.0.1:4318。它不是正式包的外部后端，不支持开放到公网。移动和桌面构建直接调用进程内 Rust 核心。
+开发预览在 http://127.0.0.1:5173；Rust 核心仅绑定 127.0.0.1:4318。它不是正式包的外部后端，不支持开放到公网。移动构建直接调用进程内 Rust 核心；Electron 桌面通过随包私有 stdio 子进程调用相同核心。
 
 ## 检查
 
@@ -39,7 +39,7 @@ pnpm android
 
 原生桥需要 development build；Expo Go 不含本地 Rust 模块。生成的 Android/iOS 工程不提交，由 Expo prebuild 重建。CI 的 APK 使用开发签名，分发正式版本前必须配置自己的 release keystore。
 
-三维宿主使用与 SDK 58 匹配的 `expo-gl`；添加或升级后须重新 prebuild 并构建安装原生包，仅刷新 JS 不会添加 GLView。iOS 还需在 `apps/mobile/ios` 内运行 `pod install`。桌面没有新增原生 GL 依赖，复用 WebView 的 WebGL；不支持 WebGL 时可继续二维查看。
+三维宿主使用与 SDK 58 匹配的 `expo-gl`；添加或升级后须重新 prebuild 并构建安装原生包，仅刷新 JS 不会添加 GLView。iOS 还需在 `apps/mobile/ios` 内运行 `pod install`。桌面没有新增原生 GL 依赖，复用 Electron Chromium 的 WebGL；不支持 WebGL 时可继续二维查看。
 
 Release 在生成原生工程后构建：
 
@@ -69,22 +69,36 @@ macOS 拒绝 Expo 向 `System Events` 发送 Apple 事件时会返回 `-1743`，
 
 ```sh
 pnpm desktop
-pnpm --filter @oshwhub/desktop tauri build
+pnpm build:desktop
+pnpm build:desktop --dir
+pnpm test:desktop
+# macOS 打包后的可执行文件，也可作为最后一个参数传入
+pnpm test:desktop 'apps/desktop/release/mac-arm64/OSHWHub.app/Contents/MacOS/OSHWHub'
 ```
 
-Linux 需要 WebKitGTK 4.1、appindicator、librsvg 和 patchelf；Windows 需要 MSVC 构建工具和 WebView2。macOS 使用系统 WKWebView。Tauri 构建产物在 `target/release/bundle/`。
+Electron 自带 Chromium；Windows 的 Rust 编译需要 MSVC 构建工具，macOS 需要 Xcode Command Line Tools，Linux 需要 Rust 的系统编译工具。构建在目标系统与架构原生执行，脚本校验 Rust target 和二进制 hash，拒绝将本机 sidecar 混入其他平台包。
+
+构建产物在 `apps/desktop/release/`：macOS 为 DMG / ZIP，Windows 为 NSIS EXE，Linux 为 AppImage / DEB。`--dir` 仅生成可运行目录包。macOS 默认未签名，分发前需配置签名与公证；此命令不会发布。
+
+`pnpm desktop` 先构建 Rust sidecar，再启动 Vite 和 Electron；退出时清理它们。生产包使用 `oshwhub://app/` 加载本地资源，不启动 HTTP 后端。渲染器只能使用 preload 暴露的两个方法，不能直接访问 Node。
 
 CanvasKit WASM 随应用本地打包；启动不从 CDN 下载渲染代码。窗口最小宽度 320px，移动端安全区域与平板支持由同一 UI 处理。
 
+`test:desktop` 默认运行已构建的本地 Web 与 Rust 产物；传入可执行文件时检查实际目录包。它使用临时用户目录，验证生产协议、preload 隔离、Rust 健康检查和示例、Tailwind 控件、字体资源与 2D/3D，截图写入 `.work/desktop-smoke/`。需要可用桌面和 WebGL；远程图片由占位图替换，Rust 的公开项目请求仍可联网，因此这不是完全断网测试。
+
+组件扩展、Tailwind 主题与复用示例见 [ui.md](ui.md)。
+
 ## 日志与排障
 
-Rust 事件使用 tracing，记录 requestId、耗时、数量、错误码，不记录请求正文、HTTP凭据或解密 key/iv。开发服务从标准输出查看 JSON 日志；桌面写 Tauri `app_log_dir`（macOS 为 `~/Library/Logs/com.gouzil.oshwhub/`，Windows 为应用本地数据的 logs 目录，Linux 为应用数据的 logs 目录）；移动写应用 cache。两端文件均为 `oshwhub-core.log`，启动时超过 8 MiB 的上一份轮换为 `oshwhub-core.previous.log`。panic 只记录源码位置和类别，不打印可能含输入数据的 payload。单次长会话的文件大小不在运行中轮换。
+Rust 事件使用 tracing，记录 requestId、耗时、数量、错误码，不记录请求正文、HTTP凭据或解密 key/iv。开发服务从标准输出查看 JSON 日志；桌面写 Electron `app.getPath("logs")`（macOS 默认为 `~/Library/Logs/OSHWHub/`，其他系统为应用 userData 下的 logs 目录）；移动写应用 cache。两端文件均为 `oshwhub-core.log`，启动时超过 8 MiB 的上一份轮换为 `oshwhub-core.previous.log`。panic 只记录源码位置和类别，不打印可能含输入数据的 payload。单次长会话的文件大小不在运行中轮换。
 
 ```sh
 adb -s emulator-5554 logcat -s ReactNativeJS AndroidRuntime
 adb -s emulator-5554 shell run-as com.gouzil.oshwhub cat cache/oshwhub-core.log
 RUST_LOG=info cargo run -p oshwhub-dev-server
 ```
+
+Rust 业务错误可使用界面重试；如果桌面子进程崩溃、输出协议损坏或请求超时，当前 transport 会关闭，需要重启应用后再操作。单个 stdio 响应上限为 128 MiB，超限会明确失败。
 
 报告问题时附错误码、requestId、平台版本、工程 ID、可重复步骤和是否触发大小限制。不要附账号凭据或私有 PCB 正文。画布性能应同时记录实际工程的图元数、批次数、加载阶段耗时和设备；单个示例的结果不代表全部工程。
 
