@@ -126,6 +126,7 @@ export const test = base.extend<{
     projectContent?: ContentBlock[];
     projectCover?: string;
     projectBom?: BomItem[];
+    pickResult?: PickResult | null;
   };
 }>({
   bridge: async ({ page }, use, testInfo) => {
@@ -138,6 +139,7 @@ export const test = base.extend<{
       projectContent?: ContentBlock[];
       projectCover?: string;
       projectBom?: BomItem[];
+      pickResult?: PickResult | null;
     } = { requests: [], failNextFeed: false, endlessFeed: false };
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
@@ -206,7 +208,7 @@ export const test = base.extend<{
             properties: { 名称: "中文焊盘", 编号: "1" },
             bounds: { minX: 56, minY: 36, maxX: 64, maxY: 44 },
           };
-          data = result;
+          data = bridge.pickResult === undefined ? result : bridge.pickResult;
           break;
         }
         default:

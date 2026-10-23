@@ -99,6 +99,16 @@ scrollable side panel. The
 network appears first in picked properties so it remains visible at 240px height.
 System font scaling remains enabled. All tools have at least 44px touch targets.
 
+Picked properties use a content-sized card: the heading prefers a component
+designator or pad number, followed by a readable object type and layer. Labeled
+rows show network, value, footprint name, and other supplied attributes. Internal
+record/component/device IDs and tickets are collapsed under technical details;
+selecting a new object collapses them again. Long values wrap within a bounded
+scroll area, keeping the close control reachable. Rust merges inline component
+attributes with board overrides for picking and resolves footprint names from
+the existing footprint META. This display metadata does not modify the separate
+board-attribute table that controls inherited label replacement and visibility.
+
 Layer order is memoized from the source defaults and does not jump when layers
 are toggled. Panel closure preserves layer visibility and the viewport. Timing
 metrics and nonfatal display warnings live in the information panel; its entry
@@ -134,9 +144,15 @@ can reach the pixel cap and have less than one image pixel per physical pixel.
 uploaded by a different CanvasKit WebGL context. The surface is disposed after
 the snapshot is taken. Images use the same opaque background as drill masks, so
 detail replaces overview pixels without blending duplicate geometry. Scene,
-font, or visible-layer changes rebuild the overview and invalidate detail.
-Refinement failure keeps the overview available and reports a warning; overview
-failure displays an error, cleared after a successful rebuild.
+font changes rebuild the overview. Visible-layer changes keep the mounted Canvas
+and its current image while the replacement is built offscreen. If the same
+scene already has detail, its region and density are rebuilt too, then both
+images are published together without resetting the camera or inserting a
+loading screen. This retains the two-image budget rather than allocating a
+high-resolution image for every layer. A failed optional detail build publishes
+the new overview alone and reports a warning; overview failure displays an
+error, cleared after a successful rebuild. New scenes never display old-scene
+rasters.
 
 `pcb.raster.built` logs layer count, pixel dimensions, and build time;
 `pcb.raster.refine_failed` includes the scene ID and error. The information panel

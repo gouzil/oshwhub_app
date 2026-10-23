@@ -26,6 +26,7 @@ import { useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { defaultFontSource } from "./fontSource";
 import { type BoardRaster, buildPictures, type LayerPicture, rasterize } from "./pictures";
 import { coversView, detailBounds, planRaster } from "./raster";
+import { describeSelection } from "./selection";
 import {
   fitViewport,
   gestureViewport,
@@ -49,7 +50,12 @@ type Gesture = {
   pointers: number;
   moved: boolean;
 };
-type RasterCache = { pictures: LayerPicture[]; base: BoardRaster; detail: BoardRaster | null };
+type RasterCache = {
+  scene: Scene;
+  pictures: LayerPicture[];
+  base: BoardRaster;
+  detail: BoardRaster | null;
+};
 const touchPoints = (event: GestureResponderEvent): Point[] =>
   Array.from(event.nativeEvent.touches).map((touch) => ({
     x: touch.locationX,
@@ -82,6 +88,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     () => new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)),
   );
   const [selection, setSelection] = useState<PickResult | null>(null);
+  const [technical, setTechnical] = useState(false);
   const layers = useMemo(
     () =>
       scene.layers
@@ -119,7 +126,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     refinement.current = setTimeout(() => {
       const source = cacheRef.current;
       const { width, height } = dimensions.current;
-      if (!source || !width || !height || gesture.current) return;
+      if (!source || source.scene !== scene || !width || !height || gesture.current) return;
       const view = current.current;
       const density = view.scale * PixelRatio.get();
       const baseDensity = Math.min(
@@ -152,7 +159,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         setRasterWarning(`${message} 当前保留全板预览，可继续操作。`);
       }
     }, 180);
-  }, [cancelRefinement, scene.id]);
+  }, [cancelRefinement, scene]);
   const applyViewport = useCallback(
     (next: Viewport) => {
       current.current = next;
@@ -228,20 +235,31 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         },
         2048 / (span + margin * 2),
       );
-      const next = { pictures, base: rasterize(pictures, plan), detail: null };
+      const previous = cacheRef.current;
+      // Replace both resolutions together so toggling a layer never falls back to a blurry frame.
+      const base = rasterize(pictures, plan);
+      let detail: BoardRaster | null = null;
+      let warning: string | null = null;
+      if (previous?.scene === scene && previous.detail) {
+        try {
+          detail = rasterize(pictures, previous.detail);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "PCB 细节缓存构建失败。";
+          console.warn("pcb.raster.refine_failed", { sceneId: scene.id, message });
+          warning = `${message} 当前保留全板预览，可继续操作。`;
+        }
+      }
+      const next = { scene, pictures, base, detail };
       cacheRef.current = next;
       setCache(next);
       setRenderError(null);
-      setRasterWarning(null);
+      setRasterWarning(warning);
       refine();
     } catch (error) {
       setRenderError(error instanceof Error ? error.message : "PCB 绘制缓存构建失败。");
     }
-    return () => {
-      cacheRef.current = null;
-      cancelRefinement();
-    };
-  }, [pictures, scene.bounds, refine, cancelRefinement]);
+    return cancelRefinement;
+  }, [pictures, scene, refine, cancelRefinement]);
 
   useEffect(() => {
     if (!size.width || !size.height) return;
@@ -265,6 +283,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         if (version !== pickVersion.current) return;
         const selected = result && visibleRef.current.has(result.layer) ? result : null;
         setSelection(selected);
+        setTechnical(false);
         setPanel((previous) =>
           selected ? "selection" : previous === "selection" ? null : previous,
         );
@@ -401,6 +420,8 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     ...(compiled?.warnings ?? []),
     ...(rasterWarning ? [rasterWarning] : []),
   ];
+  const selected = selection ? describeSelection(selection) : null;
+  const selectionLayer = scene.layers.find((layer) => layer.id === selection?.layer);
   const closeSelection = () => {
     setSelection(null);
     setPanel(null);
@@ -431,7 +452,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         style={styles.surface}
         {...responder.panHandlers}
       >
-        {cache && cache.pictures === pictures && !renderError && !fontError ? (
+        {cache?.scene === scene && !renderError && !fontError ? (
           drawing
         ) : (
           <View style={styles.canvasMessage}>
@@ -499,7 +520,16 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
       )}
       {panel && (
         <View
-          style={[styles.panel, bottomPanel && styles.bottomPanel, compact && styles.compactPanel]}
+          testID={panel === "selection" ? "pcb-selection-panel" : undefined}
+          style={[
+            styles.panel,
+            compact && styles.compactPanel,
+            panel === "selection" && [
+              styles.selectionPanel,
+              { maxHeight: Math.max(80, size.height - (compact ? 82 : 96)) },
+            ],
+            bottomPanel && styles.bottomPanel,
+          ]}
         >
           <View style={styles.panelHeader}>
             <View style={styles.panelHeading}>
@@ -507,18 +537,22 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
                 accessibilityRole="header"
                 selectable
                 numberOfLines={2}
-                style={styles.panelTitle}
+                style={[styles.panelTitle, panel === "selection" && styles.selectedTitle]}
               >
-                {panel === "layers"
-                  ? "图层"
-                  : panel === "info"
-                    ? "查看器信息"
-                    : `${selection?.kind} · ${selection?.id}`}
+                {panel === "layers" ? "图层" : panel === "info" ? "查看器信息" : selected?.title}
               </Text>
               {panel === "layers" && (
                 <Text style={styles.caption}>
                   {visible.size} / {scene.layers.length} 层可见
                 </Text>
+              )}
+              {panel === "selection" && (
+                <View style={styles.selectionContext}>
+                  <View style={[styles.dot, { backgroundColor: selectionLayer?.color }]} />
+                  <Text numberOfLines={1} style={styles.caption}>
+                    {selected?.kind} · {selectionLayer?.name ?? `图层 ${selection?.layer}`}
+                  </Text>
+                </View>
               )}
             </View>
             <Tool
@@ -617,24 +651,54 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
                 ))}
               </>
             ) : (
-              selection && (
+              selection &&
+              selected && (
                 <>
-                  {selection.net && (
-                    <Text selectable style={styles.property}>
-                      网络：{selection.net}
-                    </Text>
-                  )}
-                  {Object.entries(selection.properties).map(([key, value]) => (
-                    <Text selectable key={key} style={styles.property}>
-                      {key}：{value}
-                    </Text>
+                  {selected.fields.map(([label, value], index) => (
+                    <Property
+                      key={`${index}-${label}`}
+                      label={label}
+                      value={value}
+                      compact={compact}
+                    />
                   ))}
+                  {!selected.fields.length && (
+                    <Text style={styles.caption}>此对象未提供名称或参数。</Text>
+                  )}
+                  <View style={styles.technicalToggle}>
+                    <Tool
+                      label="技术详情"
+                      text={technical ? "收起技术详情" : "技术详情"}
+                      expanded={technical}
+                      onPress={() => setTechnical(!technical)}
+                    />
+                  </View>
+                  {technical && (
+                    <>
+                      <Property label="对象 ID" value={selection.id} compact={compact} />
+                      <Property label="原始类型" value={selection.kind} compact={compact} />
+                      {Object.entries(selection.properties).map(([key, value]) => (
+                        <Property key={key} label={key} value={value} compact={compact} />
+                      ))}
+                    </>
+                  )}
                 </>
               )
             )}
           </ScrollView>
         </View>
       )}
+    </View>
+  );
+}
+
+function Property({ label, value, compact }: { label: string; value: string; compact: boolean }) {
+  return (
+    <View style={[styles.propertyRow, compact && styles.compactPropertyRow]}>
+      <Text style={styles.propertyLabel}>{label}</Text>
+      <Text selectable style={styles.propertyValue}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -777,8 +841,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     boxShadow: "0 8px 32px #00000040",
   },
-  bottomPanel: { top: "auto", left: 12, right: 12, width: "auto", maxHeight: "56%" },
+  bottomPanel: { top: "auto", bottom: 80, left: 12, right: 12, width: "auto", maxHeight: "56%" },
   compactPanel: { top: 12, bottom: 70 },
+  selectionPanel: { bottom: "auto" },
   panelHeader: {
     minHeight: 52,
     flexDirection: "row",
@@ -791,6 +856,8 @@ const styles = StyleSheet.create({
   },
   panelHeading: { flex: 1, paddingVertical: 10 },
   panelTitle: { color: "#edf2f7", fontSize: 13, fontWeight: "600", lineHeight: 20 },
+  selectedTitle: { fontSize: 18, lineHeight: 24 },
+  selectionContext: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3 },
   panelScroll: { flexGrow: 0, flexShrink: 1 },
   details: { padding: 16, gap: 10 },
   compactDetails: { paddingVertical: 8 },
@@ -812,7 +879,11 @@ const styles = StyleSheet.create({
   visibility: { fontSize: 10, color: "#98a7b7" },
   visibilityOn: { color: "#a9d3ff" },
   selectionName: { color: "#edf2f7", fontSize: 13, fontWeight: "600", lineHeight: 20 },
-  property: { color: "#c0cddb", fontSize: 12, lineHeight: 20 },
+  propertyRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingVertical: 4 },
+  compactPropertyRow: { paddingVertical: 0 },
+  propertyLabel: { width: 64, color: "#9eadbd", fontSize: 11, lineHeight: 20 },
+  propertyValue: { flex: 1, minWidth: 0, color: "#e1e8f0", fontSize: 13, lineHeight: 20 },
+  technicalToggle: { borderTopWidth: 1, borderTopColor: "#ffffff12", marginTop: 2 },
   infoRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
   infoValue: { color: "#d5dfe9", fontSize: 12, lineHeight: 18, fontVariant: ["tabular-nums"] },
   warning: { color: "#edc17d", fontSize: 12, lineHeight: 20 },

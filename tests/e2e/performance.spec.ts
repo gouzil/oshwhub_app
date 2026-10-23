@@ -96,6 +96,44 @@ test("a failed overview can recover on the next layer rebuild", async ({ page, b
     .toBeGreaterThan(100);
 });
 
+test("a failed detail during a layer change keeps the new overview visible", async ({
+  page,
+  bridge,
+}) => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: "PCB 实验室", exact: true }).click();
+  await page.getByRole("button", { name: "打开示例板", exact: true }).click();
+  expect(bridge.requests.some((request) => request.command === "demo")).toBe(true);
+  const canvas = page.locator("canvas");
+  await expect(canvas).toBeVisible();
+  for (let index = 0; index < 10; index++)
+    await page.getByRole("button", { name: "放大 PCB", exact: true }).click();
+  await page.getByRole("button", { name: "查看器信息", exact: true }).click();
+  await expect(page.getByText("视区细节", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "关闭查看器信息", exact: true }).click();
+  const originalCanvas = await canvas.elementHandle();
+  if (!originalCanvas) throw new Error("PCB canvas is missing");
+  await page.evaluate(() => {
+    const kit = (window as unknown as { CanvasKit: { MakeSurface: Method } }).CanvasKit;
+    const make = kit.MakeSurface;
+    let allocations = 0;
+    kit.MakeSurface = function (...args) {
+      if (++allocations > 1) throw new Error("detail allocation failure");
+      return make.apply(this, args);
+    };
+  });
+  await page.getByRole("button", { name: "图层", exact: true }).click();
+  await page.getByRole("checkbox", { name: "顶层铜", exact: true }).click();
+  await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await originalCanvas.evaluate((element) => element.isConnected)).toBe(true);
+  await expect.poll(async () => canvasColors(await canvas.screenshot()).copper).toBe(0);
+  await page.getByRole("button", { name: "查看器信息", exact: true }).click();
+  await expect(page.getByText("全板预览", { exact: true })).toBeVisible();
+  await expect(page.getByText("视区细节", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/detail allocation failure.*当前保留全板预览/)).toBeVisible();
+});
+
 test("idle detail stays aligned after high zoom, pan, and layer invalidation", async ({
   page,
   bridge,
@@ -141,11 +179,14 @@ test("idle detail stays aligned after high zoom, pan, and layer invalidation", a
   }
   await expect.poll(() => builds).toBeGreaterThan(beforePan);
   await expect.poll(async () => (await centerColors()).bottom).toBeGreaterThan(50);
+  const originalCanvas = await canvas.elementHandle();
+  if (!originalCanvas) throw new Error("PCB canvas is missing");
   await page.getByRole("button", { name: "图层", exact: true }).click();
   await page.getByRole("checkbox", { name: "底层铜", exact: true }).click();
   await page.getByRole("button", { name: "关闭图层面板", exact: true }).click();
   await expect.poll(async () => (await centerColors()).bottom).toBe(0);
   await expect.poll(async () => (await centerColors()).copper).toBeGreaterThan(50);
+  expect(await originalCanvas.evaluate((element) => element.isConnected)).toBe(true);
   await page.getByRole("button", { name: "查看器信息", exact: true }).click();
   await expect(page.getByText("视区细节", { exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "关闭查看器信息", exact: true }).click();

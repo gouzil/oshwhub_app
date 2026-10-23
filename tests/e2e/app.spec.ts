@@ -50,8 +50,8 @@ test("PCB workspace panels preserve the canvas view and layer choices", async ({
   await expect(page.getByText("载入耗时", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "关闭查看器信息", exact: true }).click();
   await surface.tap();
-  await expect(page.getByText("焊盘 · self-bottom-pad", { exact: true })).toBeVisible();
-  await expect(page.getByText("网络：GND", { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("heading", { name: "焊盘 1", exact: true })).toBeVisible();
+  await expect(page.getByText("GND", { exact: true })).toBeInViewport({ ratio: 1 });
   await page.getByRole("button", { name: "关闭图元属性", exact: true }).click();
   expect(bridge.requests.some((command) => command.command === "demo")).toBe(true);
   await expectViewport(page);
@@ -262,7 +262,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
     picksBeforeDrag,
   );
   await surface.tap();
-  await expect(page.getByText("焊盘 · self-top-pad", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "焊盘 1", exact: true })).toBeVisible();
   const pannedPick = bridge.requests.filter((command) => command.command === "pick").at(-1);
   if (pannedPick?.command !== "pick") throw new Error("Missing panned pick request");
   expect(pannedPick.x).toBeLessThan(60);
@@ -272,7 +272,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
     await expect(page.getByRole("button", { name: "查看器信息", exact: true })).toBeInViewport({
       ratio: 1,
     });
-    await expect(page.getByText("网络：GND", { exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(page.getByText("GND", { exact: true })).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole("button", { name: "关闭图元属性", exact: true })).toBeInViewport({
       ratio: 1,
     });
@@ -319,8 +319,8 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
     .poll(async () => canvasColors(await page.locator("canvas").screenshot()).copper)
     .toBe(0);
   await surface.tap();
-  await expect(page.getByText("焊盘 · self-bottom-pad", { exact: true })).toBeVisible();
-  await expect(page.getByText("网络：GND", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "焊盘 1", exact: true })).toBeVisible();
+  await expect(page.getByText("GND", { exact: true })).toBeVisible();
   const pick = bridge.requests.filter((command) => command.command === "pick").at(-1);
   expect(pick?.command).toBe("pick");
   if (pick?.command === "pick") {

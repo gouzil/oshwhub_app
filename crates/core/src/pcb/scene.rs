@@ -351,6 +351,15 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        if r.kind == "PAD"
+            && let Some(num) = r
+                .data
+                .as_ref()
+                .and_then(|d| d["num"].as_str())
+                .filter(|s| !s.is_empty())
+        {
+            properties.insert("PadNumber".into(), num.chars().take(1024).collect());
+        }
         let result = PickResult {
             id,
             kind: r.kind.clone(),
@@ -957,6 +966,31 @@ impl<'a> Builder<'a> {
             ));
             return Ok(());
         };
+        let mut properties = attrs.clone().unwrap_or_default();
+        if let Some(inline) = d["attrs"].as_object() {
+            for (key, value) in inline {
+                properties
+                    .entry(key.clone())
+                    .or_insert_with(|| value.clone());
+            }
+        }
+        if let Some(title) = fp
+            .first("META")
+            .and_then(|v| v["title"].as_str())
+            .filter(|s| !s.trim().is_empty())
+        {
+            properties.insert("FootprintName".into(), Value::String(title.to_owned()));
+        }
+        let properties: BTreeMap<_, _> = properties
+            .iter()
+            .take(24)
+            .map(|(key, value)| {
+                (
+                    key.clone(),
+                    text(value).chars().take(1024).collect::<String>(),
+                )
+            })
+            .collect();
         let (x, y) = position(d)?;
         let bottom = layer(d) == 2;
         let tf = self.tf.component(x, y, n(d, "angle", 0.), bottom);
@@ -976,7 +1010,14 @@ impl<'a> Builder<'a> {
         }
         let mut bounds = Bounds::empty();
         let mut pick_layers = BTreeSet::new();
-        for paint in &self.paints[before..] {
+        for paint in &mut self.paints[before..] {
+            for (key, value) in &properties {
+                paint
+                    .result
+                    .properties
+                    .entry(key.clone())
+                    .or_insert_with(|| value.clone());
+            }
             bounds.union(paint.result.bounds);
             if paint.result.layer != 47 && !paint.geometry.path.is_empty() {
                 pick_layers.insert(paint.result.layer);
@@ -996,19 +1037,13 @@ impl<'a> Builder<'a> {
                 0.,
                 Transform::board(0., 0.).affine(1., 0., 0., -1., 0., 0.),
             )?;
-            let mut props = BTreeMap::new();
-            if let Some(attrs) = attrs {
-                for (k, v) in attrs.iter().take(24) {
-                    props.insert(k.clone(), text(v).chars().take(1024).collect());
-                }
-            }
             self.paints.push(Paint {
                 result: PickResult {
                     id,
                     kind: "COMPONENT".into(),
                     layer: layer(d),
                     net: None,
-                    properties: props,
+                    properties,
                     bounds,
                 },
                 geometry: Geometry {
@@ -1302,6 +1337,39 @@ mod tests {
             history::replay(&mut p, FIXTURE).unwrap();
             compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
         })
+    }
+    #[test]
+    fn picked_component_parts_include_instance_values_and_readable_footprint_names() {
+        let mut project = Project::default();
+        history::replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"fp","docType":"FOOTPRINT"}|
+{"type":"META","ticket":1}||{"title":"TEST-0603"}|
+{"type":"PAD","id":"pad"}||{"num":"1","layerId":1,"centerX":0,"centerY":0,"defaultPad":{"padType":"RECT","width":8,"height":6}}|
+{"type":"ATTR","id":"master-value"}||{"key":"Value","value":"DEFAULT","valueVisible":true,"x":0,"y":10,"fontSize":10,"layerId":3}|
+{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"COMPONENT","id":"part"}||{"x":0,"y":0,"layerId":1,"attrs":{"Footprint":"fp","Designator":"OLD","Value":"100 nF"}}|
+{"type":"ATTR","id":"ref"}||{"parentId":"part","key":"Designator","value":"C49","valueVisible":false}|"#,
+        )
+        .unwrap();
+        let doc = &project.docs["board"];
+        let mut builder = Builder::new(&project, doc);
+        builder
+            .component(doc.active().find(|r| r.kind == "COMPONENT").unwrap())
+            .unwrap();
+        assert!(builder.texts.iter().any(|label| label.text == "DEFAULT"));
+        for paint in builder.paints.iter().filter(|p| p.selectable) {
+            let properties = &paint.result.properties;
+            assert_eq!(properties["Designator"], "C49");
+            assert_eq!(properties.get("Value").map(String::as_str), Some("100 nF"));
+            assert_eq!(
+                properties.get("FootprintName").map(String::as_str),
+                Some("TEST-0603")
+            );
+            if paint.result.kind == "PAD" {
+                assert_eq!(properties.get("PadNumber").map(String::as_str), Some("1"));
+            }
+        }
     }
     #[test]
     fn picking_ticket_properties_preserve_missing_zero_and_full_u64_values() {
