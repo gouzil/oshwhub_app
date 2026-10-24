@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { fitCamera, projection } from "./camera3d";
-import { identity, Renderer3d } from "./gl3d";
+import { fragmentShader, identity, Renderer3d } from "./gl3d";
 
 function renderer(version = "WebGL 1.0", extension = false, nativeWebGL2 = false) {
   const gl = {
@@ -73,6 +73,11 @@ it("packs mesh attributes before uploading them to keep large boards within the 
   const { value } = renderer();
   value.add(mesh, [identity]);
   expect(value.bytes).toBe(3 * 20);
+});
+
+it("keeps a reverse light for underside shading", () => {
+  expect(fragmentShader).toContain("backDiffuse");
+  expect(fragmentShader).toContain("max(dot(n, -light), 0.0)");
 });
 
 it("draws all instances of one mesh in a single instanced call", () => {

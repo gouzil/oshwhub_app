@@ -57,7 +57,7 @@ void main() {
   vColor = aColor.xyz;
   gl_Position = uCamera * world;
 }`;
-const fragmentShader = `
+export const fragmentShader = `
 precision mediump float;
 uniform vec3 uEye;
 varying vec3 vNormal;
@@ -68,10 +68,11 @@ void main() {
   if (!gl_FrontFacing) n = -n;
   vec3 light = normalize(vec3(-0.4, -0.5, 1.0));
   float diffuse = max(dot(n, light), 0.0) * 0.65;
+  float backDiffuse = max(dot(n, -light), 0.0) * 0.35;
   float fill = max(dot(n, normalize(vec3(0.6, 0.5, 0.2))), 0.0) * 0.18;
   vec3 halfway = normalize(light + normalize(uEye - vPosition));
   float specular = pow(max(dot(n, halfway), 0.0), 40.0) * 0.16;
-  gl_FragColor = vec4(vColor * (0.32 + diffuse + fill) + vec3(specular), 1.0);
+  gl_FragColor = vec4(vColor * (0.38 + diffuse + backDiffuse + fill) + vec3(specular), 1.0);
 }`;
 
 function packVertices(data: Float32Array): Uint8Array {
