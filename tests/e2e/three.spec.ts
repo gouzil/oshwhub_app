@@ -94,6 +94,7 @@ test("3D resources are released and stale model responses are ignored after leav
     const originalDelete = WebGLRenderingContext.prototype.deleteBuffer;
     const originalDraw = WebGLRenderingContext.prototype.drawArrays;
     const originalDrawElements = WebGLRenderingContext.prototype.drawElements;
+    const originalGetExtension = WebGLRenderingContext.prototype.getExtension;
     const probe = { created: 0, deleted: 0, drawn: 0 };
     Object.assign(window, { __threeGpu: probe });
     WebGLRenderingContext.prototype.createBuffer = function () {
@@ -112,6 +113,22 @@ test("3D resources are released and stale model responses are ignored after leav
     WebGLRenderingContext.prototype.drawElements = function (...args) {
       probe.drawn++;
       originalDrawElements.apply(this, args);
+    };
+    WebGLRenderingContext.prototype.getExtension = function (name) {
+      const extension = originalGetExtension.call(this, name);
+      if (name !== "ANGLE_instanced_arrays" || !extension) return extension;
+      const instanced = extension as ANGLE_instanced_arrays;
+      const drawArrays = instanced.drawArraysInstancedANGLE;
+      const drawElements = instanced.drawElementsInstancedANGLE;
+      instanced.drawArraysInstancedANGLE = function (...args) {
+        probe.drawn++;
+        return drawArrays.apply(this, args);
+      };
+      instanced.drawElementsInstancedANGLE = function (...args) {
+        probe.drawn++;
+        return drawElements.apply(this, args);
+      };
+      return instanced;
     };
   });
   const gpu = () =>

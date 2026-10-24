@@ -148,6 +148,7 @@ export function Pcb3dViewer({
               model.mesh,
               model.instances.map((i) => i.matrix),
               true,
+              model.meshKey,
             );
             failed.delete(key);
             loaded += model.instances.length;

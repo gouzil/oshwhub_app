@@ -126,6 +126,7 @@ export interface Scene3d {
 }
 export interface Model3d {
   key: string;
+  meshKey?: string;
   mesh: PackedMesh;
   instances: { title: string; matrix: number[] }[];
 }
