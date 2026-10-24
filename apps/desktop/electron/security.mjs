@@ -1,4 +1,28 @@
 export const MAX_REQUEST_BYTES = 1024 * 1024;
+const AUTH_CODE_PATTERN = /^[A-Za-z0-9._~-]{1,512}$/;
+
+export function authCallbackCode(input) {
+  if (typeof input !== "string") return null;
+  try {
+    const url = new URL(input);
+    if (
+      url.protocol !== "oshwhub:" ||
+      url.hostname !== "auth" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      url.pathname !== "/callback" ||
+      url.hash
+    )
+      return null;
+    const keys = [...url.searchParams.keys()];
+    if (keys.length !== 1 || keys[0] !== "code") return null;
+    const values = url.searchParams.getAll("code");
+    return values.length === 1 && AUTH_CODE_PATTERN.test(values[0]) ? values[0] : null;
+  } catch {
+    return null;
+  }
+}
 
 export function validateInput(input) {
   if (typeof input !== "string" || Buffer.byteLength(input, "utf8") > MAX_REQUEST_BYTES) {

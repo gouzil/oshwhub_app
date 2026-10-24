@@ -7,6 +7,14 @@ pub(super) fn invalid_response() -> AppError {
 }
 
 pub(super) fn payload(response: &Value) -> Result<&Value> {
+    ensure_success(response)?;
+    response
+        .get("result")
+        .filter(|v| v.is_object())
+        .ok_or_else(invalid_response)
+}
+
+pub(super) fn ensure_success(response: &Value) -> Result<()> {
     let code = response["code"].as_u64().ok_or_else(invalid_response)?;
     if code != 0 {
         let (kind, message) = match code {
@@ -28,10 +36,7 @@ pub(super) fn payload(response: &Value) -> Result<&Value> {
     if response["success"].as_bool() != Some(true) {
         return Err(invalid_response());
     }
-    response
-        .get("result")
-        .filter(|v| v.is_object())
-        .ok_or_else(invalid_response)
+    Ok(())
 }
 
 pub(super) fn required<'a>(data: &'a Value, field: &str) -> Result<&'a str> {
@@ -72,4 +77,24 @@ pub(super) fn web_url(value: &str, base: &str) -> Option<String> {
         && url.username().is_empty()
         && url.password().is_none())
     .then(|| url.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn maps_business_errors_without_exposing_response_details() {
+        for (code, expected) in [
+            (401, "AUTH_REQUIRED"),
+            (403, "BLOCKED"),
+            (429, "RATE_LIMITED"),
+        ] {
+            let response = json!({"success": false, "code": code, "result": null});
+            assert_eq!(ensure_success(&response).unwrap_err().code, expected);
+        }
+        let malformed = json!({"success": true, "code": 0, "result": "unexpected"});
+        assert_eq!(payload(&malformed).unwrap_err().code, "INVALID_RESPONSE");
+    }
 }

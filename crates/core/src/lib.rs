@@ -32,6 +32,31 @@ enum Command {
     Project {
         id: String,
     },
+    Login {
+        code: String,
+    },
+    CurrentUser,
+    Logout,
+    ProjectStatus {
+        id: String,
+    },
+    ToggleProjectCollection {
+        id: String,
+        collect: bool,
+    },
+    Comments {
+        id: String,
+        #[serde(default = "default_comment_sort")]
+        sort: String,
+        #[serde(default = "first_page")]
+        page: u32,
+        #[serde(default = "comment_page_size", rename = "pageSize")]
+        page_size: u32,
+    },
+    CreateComment {
+        id: String,
+        content: String,
+    },
     SearchBom {
         items: Vec<model::BomItem>,
         query: String,
@@ -72,6 +97,12 @@ fn page_size() -> u32 {
 fn default_sort() -> String {
     "recommend".into()
 }
+fn default_comment_sort() -> String {
+    "hot".into()
+}
+fn comment_page_size() -> u32 {
+    20
+}
 
 fn http_client() -> Result<HttpClient> {
     static CLIENT: OnceLock<std::result::Result<HttpClient, AppError>> = OnceLock::new();
@@ -104,6 +135,45 @@ async fn execute(command: Command) -> Result<Value> {
         }
         Command::Project { id } => {
             let data = Api::new(http_client()?).project(&id).await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::Login { code } => {
+            let data = Api::new(http_client()?).login(&code).await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::CurrentUser => {
+            let data = Api::new(http_client()?).current_user().await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::Logout => {
+            Api::new(http_client()?).logout().await?;
+            Ok(json!({}))
+        }
+        Command::ProjectStatus { id } => {
+            let data = Api::new(http_client()?).project_status(&id).await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::ToggleProjectCollection { id, collect } => {
+            let data = Api::new(http_client()?)
+                .set_project_collection(&id, collect)
+                .await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::Comments {
+            id,
+            sort,
+            page,
+            page_size,
+        } => {
+            let data = Api::new(http_client()?)
+                .comments(&id, &sort, page, page_size)
+                .await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
+        Command::CreateComment { id, content } => {
+            let data = Api::new(http_client()?)
+                .create_comment(&id, &content)
+                .await?;
             serde_json::to_value(data).map_err(serialization_error)
         }
         Command::SearchBom { items, query } => {

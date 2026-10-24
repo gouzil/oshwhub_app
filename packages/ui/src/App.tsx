@@ -1,4 +1,11 @@
-import { useEffect, useState } from "react";
+import {
+  call,
+  openExternal,
+  passportLoginUrl,
+  subscribeAuthCallback,
+  type User,
+} from "@oshwhub/bridge";
+import { useCallback, useEffect, useState } from "react";
 import { BackHandler, Platform, StatusBar, useWindowDimensions, View } from "react-native";
 import {
   SafeAreaProvider as NativeSafeAreaProvider,
@@ -13,6 +20,7 @@ import { cn } from "./lib/utils";
 import { layoutFor } from "./model";
 import { NavigationIcon } from "./NavigationIcon";
 import { AboutPage } from "./screens/AboutPage";
+import { AccountPage } from "./screens/AccountPage";
 import { DiscoverPage } from "./screens/DiscoverPage";
 import { LabPage } from "./screens/LabPage";
 import { ProjectPage } from "./screens/ProjectPage";
@@ -39,6 +47,10 @@ function Shell() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [viewer, setViewer] = useState<ViewerRoute | null>(null);
   const [dockHeight, setDockHeight] = useState(70);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<Error | null>(null);
+  const [authVersion, setAuthVersion] = useState(0);
   const showDock = layout.sidebar === 0 && !viewer;
   const dockBottom = Math.max(insets.bottom, 12);
   const bottomInset = showDock ? dockHeight + dockBottom + 16 : 0;
@@ -47,6 +59,67 @@ function Shell() {
     setProjectId(null);
     setViewer(null);
   };
+  const refreshUser = useCallback(() => {
+    setAuthLoading(true);
+    call<User>({ command: "currentUser" })
+      .then(
+        (next) => {
+          setUser(next);
+          setAuthError(null);
+        },
+        (error: unknown) => {
+          if ((error as { code?: string })?.code === "AUTH_REQUIRED") {
+            setUser(null);
+            setAuthError(null);
+          } else {
+            setAuthError(
+              error instanceof Error ? error : new Error("暂时无法读取账户状态，请重试。"),
+            );
+          }
+        },
+      )
+      .finally(() => setAuthLoading(false));
+  }, []);
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
+  useEffect(() => {
+    return subscribeAuthCallback((code) => {
+      setAuthLoading(true);
+      setAuthError(null);
+      call<User>({ command: "login", code })
+        .then(
+          (next) => {
+            setUser(next);
+            setAuthVersion((value) => value + 1);
+          },
+          (error: unknown) => {
+            setAuthError(error instanceof Error ? error : new Error("登录失败，请重试。"));
+          },
+        )
+        .finally(() => setAuthLoading(false));
+    });
+  }, []);
+  const login = useCallback(() => {
+    setAuthError(null);
+    void openExternal(passportLoginUrl()).catch((error: unknown) => {
+      setAuthError(error instanceof Error ? error : new Error("无法打开官方认证页，请重试。"));
+    });
+  }, []);
+  const logout = useCallback(() => {
+    setAuthLoading(true);
+    void call({ command: "logout" })
+      .then(
+        () => setAuthError(null),
+        (error: unknown) =>
+          setAuthError(error instanceof Error ? error : new Error("退出登录失败，请重试。")),
+      )
+      .finally(() => {
+        setUser(null);
+        setAuthVersion((value) => value + 1);
+        setAuthLoading(false);
+      });
+  }, []);
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -127,6 +200,18 @@ function Shell() {
               <AboutPage bottomInset={bottomInset} />
             </View>
           )}
+          {tab === "account" && (
+            <View className="absolute inset-0 bg-background">
+              <AccountPage
+                user={user}
+                loading={authLoading}
+                error={authError}
+                onLogin={login}
+                onLogout={logout}
+                onRetry={refreshUser}
+              />
+            </View>
+          )}
           {projectId && (
             <View
               className="absolute inset-0 bg-background"
@@ -139,6 +224,9 @@ function Shell() {
                 width={width - layout.sidebar}
                 bottomInset={bottomInset}
                 onBack={() => setProjectId(null)}
+                authenticated={user !== null}
+                authVersion={authVersion}
+                onAccount={() => navigate("account")}
                 onPcb={(documentId, name) =>
                   setViewer({ projectId, documentId, title: name, demo: false })
                 }

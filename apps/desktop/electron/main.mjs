@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from "electron";
 import { assetPath } from "./assets.mjs";
-import { assertTrustedSender, externalUrl, validateInput } from "./security.mjs";
+import { assertTrustedSender, authCallbackCode, externalUrl, validateInput } from "./security.mjs";
 import { Sidecar } from "./sidecar.mjs";
 
 protocol.registerSchemesAsPrivileged([
@@ -27,6 +27,37 @@ const contentSecurityPolicy =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self'; font-src 'self' data:; worker-src 'self' blob:";
 let mainWindow;
 let core;
+let rendererReady = false;
+let pendingAuthCode;
+
+function forwardAuthUrl(input) {
+  const code = authCallbackCode(input);
+  if (!code) return;
+  if (!mainWindow || mainWindow.isDestroyed() || !rendererReady) {
+    pendingAuthCode = code;
+    return;
+  }
+  mainWindow.webContents.send("oshwhub:auth-callback", code);
+}
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  forwardAuthUrl(url);
+});
+
+const singleInstance = app.requestSingleInstanceLock();
+if (!singleInstance) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, commandLine) => {
+    forwardAuthUrl(commandLine.at(-1));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+  if (process.platform !== "darwin") forwardAuthUrl(process.argv.at(-1));
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -50,6 +81,15 @@ function createWindow() {
   mainWindow.webContents.on("will-attach-webview", (event) => event.preventDefault());
   mainWindow.on("closed", () => {
     mainWindow = undefined;
+    rendererReady = false;
+  });
+  mainWindow.webContents.once("did-finish-load", () => {
+    rendererReady = true;
+    if (pendingAuthCode) {
+      const code = pendingAuthCode;
+      pendingAuthCode = undefined;
+      mainWindow.webContents.send("oshwhub:auth-callback", code);
+    }
   });
   mainWindow.loadURL(rendererUrl).catch(() => app.quit());
 }
@@ -57,6 +97,7 @@ function createWindow() {
 app
   .whenReady()
   .then(async () => {
+    app.setAsDefaultProtocolClient("oshwhub");
     app.setAppLogsPath();
     const executable = `oshwhub-desktop-core${process.platform === "win32" ? ".exe" : ""}`;
     const binary = app.isPackaged

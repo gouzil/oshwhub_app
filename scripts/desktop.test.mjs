@@ -9,6 +9,7 @@ import test from "node:test";
 import { assetPath } from "../apps/desktop/electron/assets.mjs";
 import {
   assertTrustedSender,
+  authCallbackCode,
   externalUrl,
   validateInput,
 } from "../apps/desktop/electron/security.mjs";
@@ -68,6 +69,19 @@ test("IPC inputs are byte bounded and external URLs only allow HTTP(S)", () => {
     "https://",
   ])
     assert.throws(() => externalUrl(url));
+});
+
+test("desktop callback validation accepts only the OSHWHub auth route", () => {
+  assert.equal(authCallbackCode("oshwhub://auth/callback?code=abc-123_A"), "abc-123_A");
+  for (const url of [
+    "https://auth/callback?code=abc",
+    "oshwhub://evil/callback?code=abc",
+    "oshwhub://user@auth/callback?code=abc",
+    "oshwhub://auth/callback?code=a%20b",
+    "oshwhub://auth/callback?code=abc&code=def",
+    "oshwhub://auth/callback",
+  ])
+    assert.equal(authCallbackCode(url), null);
 });
 
 test("sidecar correlates concurrent responses and preserves business output", async () => {
@@ -182,11 +196,12 @@ test("Linux DEB artifacts stay in the release root despite the scoped package na
   }
 });
 
-test("sandbox preload exposes only two named promise-based methods", async () => {
+test("sandbox preload exposes only named bridge methods and an unsubscribe callback listener", async () => {
   const { runInNewContext } = await import("node:vm");
   const { readFile } = await import("node:fs/promises");
   let api;
   const invokes = [];
+  const listeners = new Map();
   runInNewContext(
     await readFile(new URL("../apps/desktop/electron/preload.cjs", import.meta.url), "utf8"),
     {
@@ -204,15 +219,24 @@ test("sandbox preload exposes only two named promise-based methods", async () =>
               invokes.push(args);
               return Promise.resolve("result");
             },
+            on: (channel, listener) => listeners.set(channel, listener),
+            removeListener: (channel, listener) => {
+              if (listeners.get(channel) === listener) listeners.delete(channel);
+            },
           },
         };
       },
     },
   );
-  assert.deepEqual(Object.keys(api), ["dispatch", "openExternal"]);
+  assert.deepEqual(Object.keys(api), ["dispatch", "openExternal", "onAuthCallback"]);
   assert.equal(Object.isFrozen(api), true);
   assert.equal(await api.dispatch("{}"), "result");
   await api.openExternal("https://example.com/");
+  const callback = () => {};
+  const unsubscribe = api.onAuthCallback(callback);
+  assert.equal(typeof unsubscribe, "function");
+  unsubscribe();
+  assert.equal(listeners.size, 0);
   assert.deepEqual(invokes, [
     ["oshwhub:dispatch", "{}"],
     ["oshwhub:openExternal", "https://example.com/"],

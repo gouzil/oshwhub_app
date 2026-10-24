@@ -36,6 +36,7 @@ export { RemoteImage } from "./images";
 export { cn } from "./lib/utils";
 export { Skeleton, SkeletonBlock } from "./loading";
 export { AboutPage } from "./screens/AboutPage";
+export { AccountPage } from "./screens/AccountPage";
 export { DiscoverPage } from "./screens/DiscoverPage";
 export { LabPage } from "./screens/LabPage";
 export { ProjectPage } from "./screens/ProjectPage";

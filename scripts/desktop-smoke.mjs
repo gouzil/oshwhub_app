@@ -55,7 +55,7 @@ try {
       response: JSON.parse(await bridge.dispatch(JSON.stringify({ command: "health" }))),
     };
   });
-  assert.deepEqual(health.keys, ["dispatch", "openExternal"]);
+  assert.deepEqual(health.keys, ["dispatch", "onAuthCallback", "openExternal"]);
   assert.equal(health.node, "undefined");
   assert.equal(health.response.ok, true);
   assert.equal(health.response.data.protocol, 1);

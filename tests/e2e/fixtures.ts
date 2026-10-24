@@ -3,13 +3,16 @@ import { test as base, expect } from "@playwright/test";
 import type {
   BomItem,
   Command,
+  Comment,
   ContentBlock,
   FeedPage,
   PackedMesh,
   PickResult,
   ProjectDetail,
+  ProjectStatus,
   ProjectSummary,
   Scene,
+  User,
 } from "../../packages/bridge/src/types";
 
 export const unsafeMarkup = "<script>window.__e2eUnsafe = true</script><b>原样正文</b>";
@@ -74,6 +77,13 @@ const project = (id: string): ProjectDetail => ({
     { name: "无效附件", url: "data:text/html,unsafe" },
   ],
 });
+
+const authUser: User = {
+  id: "user-e2e",
+  username: "e2e-user",
+  nickname: "测试用户",
+  avatar: null,
+};
 
 export const scene: Scene = {
   id: "self-made-scene",
@@ -166,6 +176,12 @@ export const test = base.extend<{
     pickResult?: PickResult | null;
     modelGate?: Promise<void>;
     failModels?: boolean;
+    authLoggedIn: boolean;
+    authError?: { code: string; message: string; requestId: string };
+    authUser: User;
+    collect: boolean;
+    comments: Comment[];
+    interactionError?: { code: string; message: string; requestId: string };
   };
 }>({
   bridge: async ({ page }, use, testInfo) => {
@@ -181,7 +197,21 @@ export const test = base.extend<{
       pickResult?: PickResult | null;
       modelGate?: Promise<void>;
       failModels?: boolean;
-    } = { requests: [], failNextFeed: false, endlessFeed: false };
+      authLoggedIn: boolean;
+      authError?: { code: string; message: string; requestId: string };
+      authUser: User;
+      collect: boolean;
+      comments: Comment[];
+      interactionError?: { code: string; message: string; requestId: string };
+    } = {
+      requests: [],
+      failNextFeed: false,
+      endlessFeed: false,
+      authLoggedIn: false,
+      authUser,
+      collect: false,
+      comments: [],
+    };
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
@@ -224,6 +254,91 @@ export const test = base.extend<{
           if (bridge.projectCover) detail.summary.cover = bridge.projectCover;
           if (bridge.projectBom) detail.boards[0].bom = bridge.projectBom;
           data = detail;
+          break;
+        }
+        case "currentUser": {
+          if (!bridge.authLoggedIn) {
+            await route.fulfill({
+              contentType: "application/json",
+              json: {
+                ok: false,
+                error: { code: "AUTH_REQUIRED", message: "请先登录", requestId: "account-guest" },
+              },
+            });
+            return;
+          }
+          data = authUser;
+          break;
+        }
+        case "login": {
+          if (bridge.authError) {
+            await route.fulfill({
+              contentType: "application/json",
+              json: { ok: false, error: bridge.authError },
+            });
+            return;
+          }
+          bridge.authLoggedIn = true;
+          data = authUser;
+          break;
+        }
+        case "logout":
+          bridge.authLoggedIn = false;
+          data = {};
+          break;
+        case "projectStatus": {
+          data = {
+            albumCollect: false,
+            like: false,
+            collect: bridge.collect,
+          } satisfies ProjectStatus;
+          break;
+        }
+        case "toggleProjectCollection": {
+          if (!bridge.authLoggedIn) {
+            await route.fulfill({
+              contentType: "application/json",
+              json: {
+                ok: false,
+                error: { code: "AUTH_REQUIRED", message: "请先登录", requestId: "collect-guest" },
+              },
+            });
+            return;
+          }
+          if (bridge.interactionError) {
+            await route.fulfill({
+              contentType: "application/json",
+              json: { ok: false, error: bridge.interactionError },
+            });
+            return;
+          }
+          bridge.collect = command.collect;
+          data = {
+            albumCollect: false,
+            like: false,
+            collect: bridge.collect,
+          } satisfies ProjectStatus;
+          break;
+        }
+        case "comments":
+          data = {
+            items: bridge.comments,
+            page: command.page ?? 1,
+            total: bridge.comments.length,
+            hasMore: false,
+          };
+          break;
+        case "createComment": {
+          const comment: Comment = {
+            uuid: `comment-${bridge.comments.length + 1}`,
+            content: command.content,
+            creator: bridge.authUser,
+            createdAt: "2026-10-24 12:00:00",
+            like: false,
+            replies: [],
+          };
+          bridge.comments = [...bridge.comments, comment];
+          data = comment;
           break;
         }
         case "searchBom": {

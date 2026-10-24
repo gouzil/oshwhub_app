@@ -1,11 +1,46 @@
 use crate::error::{AppError, Result};
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::{
+    sync::{Arc, RwLock},
+    time::{Duration, Instant},
+};
 use url::Url;
 
 #[derive(Clone)]
 pub struct HttpClient {
     inner: reqwest::Client,
+    cookies: Arc<SessionCookieStore>,
+}
+
+#[derive(Default)]
+pub struct SessionCookieStore {
+    current: RwLock<Arc<reqwest::cookie::Jar>>,
+}
+
+impl SessionCookieStore {
+    pub fn clear(&self) {
+        *self.current.write().expect("cookie store lock poisoned") = Arc::new(Default::default());
+    }
+}
+
+impl reqwest::cookie::CookieStore for SessionCookieStore {
+    fn set_cookies(
+        &self,
+        cookie_headers: &mut dyn Iterator<Item = &reqwest::header::HeaderValue>,
+        url: &Url,
+    ) {
+        self.current
+            .read()
+            .expect("cookie store lock poisoned")
+            .set_cookies(cookie_headers, url);
+    }
+
+    fn cookies(&self, url: &Url) -> Option<reqwest::header::HeaderValue> {
+        self.current
+            .read()
+            .expect("cookie store lock poisoned")
+            .cookies(url)
+    }
 }
 
 const JSON_LIMIT: usize = 8 * 1024 * 1024;
@@ -20,33 +55,53 @@ const ALLOWED_HOSTS: &[&str] = &[
 
 impl HttpClient {
     pub fn new() -> Result<Self> {
+        let cookies = Arc::new(SessionCookieStore::default());
         let inner = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
+            .cookie_provider(cookies.clone())
             .build()
             .map_err(|_| AppError::new("NETWORK", "无法初始化网络客户端"))?;
-        Ok(Self { inner })
+        Ok(Self { inner, cookies })
     }
 
     pub async fn get_json(&self, url: &str) -> Result<Value> {
-        let bytes = self.request(url, None, JSON_LIMIT, true).await?;
+        let bytes = self
+            .request(reqwest::Method::GET, url, None, JSON_LIMIT, true)
+            .await?;
         serde_json::from_slice(&bytes)
             .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
     }
 
     pub async fn post_json(&self, url: &str, body: &Value) -> Result<Value> {
-        let bytes = self.request(url, Some(body), JSON_LIMIT, true).await?;
+        let bytes = self
+            .request(reqwest::Method::POST, url, Some(body), JSON_LIMIT, true)
+            .await?;
         serde_json::from_slice(&bytes)
             .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
     }
 
+    pub async fn delete_json(&self, url: &str) -> Result<Value> {
+        let bytes = self
+            .request(reqwest::Method::DELETE, url, None, JSON_LIMIT, true)
+            .await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
+    }
+
+    pub fn clear_cookies(&self) {
+        self.cookies.clear();
+    }
+
     pub async fn get_bytes(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>> {
-        self.request(url, None, max_bytes, false).await
+        self.request(reqwest::Method::GET, url, None, max_bytes, false)
+            .await
     }
 
     async fn request(
         &self,
+        method: reqwest::Method,
         url: &str,
         body: Option<&Value>,
         max_bytes: usize,
@@ -57,10 +112,11 @@ impl HttpClient {
             return Err(AppError::new("INVALID_LIMIT", "下载大小上限必须大于零"));
         }
         let started = Instant::now();
+        let request = self.inner.request(method.clone(), url.clone());
         let request = if let Some(body) = body {
-            self.inner.post(url.clone()).json(body)
+            request.json(body)
         } else {
-            self.inner.get(url.clone())
+            request
         };
         let request = if json {
             request.header(reqwest::header::ACCEPT, "application/json")
@@ -70,7 +126,7 @@ impl HttpClient {
         let mut response = request.send().await.map_err(network_error)?;
         let status = response.status().as_u16();
         tracing::debug!(
-            method = if body.is_some() { "POST" } else { "GET" },
+            method = method.as_str(),
             host = url.host_str().unwrap_or_default(),
             status,
             elapsed_ms = started.elapsed().as_millis() as u64,
@@ -230,5 +286,17 @@ mod tests {
         assert_eq!(bytes, vec![1, 2]);
         append_chunk(&mut bytes, &[3], 3).unwrap();
         assert_eq!(bytes, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn cookie_store_can_be_cleared_without_exposing_cookie_values() {
+        let store = SessionCookieStore::default();
+        let url = Url::parse("https://oshwhub.com/api/users").unwrap();
+        let header = reqwest::header::HeaderValue::from_static("oshwhub_session=secret; Path=/");
+        let mut headers = std::iter::once(&header);
+        reqwest::cookie::CookieStore::set_cookies(&store, &mut headers, &url);
+        assert!(reqwest::cookie::CookieStore::cookies(&store, &url).is_some());
+        store.clear();
+        assert!(reqwest::cookie::CookieStore::cookies(&store, &url).is_none());
     }
 }

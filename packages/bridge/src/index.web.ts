@@ -1,6 +1,8 @@
+import { parseAuthCallback } from "./auth";
 import { BridgeError, decode } from "./protocol";
 import type { Command } from "./types";
 
+export { parseAuthCallback, passportLoginUrl } from "./auth";
 export { BridgeError } from "./protocol";
 export * from "./types";
 
@@ -9,6 +11,7 @@ declare global {
     oshwhubDesktop?: {
       dispatch(input: string): Promise<string>;
       openExternal(url: string): Promise<void>;
+      onAuthCallback(listener: (code: string) => void): () => void;
     };
   }
 }
@@ -42,4 +45,15 @@ export async function openExternal(url: string): Promise<void> {
   } else {
     window.open(url, "_blank", "noopener,noreferrer");
   }
+}
+
+export function subscribeAuthCallback(listener: (code: string) => void): () => void {
+  if (window.oshwhubDesktop) return window.oshwhubDesktop.onAuthCallback(listener);
+  const receive = (event: Event) => {
+    const input = (event as CustomEvent<string>).detail;
+    const code = typeof input === "string" ? parseAuthCallback(input) : null;
+    if (code) listener(code);
+  };
+  window.addEventListener("oshwhub:auth-callback", receive);
+  return () => window.removeEventListener("oshwhub:auth-callback", receive);
 }

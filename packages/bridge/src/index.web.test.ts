@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BridgeError, call, openExternal } from "./index.web";
+import { BridgeError, call, openExternal, subscribeAuthCallback } from "./index.web";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -44,5 +44,18 @@ describe("desktop web bridge", () => {
       code: "invalid_url",
     });
     expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("subscribes to validated desktop callback codes through the isolated API", () => {
+    const unsubscribe = vi.fn();
+    const onAuthCallback = vi.fn((listener: (code: string) => void) => {
+      listener("one-time-code");
+      return unsubscribe;
+    });
+    vi.stubGlobal("window", { oshwhubDesktop: { onAuthCallback } });
+    const listener = vi.fn();
+    expect(subscribeAuthCallback(listener)).toBe(unsubscribe);
+    expect(onAuthCallback).toHaveBeenCalledWith(expect.any(Function));
+    expect(listener).toHaveBeenCalledWith("one-time-code");
   });
 });

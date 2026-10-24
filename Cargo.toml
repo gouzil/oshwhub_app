@@ -15,7 +15,7 @@ thiserror = "2.0"
 tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip", "stream", "cookies"] }
 url = "2.5"
 uuid = { version = "1.18", features = ["v4"] }
 oshwhub-core = { path = "crates/core" }
