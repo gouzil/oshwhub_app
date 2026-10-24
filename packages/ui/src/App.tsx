@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  ActivityIndicator,
   Animated,
   BackHandler,
   FlatList,
@@ -315,6 +316,7 @@ function Discover({
   bottomInset: number;
 }) {
   const layout = layoutFor(width);
+  const { height } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [hasDraft, setHasDraft] = useState(false);
   const latestDraft = useRef("");
@@ -339,13 +341,15 @@ function Discover({
     setHasDraft(text.length > 0);
   };
   const search = () => setQuery(latestDraft.current.trim());
-  const header = (
-    <View>
-      <View style={styles.discoverHeading}>
-        <Text style={styles.eyebrow}>OSHWHUB · 开源硬件社区</Text>
-        <Text style={styles.title}>发现下一个好想法</Text>
-        <Text style={styles.subtitle}>探索、学习，与创造者一起把灵感变成现实。</Text>
-      </View>
+  const toolbar = (
+    <View style={{ paddingHorizontal: layout.padding, paddingTop: height < 500 ? 8 : 0 }}>
+      {height >= 500 && (
+        <View style={styles.discoverHeading}>
+          <Text style={styles.eyebrow}>OSHWHUB · 开源硬件社区</Text>
+          <Text style={styles.title}>发现下一个好想法</Text>
+          <Text style={styles.subtitle}>探索、学习，与创造者一起把灵感变成现实。</Text>
+        </View>
+      )}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
           <Text style={styles.searchIcon} accessibilityElementsHidden>
@@ -405,75 +409,112 @@ function Discover({
           </Pressable>
         ))}
       </ScrollView>
+    </View>
+  );
+  const header = (
+    <View>
       <View style={styles.feedHeading}>
         <Text style={styles.feedTitle}>{query ? `“${query}”的搜索结果` : "精选开源项目"}</Text>
-        {state.total > 0 && (
-          <Text style={styles.feedCount}>{state.total.toLocaleString()} 个项目</Text>
-        )}
+        <View style={styles.feedActions}>
+          {state.total > 0 && (
+            <Text style={styles.feedCount}>{state.total.toLocaleString()} 个项目</Text>
+          )}
+          {Platform.OS === "web" && (
+            <>
+              {state.refreshing && (
+                <ActivityIndicator
+                  size="small"
+                  color={color.green}
+                  accessibilityLabel="正在刷新项目"
+                />
+              )}
+              <Button
+                label={state.refreshing ? "正在刷新" : "刷新项目"}
+                onPress={() => void controller.refresh()}
+                secondary
+                disabled={state.refreshing}
+                style={styles.refreshButton}
+              />
+            </>
+          )}
+        </View>
       </View>
+      {state.refreshError && (
+        <ErrorPanel error={state.refreshError} retry={() => void controller.refresh()} />
+      )}
     </View>
   );
   return (
-    <FlatList
-      key={layout.columns}
-      ref={list}
-      data={state.items}
-      keyExtractor={(item) => item.id}
-      numColumns={layout.columns}
-      style={styles.feed}
-      contentContainerStyle={{
-        paddingHorizontal: layout.padding,
-        paddingBottom: 32 + bottomInset,
-        gap: 18,
-      }}
-      columnWrapperStyle={{ gap: layout.gap }}
-      ListHeaderComponent={header}
-      keyboardShouldPersistTaps="handled"
-      renderItem={({ item }) => (
-        <ProjectCard project={item} width={layout.cardWidth} onPress={() => onProject(item.id)} />
-      )}
-      onEndReachedThreshold={0.4}
-      onEndReached={() => {
-        if (active && state.items.length && !state.error) void controller.loadMore();
-      }}
-      ListEmptyComponent={
-        state.loading ? (
-          <Skeleton
-            label="正在寻找好项目"
-            style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}
-          >
-            {["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
-              .slice(0, layout.columns * 2)
-              .map((slot) => (
-                <View key={slot} style={{ width: layout.cardWidth, gap: 12, paddingBottom: 16 }}>
-                  <SkeletonBlock style={{ height: layout.cardWidth / 1.17 }} />
-                  <SkeletonBlock style={{ width: "86%", height: 20 }} />
-                  <SkeletonBlock style={{ width: "60%", height: 12 }} />
-                </View>
-              ))}
-          </Skeleton>
-        ) : state.error ? (
-          <ErrorPanel error={state.error} retry={() => void controller.loadMore()} />
-        ) : (
-          <Empty title="还没有找到相关项目" detail="试试更短的关键词，或换一个搜索方向。" />
-        )
-      }
-      ListFooterComponent={
-        state.items.length ? (
-          <View style={styles.feedFooter}>
-            {state.error ? (
-              <ErrorPanel error={state.error} retry={() => void controller.loadMore()} />
-            ) : state.loading ? (
-              <Loading label="正在加载更多项目" />
-            ) : state.hasMore ? (
-              <Button label="加载更多项目" secondary onPress={() => void controller.loadMore()} />
-            ) : (
-              <Text style={styles.endNote}>已经看到全部项目了</Text>
-            )}
-          </View>
-        ) : undefined
-      }
-    />
+    <View style={styles.feed}>
+      {toolbar}
+      <FlatList
+        key={layout.columns}
+        testID="project-feed"
+        ref={list}
+        data={state.items}
+        keyExtractor={(item) => item.id}
+        numColumns={layout.columns}
+        style={styles.fill}
+        contentContainerStyle={{
+          paddingHorizontal: layout.padding,
+          paddingBottom: 32 + bottomInset,
+          gap: 18,
+        }}
+        columnWrapperStyle={{ gap: layout.gap }}
+        ListHeaderComponent={header}
+        keyboardShouldPersistTaps="handled"
+        refreshing={state.refreshing}
+        onRefresh={() => {
+          if (active) void controller.refresh();
+        }}
+        alwaysBounceVertical
+        renderItem={({ item }) => (
+          <ProjectCard project={item} width={layout.cardWidth} onPress={() => onProject(item.id)} />
+        )}
+        onEndReachedThreshold={0.4}
+        onEndReached={() => {
+          if (active && state.items.length && !state.error && !state.refreshError)
+            void controller.loadMore();
+        }}
+        ListEmptyComponent={
+          state.loading ? (
+            <Skeleton
+              label="正在寻找好项目"
+              style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.gap }}
+            >
+              {["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+                .slice(0, layout.columns * 2)
+                .map((slot) => (
+                  <View key={slot} style={{ width: layout.cardWidth, gap: 12, paddingBottom: 16 }}>
+                    <SkeletonBlock style={{ height: layout.cardWidth / 1.17 }} />
+                    <SkeletonBlock style={{ width: "86%", height: 20 }} />
+                    <SkeletonBlock style={{ width: "60%", height: 12 }} />
+                  </View>
+                ))}
+            </Skeleton>
+          ) : state.error ? (
+            <ErrorPanel error={state.error} retry={() => void controller.loadMore()} />
+          ) : (
+            <Empty title="还没有找到相关项目" detail="试试更短的关键词，或换一个搜索方向。" />
+          )
+        }
+        ListFooterComponent={
+          state.items.length && !state.refreshing && !state.refreshError ? (
+            <View style={styles.feedFooter}>
+              {state.error ? (
+                <ErrorPanel error={state.error} retry={() => void controller.loadMore()} />
+              ) : state.loading ? (
+                <Loading label="正在加载更多项目" />
+              ) : state.hasMore ? (
+                <Button label="加载更多项目" secondary onPress={() => void controller.loadMore()} />
+              ) : (
+                <Text style={styles.endNote}>已经看到全部项目了</Text>
+              )}
+            </View>
+          ) : undefined
+        }
+      />
+    </View>
   );
 }
 
@@ -734,6 +775,8 @@ const styles = StyleSheet.create({
   },
   feedTitle: { fontSize: 17, fontWeight: "600", color: color.ink, flexShrink: 1 },
   feedCount: { fontSize: 11, color: "#8a978e" },
+  feedActions: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  refreshButton: { minHeight: 32, paddingVertical: 6, paddingHorizontal: 12 },
   card: { alignSelf: "flex-start", minWidth: 0 },
   cardCover: { borderRadius: 13, overflow: "hidden", backgroundColor: color.canvas },
   cardTag: {
