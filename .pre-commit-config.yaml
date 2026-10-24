@@ -6,7 +6,7 @@ repos:
         name: TypeScript / JSON formatting and lint
         entry: pnpm exec biome check
         language: system
-        types_or: [ts, tsx, javascript, json]
+        types_or: [ts, tsx, javascript, json, css]
       - id: rust-format
         name: Rust formatting
         entry: cargo fmt --all --check
@@ -15,7 +15,7 @@ repos:
         types: [rust]
       - id: rust-check
         name: Rust clippy
-        entry: cargo clippy -p oshwhub-core -p oshwhub-ffi -p oshwhub-dev-server --all-targets -- -D warnings
+        entry: cargo clippy --workspace --all-targets -- -D warnings
         language: system
         pass_filenames: false
         types: [rust]

@@ -10,14 +10,16 @@
     "dev": "concurrently -k -n core,web 'cargo run -p oshwhub-dev-server' 'pnpm --filter @oshwhub/desktop dev'",
     "android": "node scripts/build-rust.mjs android && pnpm --filter @oshwhub/mobile android",
     "ios": "node scripts/build-rust.mjs ios-sim && pnpm --filter @oshwhub/mobile ios",
-    "desktop": "pnpm --filter @oshwhub/desktop tauri dev",
+    "desktop": "node scripts/desktop-dev.mjs",
+    "build:desktop": "node scripts/desktop-build.mjs",
     "build:web": "pnpm --filter @oshwhub/desktop build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && node --test scripts/*.test.mjs",
     "test:e2e": "playwright test",
+    "test:desktop": "node scripts/desktop-smoke.mjs",
     "format": "biome format --write .",
     "lint": "biome check .",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && cargo fmt --all --check && cargo clippy --workspace --all-targets --exclude oshwhub-desktop -- -D warnings && cargo test --workspace --exclude oshwhub-desktop",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
     "rust:android": "node scripts/build-rust.mjs android"
   },
   "devDependencies": {

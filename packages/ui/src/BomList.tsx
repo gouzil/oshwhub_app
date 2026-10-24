@@ -1,27 +1,22 @@
 import type { BomItem } from "@oshwhub/bridge";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { color, Empty, ErrorPanel, useCommand } from "./common";
+import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
+import { SearchField } from "./components/search-field";
+import { Empty, ErrorPanel } from "./components/states";
+import { Text } from "./components/ui/text";
+import { useCommand } from "./hooks/use-command";
+import { cn } from "./lib/utils";
 
 const columns = [
-  { key: "name", label: "名称 / 参数", width: 128 },
-  { key: "designator", label: "位号", width: 168 },
-  { key: "footprint", label: "封装", width: 136 },
-  { key: "quantity", label: "数量", width: 60 },
-  { key: "partNumber", label: "制造商型号", width: 156 },
-  { key: "manufacturer", label: "制造商", width: 128 },
-  { key: "supplier", label: "供应商", width: 88 },
-  { key: "supplierPart", label: "供应商料号", width: 128 },
-] satisfies { key: keyof BomItem; label: string; width: number }[];
+  { key: "name", label: "名称 / 参数", className: "w-32" },
+  { key: "designator", label: "位号", className: "w-[168px]" },
+  { key: "footprint", label: "封装", className: "w-[136px]" },
+  { key: "quantity", label: "数量", className: "w-[60px]" },
+  { key: "partNumber", label: "制造商型号", className: "w-[156px]" },
+  { key: "manufacturer", label: "制造商", className: "w-32" },
+  { key: "supplier", label: "供应商", className: "w-[88px]" },
+  { key: "supplierPart", label: "供应商料号", className: "w-32" },
+] satisfies { key: keyof BomItem; label: string; className: string }[];
 
 export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
   const [query, setQuery] = useState("");
@@ -43,11 +38,20 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
         key={`${item.designator}-${index}`}
         testID={`bom-item-${index}`}
         role={Platform.OS === "web" && wide ? "row" : undefined}
-        style={wide ? [styles.tableRow, row % 2 === 1 && styles.alternate] : styles.card}
+        className={cn(
+          wide
+            ? "flex-row border-b border-border"
+            : "gap-2.5 rounded-[10px] border border-border bg-white p-3.5",
+          wide && row % 2 === 1 && "bg-[#f7faf8]",
+        )}
       >
         <Text
           role={Platform.OS === "web" && wide ? "cell" : undefined}
-          style={wide ? [styles.cell, styles.sequence, styles.label] : styles.cardHeading}
+          className={cn(
+            wide
+              ? "w-12 shrink-0 px-3 py-3.5 text-[12px] leading-[22px] text-muted-foreground"
+              : "mb-0.5 text-[12px] font-semibold text-primary",
+          )}
         >
           {wide ? index + 1 : `物料 ${String(index + 1).padStart(2, "0")}`}
         </Text>
@@ -60,17 +64,24 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
               role={Platform.OS === "web" ? (wide ? "cell" : "group") : undefined}
               accessible={Platform.OS !== "web"}
               accessibilityLabel={`${column.label}：${value}`}
-              style={wide ? [styles.cell, { width: column.width }] : styles.field}
+              className={cn(
+                wide ? "shrink-0 px-3 py-3.5" : "flex-row items-start gap-3",
+                wide && column.className,
+              )}
             >
-              {!wide && <Text style={[styles.label, styles.fieldLabel]}>{column.label}</Text>}
+              {!wide && (
+                <Text className="w-[84px] shrink-0 text-[12px] leading-[22px] text-muted-foreground">
+                  {column.label}
+                </Text>
+              )}
               <Text
                 selectable
-                style={[
-                  styles.value,
-                  column.key === "name" && styles.name,
-                  column.key === "quantity" && styles.quantity,
-                  value === "未提供" && styles.label,
-                ]}
+                className={cn(
+                  "min-w-0 flex-1 text-[13px] leading-[22px] text-foreground",
+                  column.key === "name" && "font-semibold",
+                  column.key === "quantity" && "font-semibold text-primary",
+                  value === "未提供" && "text-[12px] leading-[22px] text-muted-foreground",
+                )}
               >
                 {value}
               </Text>
@@ -81,42 +92,33 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
     );
   });
   return (
-    <View testID="bom-list" style={styles.cards}>
-      <View style={styles.searchBox}>
-        <TextInput
-          accessibilityLabel="搜索物料清单"
-          placeholder="搜索名称、位号、型号或料号…"
-          placeholderTextColor={color.muted}
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={({ nativeEvent }) => {
-            setQuery(nativeEvent.text);
-            setSearch(nativeEvent.text.trim());
-          }}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-          maxLength={100}
-          clearButtonMode="never"
-          style={styles.searchInput}
-        />
-        {query.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="清除物料搜索"
-            onPress={() => {
-              setQuery("");
-              setSearch("");
-            }}
-            style={styles.clearSearch}
-          >
-            <Text style={styles.clearSearchText}>×</Text>
-          </Pressable>
-        )}
-      </View>
-      <View style={styles.searchStatus}>
-        {pending && <ActivityIndicator size="small" color={color.green} />}
-        <Text testID="bom-search-count" accessibilityLiveRegion="polite" style={styles.hint}>
+    <View testID="bom-list" className="gap-3">
+      <SearchField
+        accessibilityLabel="搜索物料清单"
+        placeholder="搜索名称、位号、型号或料号…"
+        placeholderTextColorClassName="accent-muted-foreground"
+        value={query}
+        onChangeText={setQuery}
+        onSubmitEditing={({ nativeEvent }) => {
+          setQuery(nativeEvent.text);
+          setSearch(nativeEvent.text.trim());
+        }}
+        autoCapitalize="none"
+        maxLength={100}
+        showClear={query.length > 0}
+        clearLabel="清除物料搜索"
+        onClear={() => {
+          setQuery("");
+          setSearch("");
+        }}
+      />
+      <View className="min-h-6 flex-row items-center gap-2">
+        {pending && <ActivityIndicator size="small" colorClassName="accent-primary" />}
+        <Text
+          testID="bom-search-count"
+          accessibilityLiveRegion="polite"
+          className="text-[12px] leading-5 text-muted-foreground"
+        >
           {pending
             ? "正在筛选物料…"
             : error
@@ -134,28 +136,30 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
       ) : !wide ? (
         rows
       ) : (
-        <View style={styles.tableContainer}>
-          <Text style={styles.hint}>位号对应电路图上的元件编号；窄窗口可左右滑动表格。</Text>
+        <View className="gap-2">
+          <Text className="text-[12px] leading-5 text-muted-foreground">
+            位号对应电路图上的元件编号；窄窗口可左右滑动表格。
+          </Text>
           <ScrollView
             testID="bom-table-scroll"
             horizontal
             showsHorizontalScrollIndicator
             tabIndex={Platform.OS === "web" ? 0 : undefined}
             accessibilityLabel="物料表格，可左右滚动查看完整字段"
-            style={styles.tableScroll}
+            className="rounded-[10px] border border-border"
           >
             <View
               role={Platform.OS === "web" ? "table" : undefined}
               accessibilityLabel="物料清单"
-              style={{ width: 48 + columns.reduce((sum, column) => sum + column.width, 0) }}
+              className="w-[1040px]"
             >
               <View
                 role={Platform.OS === "web" ? "row" : undefined}
-                style={[styles.tableRow, styles.tableHeader]}
+                className="flex-row border-b border-border bg-[#edf4ef]"
               >
                 <Text
                   role={Platform.OS === "web" ? "columnheader" : undefined}
-                  style={[styles.cell, styles.sequence, styles.header]}
+                  className="w-12 shrink-0 px-3 py-3.5 text-[12px] leading-[22px] font-semibold text-[#42574b]"
                 >
                   序号
                 </Text>
@@ -163,7 +167,10 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
                   <Text
                     key={column.key}
                     role={Platform.OS === "web" ? "columnheader" : undefined}
-                    style={[styles.cell, styles.header, { width: column.width }]}
+                    className={cn(
+                      "shrink-0 px-3 py-3.5 text-[12px] leading-[22px] font-semibold text-[#42574b]",
+                      column.className,
+                    )}
                   >
                     {column.label}
                   </Text>
@@ -177,52 +184,3 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  cards: { gap: 12 },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: color.line,
-    borderRadius: 12,
-    backgroundColor: "#f3f6f3",
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 46,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: color.ink,
-  },
-  clearSearch: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
-  clearSearchText: { fontSize: 22, color: color.muted },
-  searchStatus: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 },
-  card: {
-    borderWidth: 1,
-    borderColor: color.line,
-    borderRadius: 10,
-    padding: 14,
-    gap: 10,
-    backgroundColor: "#fff",
-  },
-  cardHeading: { color: color.green, fontSize: 12, fontWeight: "600", marginBottom: 2 },
-  field: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  fieldLabel: { width: 84, flexShrink: 0 },
-  label: { color: color.muted, fontSize: 12, lineHeight: 22 },
-  value: { flex: 1, minWidth: 0, color: color.ink, fontSize: 13, lineHeight: 22 },
-  name: { fontWeight: "600" },
-  quantity: { color: color.green, fontWeight: "600" },
-  tableContainer: { gap: 8 },
-  hint: { color: color.muted, fontSize: 12, lineHeight: 20 },
-  tableScroll: { borderWidth: 1, borderColor: color.line, borderRadius: 10 },
-  tableRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: color.line },
-  alternate: { backgroundColor: "#f7faf8" },
-  cell: { paddingHorizontal: 12, paddingVertical: 14, flexShrink: 0 },
-  sequence: { width: 48 },
-  tableHeader: { backgroundColor: "#edf4ef" },
-  header: { color: "#42574b", fontSize: 12, lineHeight: 22, fontWeight: "600" },
-});

@@ -1,52 +1,85 @@
-import { StyleSheet, View } from "react-native";
+import { View } from "react-native";
+import { cn } from "./lib/utils";
 
-export function NavigationIcon({ kind, color }: { kind: string; color: string }) {
-  const stroke = { borderColor: color };
-  const fill = { backgroundColor: color };
+export function NavigationIcon({
+  kind,
+  strokeClassName,
+  fillClassName,
+}: {
+  kind: string;
+  strokeClassName: string;
+  fillClassName: string;
+}) {
   return (
-    <View style={styles.icon} aria-hidden accessibilityElementsHidden>
-      <View style={[kind === "cpu" ? styles.chip : styles.ring, stroke]} />
+    <View className="size-6" aria-hidden accessibilityElementsHidden>
+      <View
+        className={cn(
+          "absolute border-[1.7px]",
+          kind === "cpu" ? "inset-1 rounded-[4px]" : "inset-[1px] rounded-[12px]",
+          strokeClassName,
+        )}
+      />
       {kind === "safari" ? (
-        <View style={[styles.needle, stroke]} />
+        <View
+          className={cn(
+            "absolute top-[5px] left-[9px] h-[14px] w-[6px] rotate-[40deg] rounded-[1px] border-[1.7px]",
+            strokeClassName,
+          )}
+        />
       ) : kind === "cpu" ? (
         <>
-          <View style={[styles.core, stroke]} />
-          {[7, 15].map((offset) => (
-            <View key={offset} style={StyleSheet.absoluteFill}>
-              <View style={[styles.pinVertical, { left: offset, top: 0 }, fill]} />
-              <View style={[styles.pinVertical, { left: offset, bottom: 0 }, fill]} />
-              <View style={[styles.pinHorizontal, { top: offset, left: 0 }, fill]} />
-              <View style={[styles.pinHorizontal, { top: offset, right: 0 }, fill]} />
+          <View
+            className={cn("absolute inset-2 rounded-[1.5px] border-[1.5px]", strokeClassName)}
+          />
+          {[
+            ["left-[7px]", "top-[7px]"],
+            ["left-[15px]", "top-[15px]"],
+          ].map(([vertical, horizontal]) => (
+            <View key={vertical} className="absolute inset-0">
+              <View
+                className={cn(
+                  "absolute top-0 h-1 w-[1.7px] rounded-[1px]",
+                  vertical,
+                  fillClassName,
+                )}
+              />
+              <View
+                className={cn(
+                  "absolute bottom-0 h-1 w-[1.7px] rounded-[1px]",
+                  vertical,
+                  fillClassName,
+                )}
+              />
+              <View
+                className={cn(
+                  "absolute left-0 h-[1.7px] w-1 rounded-[1px]",
+                  horizontal,
+                  fillClassName,
+                )}
+              />
+              <View
+                className={cn(
+                  "absolute right-0 h-[1.7px] w-1 rounded-[1px]",
+                  horizontal,
+                  fillClassName,
+                )}
+              />
             </View>
           ))}
         </>
       ) : (
         <>
-          <View style={[styles.dot, fill]} />
-          <View style={[styles.stem, fill]} />
+          <View
+            className={cn("absolute top-[6px] left-[11px] size-[2px] rounded-[1px]", fillClassName)}
+          />
+          <View
+            className={cn(
+              "absolute top-[11px] left-[11px] h-[7px] w-[2px] rounded-[1px]",
+              fillClassName,
+            )}
+          />
         </>
       )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  icon: { width: 24, height: 24 },
-  ring: { position: "absolute", inset: 1, borderRadius: 12, borderWidth: 1.7 },
-  needle: {
-    position: "absolute",
-    left: 9,
-    top: 5,
-    width: 6,
-    height: 14,
-    borderWidth: 1.7,
-    borderRadius: 1,
-    transform: [{ rotate: "40deg" }],
-  },
-  chip: { position: "absolute", inset: 4, borderRadius: 4, borderWidth: 1.7 },
-  core: { position: "absolute", inset: 8, borderRadius: 1.5, borderWidth: 1.5 },
-  pinVertical: { position: "absolute", width: 1.7, height: 4, borderRadius: 1 },
-  pinHorizontal: { position: "absolute", width: 4, height: 1.7, borderRadius: 1 },
-  dot: { position: "absolute", left: 11, top: 6, width: 2, height: 2, borderRadius: 1 },
-  stem: { position: "absolute", left: 11, top: 11, width: 2, height: 7, borderRadius: 1 },
-});

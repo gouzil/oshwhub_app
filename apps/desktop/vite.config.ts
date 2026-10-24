@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { uniwind } from "uniwind/vite";
+import { defineConfig, transformWithOxc } from "vite";
 
 const require = createRequire(import.meta.url);
 const wasm = resolve(
@@ -23,7 +25,23 @@ const webExtensions = [
 
 export default defineConfig({
   plugins: [
+    {
+      name: "react-native-primitives-jsx",
+      enforce: "pre",
+      transform(code, id) {
+        // RN Primitives ships JSX in .mjs files for Metro.
+        const filename = id.split("?")[0];
+        if (/[/\\]@rn-primitives[/\\].*\.mjs$/.test(filename)) {
+          return transformWithOxc(code, filename, { lang: "jsx" });
+        }
+      },
+    },
     react(),
+    tailwindcss(),
+    uniwind({
+      cssEntryFile: "./src/global.css",
+      dtsFile: "../../packages/ui/src/uniwind-types.d.ts",
+    }),
     {
       name: "local-canvaskit",
       configureServer(server) {
@@ -39,7 +57,6 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: /^react-native$/, replacement: "react-native-web" },
       {
         find: /^@oshwhub\/bridge$/,
         replacement: resolve(import.meta.dirname, "../../packages/bridge/src/index.web.ts"),
@@ -54,7 +71,7 @@ export default defineConfig({
       },
     ],
     extensions: webExtensions,
-    dedupe: ["react", "react-dom", "react-native-web"],
+    dedupe: ["react", "react-dom", "react-native-web", "uniwind"],
   },
   define: {
     global: "globalThis",
@@ -63,6 +80,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ["react-native-web", "react-native-reanimated"],
+    exclude: ["@rn-primitives/slot"],
     // Vite's dependency optimizer has a separate resolver from the app build.
     rolldownOptions: {
       resolve: { extensions: webExtensions },

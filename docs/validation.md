@@ -2,6 +2,78 @@
 
 首轮日期：2026-10-23（Asia/Shanghai）。当时范围为公开项目浏览、搜索、详情、BOM 和专业版二维 PCB 查看。后续三维阶段记录如下；账号、写入和 PCB 编辑仍待后续迭代。
 
+## 2026-10-24 Linux DEB CI 修复
+
+[合并主线后的 Linux 构建](https://github.com/gouzil/oshwhub_app/actions/runs/40073383004/job/120811450125) 确认 AppImage 成功、DEB 失败：默认文件名展开为 `release/@oshwhub/desktop_0.1.0_amd64.deb`，fpm 无法写入不存在的 `release/@oshwhub` 目录。为 DEB 单独指定 `oshwhub_${version}_${arch}.${ext}`，保留 scoped npm 包名和其他平台的产物配置。
+
+- 回归测试调用实际 electron-builder `LinuxPackager` 的产物名称展开逻辑，使用项目真实配置及包元数据，检查 x64 / arm64 的 DEB 留在输出根目录且带正确架构后缀。旧配置先以 `@oshwhub` 子目录复现失败，修复后通过；不需要下载 Electron 或跨平台打包。
+- 本机 `pnpm check` 通过：55 项 Vitest、22 项 Node 测试；Rust 核心 52、契约 19、桌面协议 3、开发服务与 FFI 各 1 项通过，原有 2 项忽略。完整原生 Linux 打包及新提交的远端回归仍以 GitHub Actions 结果为准。
+- 修复前提交 `6fb4156` 的远端 quality、macOS 和 Windows 构建已通过。本轮没有重跑本机界面或设备验收，未修改渲染和交互代码。
+
+## 2026-10-24 UI 迁移分支同步 main
+
+将 `main` 的 `7bf91bb` 合入 `codex/electron-shared-ui`。应用壳保留 Electron / Tailwind 的组件拆分，将列表刷新、固定搜索与排序栏迁入 `screens/DiscoverPage.tsx`；验收文档保留双方阶段记录。Rust API 拆分、三维大小限制修复和刷新控制器与 `main` 保持一致。
+
+- `pnpm check` 通过：55 项 Vitest、21 项 Node 测试；Rust 核心 52、契约 19、桌面 stdio 协议 3、开发服务与 FFI 各 1 项通过，原有 2 项忽略。全部 5 个 prek hook 通过。
+- Chromium 六视口完整回归首轮为 186/192，2.7 分钟。六个失败均为既有浏览全流程用例在筛选请求刚发出、骨架仍在显示时就执行触底滚动。改为等待列表就绪后滚动，六种尺寸的受影响场景复测 6/6 通过，16.3 秒；之后只改了测试等待条件，没有重复其余 186 项，不能将首轮记为完整通过。
+- Web 生产构建、iOS 和 Android 生产 JS 导出通过。本轮未重打或安装桌面与移动原生包，未补测真机手势。
+- [PR 原有 Linux CI](https://github.com/gouzil/oshwhub_app/actions/runs/40015715999/job/120627135529) 的 DEB 打包仍有独立问题：默认输出路径带有 scoped 包名 `@oshwhub/desktop`，父目录不存在，导致 fpm 失败；本轮仅同步主线与处理冲突，没有修改该打包配置。新提交的远端构建结果须另行确认。
+
+## 2026-10-24 非渲染器 UI 全量 Tailwind 迁移
+
+应用壳、导航、全部页面、BOM、封面/图片、骨架和异步状态的静态样式迁到 UniWind / Tailwind；共享 UI 已无 `StyleSheet`。普通操作、文本和状态面板复用 Reusables，复合卡片/单选项保留 UniWind `Pressable`。剩余 `style` 仅传递测量宽度、底部安全区、图片比例和动画值；SafeArea、Expo 玻璃及原生 tab 宿主通过 `withUniwind` 接入。渲染器 `packages/pcb-viewer`、Rust 和原生图形代码相对此轮起点均无 diff。
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| `pnpm check` | Biome、TypeScript、Rust fmt/clippy 通过；47 项 Vitest、21 项 Node、71 项 Rust 测试通过。2 项既有忽略分别为日志测试子进程入口和在线 API 测试 |
+| `prek run --all-files` | 全部 5 项通过 |
+| Chromium 六视口完整 E2E | 最终 174/174 通过，2.4 分钟；保留 5273 独立服务，未修改用例、阈值或重试次数 |
+| Web 生产构建、Expo Android / iOS JS 导出 | 最新源码均通过；JS 导出不代表设备运行验收 |
+| macOS ARM64 Electron `.app` / DMG / ZIP | 最新源码重新构建通过，仍未签名、公证 |
+| 最新 macOS 实包冒烟与截图 | `oshwhub://app/`、preload 隔离、真实 Rust 健康检查/示例、Tailwind 按钮和 44px 触控目标、本地字体、2D 125% 缩放及 3D 模式通过；已查看实验室和 2D/3D 截图 |
+| 独立源码审查 | 无阻断项；修正 Android/iOS 占位文字颜色，使用 `placeholderTextColorClassName` 的 accent 类映射 |
+
+前两次全量 E2E 各有 3 项超时，系统日志分别记录了同期休眠；第二轮三份失败 trace 均有约 958 秒空档，与约 960 秒系统休眠对应。失败用例独立重复 18/18 通过；最终使用仅随测试进程生效的 `caffeinate -di pnpm test:e2e` 完整通过，未更改系统设置或渲染代码。手机详情页、实验室及导航截图已检查。
+
+另读回原 PR 的 Linux CI 日志，AppImage 因 scoped 包名推导出 `@oshwhubdesktop` 而拒绝生成。使用实际 `LinuxPackager` 和 AppImage 校验器在本机复现失败；设置 Linux `executableName: "oshwhub"` 后同一校验通过。完整 Linux 产物仍以新提交的原生 CI 构建为准。
+
+本轮最新 macOS 产物 SHA-256（下方 Electron 迁移阶段的旧产物校验值仅作历史记录）：
+
+```text
+DMG  3e3bfd95f008df89eabf35c4b3f91d62d51aa948d5a5fc5a77502b9014344250
+ZIP  5942406dde5d03881b3516d8282cbc4c304f55c82e10af097f17cb680871ae0a
+```
+
+本轮未运行 Windows/Linux 实包或移动模拟器/真机，也未补测原生无障碍和真机性能。
+
+## 2026-10-24 Electron 与共享组件迁移
+
+本轮用 Electron + React Native Web 替换桌面 Tauri，手机和平板继续使用 Expo / React Native；两端共享 React Native Reusables 的 UniWind 组件和 Tailwind CSS 4 主题。基础控件、搜索、TabBar、项目卡片、正文、导航和异步状态分别封装，页面与应用壳分离，公开入口与扩展说明见 [ui.md](ui.md)。Rust 核心、移动原生桥、系统玻璃导航以及 PCB 渲染逻辑保留。
+
+以下均为本工作树迁移后的本机结果；下方历史 Tauri 构建、CI 和设备记录不能作为 Electron 的验证结果。
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| `pnpm check` | Biome、TypeScript、Rust fmt/clippy 通过；47 项 Vitest、21 项 Node 脚本测试、71 项 Rust 测试通过，日志测试子进程入口和在线 API 测试各忽略 1 项 |
+| `prek run --all-files` | 所有钩子通过；最终新增文件另由全目录 Biome 检查覆盖 |
+| Chromium 六视口完整 E2E | 174/174 通过，2.6 分钟；覆盖搜索、分页、详情、BOM、导航、加载与 PCB 2D/3D。独立 5273 端口启动当前工作树，拒绝复用其他 checkout 的预览服务 |
+| Web 生产构建 | 通过，CanvasKit WASM 与中文字体随包生成 |
+| Expo Android / iOS JS 导出 | 两个平台通过，包含本地字体；这不是原生包或设备运行验收 |
+| macOS ARM64 Electron 目录包、DMG / ZIP | `pnpm build:desktop --dir` 和 `pnpm build:desktop` 通过，Rust 可执行文件随包携带；未签名 |
+| macOS ARM64 实包冒烟 | `pnpm test:desktop 'apps/desktop/release/mac-arm64/OSHWHub.app/Contents/MacOS/OSHWHub'` 通过；生产 origin 为 `oshwhub://app/`，preload 仅暴露两个方法，渲染器无 Node，真实 Rust 健康检查与示例调用成功 |
+| 实包界面与资源 | 检查绿色 Tailwind 按钮与至少 44px 触控目标；2D 缩放到 125%，3D 板体就绪，模式选中状态正确；中文字体通过本地协议返回有效 TTF，2D 字形与 3D 板体截图已查看 |
+| 独立代码审查 | 覆盖 IPC 信任边界、资源路径隔离、stdio 关联/错误清理、宿主打包与组件复用，未发现阻挡交付的问题 |
+
+Electron 冒烟阻断远程渲染代码请求、以占位图替换远程图片；Rust 的公开项目请求仍可联网，不宣称完全断网。实际窗口使用默认 GPU，未强制软件渲染；截图位于 `.work/desktop-smoke/`。打包校验宿主系统、架构、Rust target 和二进制 hash；CI 已配置 macOS / Windows / Linux 原生构建矩阵，本轮尚未触发远端 CI。Linux DEB 的主页与维护者信息已补齐，并通过 electron-builder 自身的元数据校验；此检查不代表 Linux 实包构建或运行。
+
+macOS 产物在 `apps/desktop/release/`，SHA-256：
+
+```text
+DMG  f3c2fcbed88e561e446a53595510a5a77cb04280a00c39f9b376925ecdbddd6e
+ZIP  dd4cfced5577e7e368d982a3b79e2ce50ae2e9f052bd50580673f4aaff5cffa0
+```
+
+本轮未运行 Windows / Linux 实包、未重新安装移动原生包到模拟器或真机，也未补测真机性能、VoiceOver / TalkBack 或签名公证。桌面 Rust 子进程崩溃、协议损坏或超时后需要重启应用；不会自动重放请求。既有在线 API 的两项忽略测试没有作为已通过计数。
 ## 2026-10-24 发现列表刷新与固定搜索栏
 
 移动端使用原生下拉刷新，底部继续上拉加载；桌面端增加“刷新项目”按钮。介绍、搜索框和排序栏移到列表外，只有项目列表参与滚动和下拉回弹；高度不足 500 的窗口收起介绍文案，保留横屏列表空间。刷新保留搜索、排序和旧卡片，成功后替换第一页并重置分页，失败保留已有数据并提供重试。设计见 [feed-refresh.md](feed-refresh.md)。

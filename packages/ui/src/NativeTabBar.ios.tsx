@@ -1,7 +1,7 @@
 import { requireNativeViewManager } from "expo-modules-core";
+import { withUniwind } from "uniwind";
 import type { NativeTabBarProps } from "./NativeTabBar";
 
-export const NativeTabBar = requireNativeViewManager<NativeTabBarProps>(
-  "OshwhubCore",
-  "LiquidTabBar",
+export const NativeTabBar = withUniwind(
+  requireNativeViewManager<NativeTabBarProps>("OshwhubCore", "LiquidTabBar"),
 );

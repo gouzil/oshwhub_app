@@ -1,77 +1,20 @@
-html,
-body,
-#root {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-* {
-  box-sizing: border-box;
-}
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-button,
-a,
-input {
-  -webkit-tap-highlight-color: transparent;
-}
-:focus-visible {
-  outline: 2px solid #15964a;
-  outline-offset: 3px;
-}
+@import "../../../packages/ui/src/theme.css";
 
-#navigation-glass {
-  background-color: #f6f9f7;
-}
-#navigation-glass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.9),
-    inset 1px 0 1px rgba(255, 255, 255, 0.45),
-    inset 0 -1px 1px rgba(48, 68, 59, 0.1);
-}
-#navigation-lens {
-  background-color: rgba(255, 255, 255, 0.18);
-  background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.12));
-  /* CSS motion keeps the selection independent of JavaScript animation frames. */
-  transition:
-    left 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    top 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  #navigation-lens {
-    transition: none;
+@layer base {
+  html,
+  body,
+  #root {
+    @apply m-0 h-full w-full overflow-hidden;
   }
-}
-@media (min-width: 1024px) {
-  #app-shell {
-    background:
-      radial-gradient(ellipse at 0% 0%, #d5e9e6 0, transparent 55%),
-      radial-gradient(ellipse at 5% 85%, #dce4ee 0, transparent 45%), #edf2ef;
+  body {
+    @apply font-[-apple-system,BlinkMacSystemFont,"Segoe_UI",sans-serif];
   }
-}
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  #navigation-glass {
-    background-color: rgba(255, 255, 255, 0.4);
-    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.04));
-    -webkit-backdrop-filter: blur(18px) saturate(180%);
-    backdrop-filter: blur(18px) saturate(180%);
+  button,
+  a,
+  input {
+    @apply [-webkit-tap-highlight-color:transparent];
   }
-}
-@media (prefers-reduced-transparency: reduce) {
-  #navigation-glass {
-    background-color: #f6f9f7;
-    background-image: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  #navigation-lens {
-    background: #e6eeea;
+  :focus-visible {
+    @apply outline-2 outline-offset-[3px] outline-[#15964a];
   }
 }

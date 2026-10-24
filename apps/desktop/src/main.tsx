@@ -5,7 +5,7 @@ import "./global.css";
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing app host");
 const root = createRoot(host);
-root.render(<output style={{ display: "block", padding: 32 }}>正在启动 OSHWHub…</output>);
+root.render(<output className="block p-8">正在启动 OSHWHub…</output>);
 
 LoadSkiaWeb({ locateFile: () => "/canvaskit.wasm" })
   .then(() => import("@oshwhub/ui"))
@@ -13,7 +13,7 @@ LoadSkiaWeb({ locateFile: () => "/canvaskit.wasm" })
   .catch((error: unknown) => {
     console.error("app.startup.failed", error);
     root.render(
-      <div role="alert" style={{ padding: 32 }}>
+      <div role="alert" className="p-8">
         无法初始化图形引擎，请重新打开应用。
       </div>,
     );

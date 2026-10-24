@@ -3,6 +3,7 @@ packages:
   - packages/*
   - modules/*
 onlyBuiltDependencies:
+  - electron
   - esbuild
   - '@swc/core'
 overrides:

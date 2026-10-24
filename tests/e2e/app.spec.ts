@@ -140,6 +140,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
       ),
     )
     .toBe(true);
+  await expect(page.getByRole("button", { name: "加载更多项目", exact: true })).toBeAttached();
   await page.getByTestId("project-feed").evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });

@@ -13,9 +13,9 @@
 ## 技术选择
 
 - React Native + Expo，使用开发构建接入本地 Rust 模块；不以 Expo Go 作为原生桥验收。
-- React Native Web + Tauri 2 作为桌面外壳，保持页面和交互代码共享。桌面 HTML 是同一套 React Native 组件编译结果。
+- Electron + React Native Web 作为桌面外壳，保持页面和交互代码共享。桌面 HTML 是同一套 React Native 组件编译结果。基础控件使用 React Native Reusables 的 UniWind 版本，Tailwind CSS 4 主题由移动和桌面入口共同引用；组件分层与使用见 [ui.md](ui.md)。
 - Rust 2024 workspace：共享核心执行网络访问、参数校验、分页和字段归一化、正文安全转换、BOM 解析、EDA 历史下载/解密/合并与压缩归档。
-- Android 通过 Expo Modules + JNI 调用 Rust；iOS 通过 Expo Modules + C ABI；桌面通过 Tauri command。协议为版本化 JSON，请求/响应有稳定的类型与结构化错误。
+- Android 通过 Expo Modules + JNI 调用 Rust；iOS 通过 Expo Modules + C ABI；桌面通过隔离的 preload IPC 和私有 stdio Rust 子进程。协议为版本化 JSON，请求/响应有稳定的类型与结构化错误。
 - 浏览器仅作开发预览，通过只绑定 loopback 的 Rust 开发服务调用相同核心；正式移动和桌面包不依赖该服务。
 - PCB 使用自研二维渲染器：Rust 重放文档状态、转换几何、生成图层绘制批次和执行拾取，React Native Skia 绘制本地场景。移动端使用原生 Skia，桌面使用同组件的 CanvasKit 后端；不复用 `easyeda-viewer` 或闭源 `smt-gl-engine` 的实现。
 - 三维使用自研 WebGL / Expo GL 查看器；Rust 生成带孔板体、表面几何、索引网格和器件装配矩阵，UI 仅上传缓存、处理相机并按需绘制。官方模型失败不阻塞板体。
@@ -26,18 +26,19 @@
 
 ```text
 apps/mobile          Expo 入口、平台配置
-apps/desktop         React Native Web + Tauri 外壳
+apps/desktop         Electron 主进程 / preload、React Native Web 渲染界面
 packages/ui          共享界面、布局、加载/错误/空状态
 packages/bridge      TypeScript 协议和平台适配
 packages/pcb-viewer  自研 Skia 绘制、图片缓存和触摸适配
 modules/oshwhub-core Expo 原生模块（Kotlin / Swift）
 crates/core          Rust 业务、网络和 PCB 数据准备
 crates/ffi           C ABI / JNI，仅桥接不重复业务
+crates/desktop       Electron 私有 stdio Rust 子进程
 crates/dev-server    loopback 开发服务
 docs                 架构、协议、开发、渲染、验收和已知边界
 ```
 
-UI -> bridge -> Rust core；渲染器只消费 Rust 准备的场景，不直接访问官网接口。核心测试不依赖手机、桌面 WebView 或外网。网络测试独立运行并明确标记。
+UI -> bridge -> Rust core；渲染器只消费 Rust 准备的场景，不直接访问官网接口。核心测试不依赖手机、桌面 Chromium 或外网。网络测试独立运行并明确标记。
 
 ## 玻璃导航
 
@@ -49,7 +50,7 @@ iPad 宽屏侧栏仍使用与 Expo SDK 58 匹配的 `expo-glass-effect` 58.0.4�
 
 桌面 WebView 和开发浏览器用 CSS `backdrop-filter` 模糊、饱和度、渐变透光、细亮边与阴影实现对应风格。侧栏背景增加轻微青/蓝色调，使透明面板有层次；去掉原先 74% 不透明白底。共享选中层按实际导航项边界移动：Web 直接提交目标位置，由 CSS 负责过渡，避免 JS 动画帧暂停后选中层留在旧位置；Android 和 iPad 侧栏使用原生驱动弹簧，只更新 transform。开启“减少动态效果”时立即定位，原生与骨架共用设置监听逻辑。图标由少量静态 View 线条组成，不加载字体或另启 Skia 画布。浏览器不支持滤镜或匹配 `prefers-reduced-transparency: reduce` 时面板和选中层都使用实色。Android 材质见下文。
 
-桌面 CSS 效果仍是近似，不能提供 UIKit 的光学折射或系统触摸形变。桌面与 iOS 未增加逐帧截图或嵌套模糊；每种布局仅一块背景材质，PCB 的场景和绘制缓存不参与导航计算。真机帧率、功耗及各 WebView 的材质差异仍需分别采样。
+桌面 CSS 效果仍是近似，不能提供 UIKit 的光学折射或系统触摸形变。桌面与 iOS 未增加逐帧截图或嵌套模糊；每种布局仅一块背景材质，PCB 的场景和绘制缓存不参与导航计算。真机帧率、功耗及各系统 GPU 的材质差异仍需分别采样。
 
 
 ### Android 玻璃材质选型
