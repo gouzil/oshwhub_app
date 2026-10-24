@@ -4,7 +4,9 @@ type FeedRequest = { query: string; sort: Sort; page: number; pageSize: number }
 type FeedSnapshot = {
   items: ProjectSummary[];
   loading: boolean;
+  refreshing: boolean;
   error: Error | null;
+  refreshError: Error | null;
   page: number;
   hasMore: boolean;
   total: number;
@@ -14,7 +16,9 @@ export class FeedController {
   private snapshot: FeedSnapshot = {
     items: [],
     loading: false,
+    refreshing: false,
     error: null,
+    refreshError: null,
     page: 0,
     hasMore: true,
     total: 0,
@@ -40,19 +44,41 @@ export class FeedController {
     this.version += 1;
     this.query = query;
     this.sort = sort;
-    this.update({ items: [], loading: false, error: null, page: 0, hasMore: true, total: 0 });
+    this.update({
+      items: [],
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshError: null,
+      page: 0,
+      hasMore: true,
+      total: 0,
+    });
     await this.loadMore();
   };
   loadMore = async () => {
-    if (this.snapshot.loading || !this.snapshot.hasMore) return;
+    if (this.snapshot.loading || this.snapshot.refreshing || !this.snapshot.hasMore) return;
+    await this.loadPage(this.snapshot.page + 1, false);
+  };
+  refresh = async () => {
+    if (this.snapshot.refreshing) return;
+    this.version += 1;
+    await this.loadPage(1, true);
+  };
+  private async loadPage(page: number, refreshing: boolean) {
     const version = this.version;
-    const page = this.snapshot.page + 1;
-    this.update({ ...this.snapshot, loading: true, error: null });
+    this.update({
+      ...this.snapshot,
+      loading: !refreshing,
+      refreshing,
+      error: null,
+      refreshError: null,
+    });
     try {
       const result = await this.load({ page, query: this.query, sort: this.sort, pageSize: 20 });
       if (version !== this.version) return;
-      const seen = new Set(this.snapshot.items.map((item) => item.id));
-      const items = [...this.snapshot.items];
+      const items = page === 1 ? [] : [...this.snapshot.items];
+      const seen = new Set(items.map((item) => item.id));
       for (const item of result.items) {
         if (!seen.has(item.id)) {
           seen.add(item.id);
@@ -63,19 +89,24 @@ export class FeedController {
         items,
         page,
         loading: false,
+        refreshing: false,
         error: null,
+        refreshError: null,
         hasMore: result.hasMore,
         total: result.total,
       });
     } catch (error) {
       if (version !== this.version) return;
+      const failure = error instanceof Error ? error : new Error("暂时无法加载，请重试。");
       this.update({
         ...this.snapshot,
         loading: false,
-        error: error instanceof Error ? error : new Error("暂时无法加载，请重试。"),
+        refreshing: false,
+        error: refreshing ? null : failure,
+        refreshError: refreshing ? failure : null,
       });
     }
-  };
+  }
 }
 export function layoutFor(width: number) {
   const sidebar = width >= 1024 ? 216 : 0;

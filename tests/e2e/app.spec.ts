@@ -140,9 +140,10 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
       ),
     )
     .toBe(true);
-  await page
-    .getByRole("button", { name: /^自制开源控制板 20，/ })
-    .evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await expect(page.getByRole("button", { name: "加载更多项目", exact: true })).toBeAttached();
+  await page.getByTestId("project-feed").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
   await expect
     .poll(() =>
       bridge.requests.some(

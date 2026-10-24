@@ -67,3 +67,33 @@ it("uses resized native pixel dimensions even when Expo's initial buffer propert
   expect(gl.uniformMatrix4fv).toHaveBeenCalledWith(undefined, false, projection(camera, 0.75));
   expect(camera).toEqual(original);
 });
+
+it("checks the fallback budget before allocating expanded triangle data", () => {
+  const count = 1_864_137;
+  const mesh = {
+    data: Buffer.alloc(3 * 36).toString("base64"),
+    vertexCount: 3,
+    indices: Buffer.alloc(count * 4).toString("base64"),
+    indexCount: count,
+    bounds: { min: [0, 0, 0], max: [1, 1, 0] },
+  };
+  const allocations: unknown[] = [];
+  vi.stubGlobal(
+    "Float32Array",
+    new Proxy(Float32Array, {
+      construct(target, args) {
+        allocations.push(args[0]);
+        return Reflect.construct(target, args);
+      },
+    }),
+  );
+  try {
+    const { value, gl } = renderer();
+    expect(() => value.add(mesh, [identity])).toThrow("64 MiB");
+    expect(allocations).not.toContain(count * 9);
+    expect(value.bytes).toBe(0);
+    expect(gl.bufferData).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

@@ -12,15 +12,23 @@ use lyon_tessellation::{
     path::{FillRule, LineCap, LineJoin, Path},
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
 pub const MM: f64 = 0.0254;
 pub const MAX_VERTICES: usize = 1_500_000;
+const MAX_INDICES: usize = 6_000_000;
+const MAX_MESH_BYTES: usize = 64 * 1024 * 1024;
+const MAX_SURFACE_POINTS: usize = 2_000_000;
 
 pub fn invalid() -> AppError {
     AppError::new("pcb_3d_format", "三维几何或模型数据无效")
 }
-fn limit() -> AppError {
-    AppError::new("pcb_3d_limit", "三维场景超过安全大小限制")
+fn limit(stage: &str, actual: usize, maximum: usize) -> AppError {
+    tracing::warn!(stage, actual, maximum, "pcb.solid.limit");
+    AppError::new(
+        "pcb_3d_limit",
+        format!("三维{stage}超出当前查看器的处理范围，暂时无法完整预览"),
+    )
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -45,7 +53,12 @@ impl Bounds3 {
 
 pub struct Mesh {
     pub vertices: Vec<f32>,
+    pub indices: Vec<u32>,
     pub bounds: Bounds3,
+}
+pub struct MeshBuilder {
+    pub mesh: Mesh,
+    unique: HashMap<[u32; 9], u32>,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,11 +69,15 @@ pub struct PackedMesh {
     pub index_count: usize,
     pub bounds: Bounds3,
 }
-impl Mesh {
+impl MeshBuilder {
     pub fn new() -> Self {
         Self {
-            vertices: Vec::new(),
-            bounds: Bounds3::empty(),
+            mesh: Mesh {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+                bounds: Bounds3::empty(),
+            },
+            unique: HashMap::new(),
         }
     }
     pub fn triangle(
@@ -69,9 +86,14 @@ impl Mesh {
         normal: Option<[f32; 3]>,
         color: [f32; 3],
     ) -> Result<()> {
-        if self.vertices.len() / 9 + 3 > MAX_VERTICES {
-            return Err(limit());
-        }
+        self.triangle_with_normals(points, [normal; 3], color)
+    }
+    pub fn triangle_with_normals(
+        &mut self,
+        points: [[f32; 3]; 3],
+        normals: [Option<[f32; 3]>; 3],
+        color: [f32; 3],
+    ) -> Result<()> {
         if !points
             .iter()
             .flatten()
@@ -82,47 +104,70 @@ impl Mesh {
         }
         let a = std::array::from_fn::<_, 3, _>(|i| points[1][i] - points[0][i]);
         let b = std::array::from_fn::<_, 3, _>(|i| points[2][i] - points[0][i]);
-        let n = normal.unwrap_or([
+        let face_normal = [
             a[1] * b[2] - a[2] * b[1],
             a[2] * b[0] - a[0] * b[2],
             a[0] * b[1] - a[1] * b[0],
-        ]);
-        let length = n.iter().map(|v| v * v).sum::<f32>().sqrt();
-        if !length.is_finite() {
-            return Err(invalid());
-        }
-        if length < 1e-12 {
+        ];
+        if face_normal.iter().map(|v| v * v).sum::<f32>() < 1e-24 {
             return Ok(());
         }
-        let n = n.map(|v| v / length);
-        for p in points {
-            self.bounds.include(p);
-            self.vertices.extend(p);
-            self.vertices.extend(n);
-            self.vertices.extend(color);
+        let mut vertices = [[0.; 9]; 3];
+        for ((vertex, p), normal) in vertices.iter_mut().zip(points).zip(normals) {
+            let n = normal.unwrap_or(face_normal);
+            let length = n.iter().map(|v| v * v).sum::<f32>().sqrt();
+            if !length.is_finite() {
+                return Err(invalid());
+            }
+            if length < 1e-12 {
+                return Ok(());
+            }
+            vertex[..3].copy_from_slice(&p);
+            vertex[3..6].copy_from_slice(&n.map(|v| v / length));
+            vertex[6..].copy_from_slice(&color);
+        }
+        if self.mesh.indices.len() + 3 > MAX_INDICES {
+            return Err(limit("网格索引", self.mesh.indices.len() + 3, MAX_INDICES));
+        }
+        for vertex in vertices {
+            let key = vertex.map(f32::to_bits);
+            let index = self.unique.get(&key).copied();
+            let bytes = self.mesh.vertices.len() * 4
+                + (self.mesh.indices.len() + 1) * 4
+                + if index.is_none() { 36 } else { 0 };
+            if bytes > MAX_MESH_BYTES {
+                return Err(limit("网格内存", bytes, MAX_MESH_BYTES));
+            }
+            let index = match index {
+                Some(index) => index,
+                None => {
+                    let count = self.mesh.vertices.len() / 9;
+                    if count >= MAX_VERTICES {
+                        return Err(limit("网格顶点", count + 1, MAX_VERTICES));
+                    }
+                    self.mesh.bounds.include(vertex[..3].try_into().unwrap());
+                    self.mesh.vertices.extend_from_slice(&vertex);
+                    self.unique.insert(key, count as u32);
+                    count as u32
+                }
+            };
+            self.mesh.indices.push(index);
         }
         Ok(())
     }
+    pub fn finish(self) -> Mesh {
+        self.mesh
+    }
+}
+impl Mesh {
     pub fn packed(&self) -> PackedMesh {
-        let mut unique = std::collections::HashMap::<[u32; 9], u32>::new();
-        let mut vertices = Vec::new();
-        let mut indices = Vec::with_capacity(self.vertices.len() / 9);
-        for vertex in self.vertices.as_chunks::<9>().0 {
-            let key = vertex.map(f32::to_bits);
-            let index = *unique.entry(key).or_insert_with(|| {
-                let index = vertices.len() as u32 / 9;
-                vertices.extend_from_slice(vertex);
-                index
-            });
-            indices.push(index);
-        }
-        let bytes: Vec<u8> = vertices.iter().flat_map(|v| v.to_le_bytes()).collect();
-        let index_bytes: Vec<u8> = indices.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let bytes: Vec<u8> = self.vertices.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let index_bytes: Vec<u8> = self.indices.iter().flat_map(|v| v.to_le_bytes()).collect();
         PackedMesh {
             data: STANDARD.encode(bytes),
-            vertex_count: vertices.len() / 9,
+            vertex_count: self.vertices.len() / 9,
             indices: STANDARD.encode(index_bytes),
-            index_count: indices.len(),
+            index_count: self.indices.len(),
             bounds: self.bounds.clone(),
         }
     }
@@ -177,12 +222,42 @@ fn signed_area(contour: &[Point]) -> f64 {
         / 2.
 }
 
+fn merge_paint(contours: &Contours) -> Contours {
+    contours
+        .overlay(&Contours::new(), OverlayRule::Subject, OverlayFill::NonZero)
+        .into_iter()
+        .flat_map(|mut shape| {
+            let outer = &shape[0];
+            let area: f64 = outer
+                .iter()
+                .zip(outer.iter().cycle().skip(1))
+                .take(outer.len())
+                .map(|(a, b)| a[0] * b[1] - b[0] * a[1])
+                .sum();
+            // New triangles have positive winding; merged outer rings must agree with them.
+            if area < 0. {
+                for ring in &mut shape {
+                    ring.reverse();
+                }
+            }
+            shape
+        })
+        .collect()
+}
+
 fn board_shape(outlines: &[Vec<Point>], holes: &[Vec<Point>]) -> Result<Vec<Contours>> {
-    if outlines.len() > 4096
-        || holes.len() > 50_000
-        || outlines.iter().chain(holes).map(Vec::len).sum::<usize>() > 500_000
-    {
-        return Err(limit());
+    for (stage, count, maximum) in [
+        ("板框", outlines.len(), 4096),
+        ("钻孔", holes.len(), 50_000),
+        (
+            "板框与钻孔轮廓",
+            outlines.iter().chain(holes).map(Vec::len).sum(),
+            500_000,
+        ),
+    ] {
+        if count > maximum {
+            return Err(limit(stage, count, maximum));
+        }
     }
     if !outlines
         .iter()
@@ -226,7 +301,7 @@ fn tessellate(
 ) -> Result<VertexBuffers<[f32; 2], u32>> {
     let count = contours.iter().map(Vec::len).sum::<usize>();
     if count > 500_000 {
-        return Err(limit());
+        return Err(limit("单个图形轮廓", count, 500_000));
     }
     let mut builder = Path::builder();
     for contour in contours.iter().filter(|p| p.len() > 1) {
@@ -260,14 +335,14 @@ fn tessellate(
             )
             .map_err(|_| invalid())?;
     }
-    if result.indices.len() > MAX_VERTICES {
-        return Err(limit());
+    if result.indices.len() > MAX_INDICES {
+        return Err(limit("单个图形索引", result.indices.len(), MAX_INDICES));
     }
     Ok(result)
 }
 
 fn face(
-    mesh: &mut Mesh,
+    mesh: &mut MeshBuilder,
     contours: &[Vec<Point>],
     fill: bool,
     width: f64,
@@ -291,7 +366,11 @@ fn face(
     Ok(())
 }
 
-pub fn board_mesh(outlines: &[Vec<Point>], holes: &[Vec<Point>], thickness: f64) -> Result<Mesh> {
+pub fn board_mesh(
+    outlines: &[Vec<Point>],
+    holes: &[Vec<Point>],
+    thickness: f64,
+) -> Result<MeshBuilder> {
     if !thickness.is_finite() || !(0.1..=20.).contains(&thickness) {
         return Err(invalid());
     }
@@ -299,7 +378,7 @@ pub fn board_mesh(outlines: &[Vec<Point>], holes: &[Vec<Point>], thickness: f64)
     if shapes.is_empty() {
         return Err(invalid());
     }
-    let mut mesh = Mesh::new();
+    let mut mesh = MeshBuilder::new();
     for shape in shapes {
         let mut contours: Vec<Vec<Point>> = shape
             .iter()
@@ -404,7 +483,7 @@ pub fn prepare(
 ) -> Result<Scene3d> {
     let mut warnings = seed.warnings.clone();
     if seed.outlines.len() > 4096 {
-        return Err(limit());
+        return Err(limit("板框", seed.outlines.len(), 4096));
     }
     let mut outlines = close_outlines(&seed.outlines);
     if outlines.is_empty() {
@@ -425,8 +504,8 @@ pub fn prepare(
     let clip: Contours = shape.into_iter().flatten().collect();
     let mut mesh = board_mesh(&outlines, &seed.holes, thickness)?;
     // Union paint triangles by material before clipping, so drills also cut through tracks and pads.
-    let mut groups = std::collections::BTreeMap::<(i32, u8), Contours>::new();
-    let mut vertices = 0;
+    let mut groups = std::collections::BTreeMap::<(i32, u8), (Contours, usize)>::new();
+    let mut input_points = 0;
     for (layer, fill, width, contours, kind) in surfaces {
         if !matches!(layer, 1..=4 | 12) || kind == "COMPONENT" {
             continue;
@@ -436,11 +515,11 @@ pub fn prepare(
         } else {
             std::slice::from_ref(&layer)
         };
-        let triangles = tessellate(&contours, fill, width)?;
-        vertices += triangles.indices.len();
-        if vertices > MAX_VERTICES {
-            return Err(limit());
+        input_points += contours.iter().map(Vec::len).sum::<usize>();
+        if input_points > MAX_SURFACE_POINTS {
+            return Err(limit("板面输入轮廓", input_points, MAX_SURFACE_POINTS));
         }
+        let triangles = tessellate(&contours, fill, width)?;
         for side in sides {
             let material = if *side == 3 || *side == 4 {
                 2
@@ -449,7 +528,7 @@ pub fn prepare(
             } else {
                 0
             };
-            let group = groups.entry((*side, material)).or_default();
+            let (group, pending) = groups.entry((*side, material)).or_default();
             for tri in triangles.indices.as_chunks::<3>().0 {
                 let mut points: Vec<_> = tri
                     .iter()
@@ -465,10 +544,15 @@ pub fn prepare(
                     points.reverse();
                 }
                 group.push(points);
+                *pending += 3;
+                if *pending >= 65_536 {
+                    *group = merge_paint(group);
+                    *pending = 0;
+                }
             }
         }
     }
-    for ((side, material), triangles) in groups {
+    for ((side, material), (triangles, _)) in groups {
         let clipped = triangles.overlay(&clip, OverlayRule::Intersect, OverlayFill::NonZero);
         let bottom = side == 2 || side == 4;
         let offset = 0.005 + material as f64 * 0.005;
@@ -494,7 +578,7 @@ pub fn prepare(
         .into_iter()
         .collect();
     Ok(Scene3d {
-        board: mesh.packed(),
+        board: mesh.finish().packed(),
         model_keys,
         component_count: seed.component_count,
         bound_count: seed.bindings.len(),
@@ -508,8 +592,125 @@ mod tests {
     use super::*;
 
     #[test]
+    fn shared_vertices_do_not_hit_the_limit_for_expanded_triangle_corners() {
+        let mut mesh = MeshBuilder::new();
+        for _ in 0..500_001 {
+            mesh.triangle(
+                [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
+                None,
+                [0.2, 0.4, 0.6],
+            )
+            .unwrap();
+        }
+        let packed = mesh.finish().packed();
+        assert_eq!(packed.vertex_count, 3);
+        assert_eq!(packed.index_count, 1_500_003);
+        assert_eq!(STANDARD.decode(packed.data).unwrap().len(), 108);
+        assert_eq!(STANDARD.decode(packed.indices).unwrap().len(), 6_000_012);
+    }
+
+    #[test]
+    fn overlapping_tracks_are_merged_before_applying_the_output_budget() {
+        let ring: Vec<_> = (0..=128)
+            .map(|i| {
+                let angle = i as f64 * std::f64::consts::TAU / 128.;
+                (200. + 100. * angle.cos(), 200. + 100. * angle.sin())
+            })
+            .collect();
+        let corners = tessellate(std::slice::from_ref(&ring), false, 20.)
+            .unwrap()
+            .indices
+            .len();
+        let count = 1_500_000 / corners + 1;
+        let seed = Seed {
+            outlines: vec![vec![
+                (0., 0.),
+                (400., 0.),
+                (400., 400.),
+                (0., 400.),
+                (0., 0.),
+            ]],
+            thickness: Some(1.6),
+            ..Default::default()
+        };
+        let scene = prepare(
+            &seed,
+            (0..count).map(|_| (1, false, 20., vec![ring.clone()], "LINE".into())),
+            Bounds {
+                min_x: 0.,
+                min_y: 0.,
+                max_x: 400.,
+                max_y: 400.,
+            },
+        )
+        .unwrap();
+        assert!(scene.board.vertex_count < 4_000);
+        assert!(scene.board.index_count < 12_000);
+        assert!(scene.warnings.is_empty());
+        let vertices = STANDARD.decode(&scene.board.data).unwrap();
+        let indices = STANDARD.decode(&scene.board.indices).unwrap();
+        let mesh = Mesh {
+            vertices: vertices
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|v| f32::from_le_bytes(*v))
+                .collect(),
+            indices: indices
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|v| u32::from_le_bytes(*v))
+                .collect(),
+            bounds: scene.board.bounds,
+        };
+        let area: f64 = triangles(&mesh)
+            .filter(|t| t[2] > 1.601)
+            .map(|t| {
+                ((t[9] - t[0]) as f64 * (t[19] - t[1]) as f64
+                    - (t[10] - t[1]) as f64 * (t[18] - t[0]) as f64)
+                    .abs()
+                    / 2.
+            })
+            .sum();
+        // A 100 mil radius ring with a 20 mil stroke covers about 8.1073 square millimetres.
+        assert!((area - 8.1073).abs() < 0.05, "{area}");
+    }
+
+    #[test]
+    fn output_index_budget_still_rejects_excess_geometry() {
+        let mut mesh = MeshBuilder::new();
+        mesh.mesh.indices.resize(6_000_000, 0);
+        let error = mesh
+            .triangle(
+                [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
+                None,
+                [0., 1., 0.],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "pcb_3d_limit");
+        assert!(mesh.mesh.vertices.is_empty());
+    }
+
+    #[test]
+    fn output_byte_budget_applies_even_below_both_count_limits() {
+        let mut mesh = MeshBuilder::new();
+        mesh.mesh.vertices.resize(1_400_000 * 9, 0.);
+        mesh.mesh.indices.resize(4_177_215, 0);
+        let error = mesh
+            .triangle(
+                [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
+                None,
+                [0., 1., 0.],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "pcb_3d_limit");
+        assert_eq!(mesh.mesh.indices.len(), 4_177_215);
+    }
+
+    #[test]
     fn packing_reuses_identical_vertices_without_changing_triangles() {
-        let mut mesh = Mesh::new();
+        let mut mesh = MeshBuilder::new();
         mesh.triangle(
             [[0., 0., 0.], [1., 0., 0.], [1., 1., 0.]],
             None,
@@ -522,6 +723,7 @@ mod tests {
             [0.2, 0.4, 0.6],
         )
         .unwrap();
+        let mesh = mesh.finish();
         let packed = mesh.packed();
         assert_eq!(packed.vertex_count, 4);
         assert_eq!(packed.index_count, 6);
@@ -540,7 +742,18 @@ mod tests {
                     .map(|v| f32::from_le_bytes(*v))
             })
             .collect();
-        assert_eq!(reconstructed, mesh.vertices);
+        let expected: Vec<f32> = [
+            [0., 0., 0.],
+            [1., 0., 0.],
+            [1., 1., 0.],
+            [0., 0., 0.],
+            [1., 1., 0.],
+            [0., 1., 0.],
+        ]
+        .into_iter()
+        .flat_map(|p| p.into_iter().chain([0., 0., 1., 0.2, 0.4, 0.6]))
+        .collect();
+        assert_eq!(reconstructed, expected);
     }
 
     #[test]
@@ -559,9 +772,9 @@ mod tests {
             (100., 120.),
             (100., 80.),
         ]];
-        let mesh = board_mesh(&outline, &holes, 1.6).unwrap();
+        let mesh = board_mesh(&outline, &holes, 1.6).unwrap().finish();
         let mut top_area: f64 = 0.;
-        for triangle in mesh.vertices.as_chunks::<27>().0.iter() {
+        for triangle in triangles(&mesh) {
             assert!(triangle.iter().all(|v| v.is_finite()));
             if triangle[5] > 0.9 {
                 let p = |i: usize| (triangle[i] as f64, triangle[i + 1] as f64);
@@ -647,11 +860,16 @@ mod tests {
         assert!(stack_thickness(&doc).is_none());
     }
 
-    fn top_area(mesh: &Mesh) -> f64 {
-        mesh.vertices
-            .as_chunks::<27>()
+    fn triangles(mesh: &Mesh) -> impl Iterator<Item = [f32; 27]> + '_ {
+        mesh.indices
+            .as_chunks::<3>()
             .0
             .iter()
+            .map(|tri| std::array::from_fn(|i| mesh.vertices[tri[i / 9] as usize * 9 + i % 9]))
+    }
+
+    fn top_area(mesh: &Mesh) -> f64 {
+        triangles(mesh)
             .filter(|t| t[5] > 0.9)
             .map(|t| {
                 (((t[9] - t[0]) as f64 * (t[19] - t[1]) as f64)
@@ -675,7 +893,9 @@ mod tests {
         let reversed = hole.iter().rev().copied().collect();
         let adjacent = vec![(30., 20.), (50., 20.), (50., 40.), (30., 40.), (30., 20.)];
         let slot = vec![(90., 40.), (110., 40.), (110., 60.), (90., 60.), (90., 40.)];
-        let mesh = board_mesh(&outline, &[hole, reversed, adjacent, slot], 1.6).unwrap();
+        let mesh = board_mesh(&outline, &[hole, reversed, adjacent, slot], 1.6)
+            .unwrap()
+            .finish();
         assert!((top_area(&mesh) - 9200. * MM * MM).abs() < 0.0001);
     }
 
@@ -692,9 +912,10 @@ mod tests {
             &[],
             1.6,
         )
-        .unwrap();
+        .unwrap()
+        .finish();
         let center = [50. * MM, -50. * MM, 0.8];
-        for t in mesh.vertices.as_chunks::<27>().0.iter() {
+        for t in triangles(&mesh) {
             let a = [t[9] - t[0], t[10] - t[1], t[11] - t[2]];
             let b = [t[18] - t[0], t[19] - t[1], t[20] - t[2]];
             let cross = [

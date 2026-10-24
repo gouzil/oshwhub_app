@@ -82,6 +82,96 @@ describe("feed requests", () => {
     expect(feed.getSnapshot().error).toBeNull();
     expect(feed.getSnapshot().items[0]?.id).toBe("b");
   });
+
+  it("keeps cards while refreshing, replaces page one, and resumes the current search", async () => {
+    const fresh = deferred<FeedPage>();
+    const requests: { query: string; sort: string; page: number }[] = [];
+    const feed = new FeedController((request) => {
+      requests.push(request);
+      if (requests.length === 3) return fresh.promise;
+      return Promise.resolve(page([request.page === 1 ? "old" : "next"], request.page));
+    });
+    await feed.search("电源", "like");
+    await feed.loadMore();
+    const refreshing = feed.refresh();
+    await feed.refresh();
+    await feed.loadMore();
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toMatchObject({ query: "电源", sort: "like", page: 1 });
+    expect(feed.getSnapshot()).toMatchObject({ refreshing: true, loading: false, page: 2 });
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["old", "next"]);
+    fresh.resolve(page(["fresh", "fresh"]));
+    await refreshing;
+    expect(feed.getSnapshot()).toMatchObject({ refreshing: false, page: 1, hasMore: true });
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["fresh"]);
+    await feed.loadMore();
+    expect(requests[3]).toMatchObject({ query: "电源", sort: "like", page: 2 });
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["fresh", "next"]);
+  });
+
+  it("can refresh an exhausted feed and keeps it intact after a refresh failure", async () => {
+    let attempt = 0;
+    const feed = new FeedController(async () => {
+      attempt += 1;
+      if (attempt === 2) throw new Error("刷新离线");
+      return page([attempt === 1 ? "old" : "fresh"], 1, false);
+    });
+    await feed.search("", "recommend");
+    await feed.refresh();
+    expect(feed.getSnapshot()).toMatchObject({ refreshing: false, page: 1, hasMore: false });
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["old"]);
+    expect(feed.getSnapshot().refreshError?.message).toBe("刷新离线");
+    expect(feed.getSnapshot().error).toBeNull();
+    await feed.refresh();
+    expect(feed.getSnapshot().refreshError).toBeNull();
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["fresh"]);
+  });
+
+  it.each([
+    false,
+    true,
+  ])("ignores superseded pagination after refresh (failure: %s)", async (fail) => {
+    const old = deferred<FeedPage>();
+    let first = true;
+    const feed = new FeedController(({ page: n }) => {
+      if (n === 2) return old.promise;
+      const result = page([first ? "old" : "fresh"]);
+      first = false;
+      return Promise.resolve(result);
+    });
+    await feed.search("", "new");
+    const paging = feed.loadMore();
+    await feed.refresh();
+    if (fail) old.reject(new Error("过期分页错误"));
+    else old.resolve(page(["stale"], 2, false));
+    await paging;
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["fresh"]);
+    expect(feed.getSnapshot()).toMatchObject({ page: 1, error: null, refreshError: null });
+  });
+
+  it.each([
+    false,
+    true,
+  ])("keeps a newer search after an old refresh (failure: %s)", async (fail) => {
+    const old = deferred<FeedPage>();
+    let attempt = 0;
+    const feed = new FeedController(({ query }) => {
+      attempt += 1;
+      return attempt === 2 ? old.promise : Promise.resolve(page([query]));
+    });
+    await feed.search("old", "recommend");
+    const refreshing = feed.refresh();
+    await feed.search("new", "like");
+    if (fail) old.reject(new Error("过期刷新错误"));
+    else old.resolve(page(["stale"]));
+    await refreshing;
+    expect(feed.getSnapshot().items.map((item) => item.id)).toEqual(["new"]);
+    expect(feed.getSnapshot()).toMatchObject({
+      refreshing: false,
+      refreshError: null,
+      error: null,
+    });
+  });
 });
 
 describe("responsive layout", () => {

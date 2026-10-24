@@ -33,3 +33,16 @@ it("decodes indexed meshes and rejects out-of-range or incomplete indices", () =
   expect(() => decodeIndices({ ...packed, indexCount: 9 })).toThrow();
   expect(() => decodeIndices({ ...packed, indices: undefined })).toThrow();
 });
+
+it("accepts shared vertices with more indices than the old expanded-vertex limit", () => {
+  const count = 1_500_003;
+  const packed = {
+    data: Buffer.alloc(3 * 36).toString("base64"),
+    vertexCount: 3,
+    indices: Buffer.alloc(count * 4).toString("base64"),
+    indexCount: count,
+    bounds: { min: [0, 0, 0], max: [1, 1, 0] },
+  };
+  expect(decodeIndices(packed)).toHaveLength(count);
+  expect(() => decodeIndices({ ...packed, indexCount: 6_000_003 })).toThrow();
+});
