@@ -1,8 +1,10 @@
 import { requireNativeModule } from "expo-modules-core";
 import { Linking } from "react-native";
+import { parseAuthCallback } from "./auth";
 import { BridgeError, decode } from "./protocol";
 import type { Command } from "./types";
 
+export { parseAuthCallback, passportLoginUrl } from "./auth";
 export { BridgeError } from "./protocol";
 export * from "./types";
 
@@ -24,4 +26,19 @@ export async function openExternal(url: string): Promise<void> {
   if (!/^https?:\/\//i.test(url))
     throw new BridgeError("invalid_url", "链接必须使用 HTTP 或 HTTPS", "bridge");
   await Linking.openURL(url);
+}
+
+export function subscribeAuthCallback(listener: (code: string) => void): () => void {
+  let active = true;
+  const receive = (url: string | null | undefined) => {
+    if (!active || !url) return;
+    const code = parseAuthCallback(url);
+    if (code) listener(code);
+  };
+  const subscription = Linking.addEventListener("url", ({ url }) => receive(url));
+  void Linking.getInitialURL().then(receive, () => undefined);
+  return () => {
+    active = false;
+    subscription.remove();
+  };
 }

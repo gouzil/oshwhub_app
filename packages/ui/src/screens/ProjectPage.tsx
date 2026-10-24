@@ -1,5 +1,12 @@
-import type { ContentBlock, ProjectDetail } from "@oshwhub/bridge";
-import { useMemo, useRef, useState } from "react";
+import {
+  type Comment,
+  type CommentsPage,
+  type ContentBlock,
+  call,
+  type ProjectDetail,
+  type ProjectStatus,
+} from "@oshwhub/bridge";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Platform, ScrollView, View } from "react-native";
 import { BomList } from "../BomList";
 import { ActionButton as Button } from "../components/action-button";
@@ -10,6 +17,7 @@ import { PageHeader } from "../components/page-header";
 import { ProjectContent } from "../components/project-content";
 import { Empty, ErrorPanel } from "../components/states";
 import { TabBar } from "../components/tab-bar";
+import { Input } from "../components/ui/input";
 import { Text } from "../components/ui/text";
 import { useCommand } from "../hooks/use-command";
 import { cn } from "../lib/utils";
@@ -21,17 +29,32 @@ export function ProjectPage({
   bottomInset,
   onBack,
   onPcb,
+  authenticated,
+  authVersion,
+  onAccount,
 }: {
   id: string;
   width: number;
   bottomInset: number;
   onBack: () => void;
   onPcb: (documentId: string, name: string) => void;
+  authenticated: boolean;
+  authVersion: number;
+  onAccount: () => void;
 }) {
   const command = useMemo(() => ({ command: "project" as const, id }), [id]);
   const { value: project, loading, error, retry } = useCommand<ProjectDetail>(command);
   const [tab, setTab] = useState<"intro" | "hardware">("intro");
   const [boardId, setBoardId] = useState<string | null>(null);
+  const [status, setStatus] = useState<ProjectStatus | null>(null);
+  const [statusError, setStatusError] = useState<Error | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [collectionBusy, setCollectionBusy] = useState(false);
+  const [interactionError, setInteractionError] = useState<Error | null>(null);
+  const [comments, setComments] = useState<CommentsPage | null>(null);
+  const [commentsError, setCommentsError] = useState<Error | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
   const list = useRef<FlatList<ContentBlock>>(null);
   const [readyThrough, setReadyThrough] = useState(-1);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
@@ -43,6 +66,108 @@ export function ProjectPage({
   ).current;
   const selected = project?.boards.find((board) => board.id === boardId) ?? project?.boards[0];
   const wide = width >= 900;
+  const loadInteractions = useCallback(() => {
+    if (!project) return;
+    let active = true;
+    setStatusLoading(true);
+    setStatusError(null);
+    setCommentsError(null);
+    void Promise.allSettled([
+      call<ProjectStatus>({ command: "projectStatus", id }),
+      call<CommentsPage>({ command: "comments", id, sort: "hot", page: 1, pageSize: 20 }),
+    ])
+      .then(([statusResult, commentsResult]) => {
+        if (!active) return;
+        if (statusResult.status === "fulfilled") setStatus(statusResult.value);
+        else {
+          const details =
+            statusResult.reason instanceof Error
+              ? statusResult.reason
+              : new Error("暂时无法加载收藏状态，请重试。");
+          if ((statusResult.reason as { code?: string })?.code === "AUTH_REQUIRED") {
+            setStatusError(details);
+          } else {
+            setInteractionError(details);
+          }
+        }
+        if (commentsResult.status === "fulfilled") setComments(commentsResult.value);
+        else {
+          setCommentsError(
+            commentsResult.reason instanceof Error
+              ? commentsResult.reason
+              : new Error("暂时无法加载评论，请重试。"),
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setStatusLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, project]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Authentication changes must refresh session-bound project state.
+  useEffect(() => loadInteractions(), [authVersion, loadInteractions]);
+  const collectionLabel =
+    statusError && (statusError as { code?: string }).code === "AUTH_REQUIRED"
+      ? "登录后收藏"
+      : status?.collect
+        ? "取消收藏"
+        : "收藏项目";
+  const validComment =
+    commentDraft.trim().length > 0 &&
+    commentDraft.trim().length <= 2000 &&
+    ![...commentDraft].some((character) => /\p{Cc}/u.test(character));
+  const toggleCollection = () => {
+    if (statusError && (statusError as { code?: string }).code === "AUTH_REQUIRED") {
+      onAccount();
+      return;
+    }
+    if (!status || collectionBusy) return;
+    const collect = !status.collect;
+    setCollectionBusy(true);
+    setInteractionError(null);
+    void call<ProjectStatus>({ command: "toggleProjectCollection", id, collect })
+      .then(setStatus, (error: unknown) => {
+        const details = error instanceof Error ? error : new Error("收藏操作失败，请重试。");
+        if ((error as { code?: string })?.code === "AUTH_REQUIRED") onAccount();
+        else setInteractionError(details);
+      })
+      .finally(() => setCollectionBusy(false));
+  };
+  const createComment = () => {
+    if (!authenticated) {
+      onAccount();
+      return;
+    }
+    const content = commentDraft.trim();
+    if (!validComment || commentBusy) return;
+    setCommentBusy(true);
+    setInteractionError(null);
+    void call<Comment>({ command: "createComment", id, content })
+      .then(
+        () => {
+          setCommentDraft("");
+          return call<CommentsPage>({
+            command: "comments",
+            id,
+            sort: "hot",
+            page: 1,
+            pageSize: 20,
+          });
+        },
+        (error: unknown) => {
+          const details = error instanceof Error ? error : new Error("发表评论失败，请重试。");
+          if ((error as { code?: string })?.code === "AUTH_REQUIRED") onAccount();
+          else setInteractionError(details);
+          return null;
+        },
+      )
+      .then((next) => {
+        if (next) setComments(next);
+      })
+      .finally(() => setCommentBusy(false));
+  };
   return (
     <View className="min-h-0 flex-1">
       <PageHeader title={project?.summary.name ?? "项目详情"} onBack={onBack} />
@@ -149,6 +274,20 @@ export function ProjectPage({
                       {project.summary.views.toLocaleString()} 次浏览
                     </Text>
                     <ExternalLink url={project.summary.url} label="在原网站中查看" />
+                    <View className="gap-2 pt-1">
+                      <Button
+                        label={collectionLabel}
+                        secondary={status?.collect ?? false}
+                        disabled={statusLoading || collectionBusy}
+                        onPress={toggleCollection}
+                      />
+                      {interactionError && (
+                        <ErrorPanel
+                          error={interactionError}
+                          retry={() => setInteractionError(null)}
+                        />
+                      )}
+                    </View>
                   </View>
                 </View>
                 <TabBar
@@ -257,12 +396,102 @@ export function ProjectPage({
                       }}
                     />
                   )}
+                  <CommentsSection
+                    comments={comments}
+                    error={commentsError}
+                    draft={commentDraft}
+                    onDraft={setCommentDraft}
+                    onSubmit={createComment}
+                    authenticated={authenticated}
+                    busy={commentBusy}
+                    onAccount={onAccount}
+                    onRetry={loadInteractions}
+                  />
                 </View>
               ) : undefined
             }
           />
         )
       )}
+    </View>
+  );
+}
+
+function CommentsSection({
+  comments,
+  error,
+  draft,
+  onDraft,
+  onSubmit,
+  authenticated,
+  busy,
+  onAccount,
+  onRetry,
+}: {
+  comments: CommentsPage | null;
+  error: Error | null;
+  draft: string;
+  onDraft: (value: string) => void;
+  onSubmit: () => void;
+  authenticated: boolean;
+  busy: boolean;
+  onAccount: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <View className="gap-4 border-t border-border pt-6">
+      <Text accessibilityRole="header" className="text-[17px] font-semibold">
+        评论 {comments?.total ?? 0}
+      </Text>
+      {error ? (
+        <ErrorPanel error={error} retry={onRetry} />
+      ) : comments ? (
+        comments.items.length ? (
+          <View className="gap-4">
+            {comments.items.map((comment) => (
+              <CommentItem key={comment.uuid} comment={comment} />
+            ))}
+          </View>
+        ) : (
+          <Text className="text-sm text-muted-foreground">还没有评论，欢迎分享你的想法。</Text>
+        )
+      ) : (
+        <Text className="text-sm text-muted-foreground">正在加载评论…</Text>
+      )}
+      <View className="gap-2 rounded-2xl border border-border bg-card p-4">
+        <Input
+          accessibilityLabel="发表评论"
+          placeholder={authenticated ? "写下你的评论" : "登录后发表评论"}
+          value={draft}
+          onChangeText={onDraft}
+          multiline
+          maxLength={2000}
+          editable={authenticated && !busy}
+          className="min-h-20 items-start py-3"
+        />
+        <Button
+          label={authenticated ? "发表评论" : "登录后发表评论"}
+          disabled={authenticated && (!draft.trim() || busy)}
+          onPress={authenticated ? onSubmit : onAccount}
+        />
+      </View>
+    </View>
+  );
+}
+
+function CommentItem({ comment, depth = 0 }: { comment: Comment; depth?: number }) {
+  return (
+    <View className={cn("gap-1.5", depth > 0 && "ml-5 border-l border-border pl-3")}>
+      <View className="flex-row items-center gap-2">
+        <Text className="text-sm font-semibold">{comment.creator.nickname}</Text>
+        <Text className="text-xs text-muted-foreground">{comment.createdAt}</Text>
+      </View>
+      <Text selectable className="text-sm leading-6 text-foreground">
+        {comment.content}
+      </Text>
+      {comment.replies.map((reply) => (
+        <CommentItem key={reply.uuid} comment={reply} depth={depth + 1} />
+      ))}
     </View>
   );
 }

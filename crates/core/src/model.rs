@@ -81,3 +81,40 @@ pub struct FeedQuery {
     pub query: String,
     pub sort: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub nickname: String,
+    pub avatar: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStatus {
+    pub album_collect: bool,
+    pub like: bool,
+    pub collect: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Comment {
+    pub uuid: String,
+    pub content: String,
+    pub creator: User,
+    pub created_at: String,
+    pub like: bool,
+    pub replies: Vec<Comment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentsPage {
+    pub items: Vec<Comment>,
+    pub page: u32,
+    pub total: u64,
+    pub has_more: bool,
+}

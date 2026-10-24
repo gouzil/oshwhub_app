@@ -48,6 +48,31 @@ export interface ProjectDetail {
   boards: Board[];
   attachments: { name: string; url: string }[];
 }
+export interface User {
+  id: string;
+  username: string;
+  nickname: string;
+  avatar: string | null;
+}
+export interface ProjectStatus {
+  albumCollect: boolean;
+  like: boolean;
+  collect: boolean;
+}
+export interface Comment {
+  uuid: string;
+  content: string;
+  creator: User;
+  createdAt: string;
+  like: boolean;
+  replies: Comment[];
+}
+export interface CommentsPage {
+  items: Comment[];
+  page: number;
+  total: number;
+  hasMore: boolean;
+}
 export interface Bounds {
   minX: number;
   minY: number;
@@ -134,6 +159,13 @@ export type Command =
   | { command: "health" }
   | { command: "feed"; page: number; pageSize?: number; query?: string; sort?: Sort }
   | { command: "project"; id: string }
+  | { command: "login"; code: string }
+  | { command: "currentUser" }
+  | { command: "logout" }
+  | { command: "projectStatus"; id: string }
+  | { command: "toggleProjectCollection"; id: string; collect: boolean }
+  | { command: "comments"; id: string; sort?: string; page?: number; pageSize?: number }
+  | { command: "createComment"; id: string; content: string }
   | { command: "searchBom"; items: BomItem[]; query: string }
   | { command: "pcb"; projectId: string; documentId: string }
   | { command: "demo" }

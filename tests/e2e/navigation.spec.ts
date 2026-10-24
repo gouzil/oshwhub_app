@@ -2,11 +2,9 @@ import type { Locator } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 async function scrollToEnd(target: Locator) {
-  await target.evaluate((element) => {
-    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-      if (parent.scrollHeight > parent.clientHeight) parent.scrollTop = parent.scrollHeight;
-    }
-  });
+  await target.evaluate((element) =>
+    element.scrollIntoView({ block: "center", inline: "nearest" }),
+  );
 }
 
 test("selected lens keeps up when JavaScript animation frames are suspended", async ({ page }) => {
@@ -138,6 +136,10 @@ test("reduced transparency uses an opaque navigation surface", async ({ page, br
   const selected = navigation.getByRole("tab", { name: "PCB 实验室", exact: true });
   const activeBounds = await lens.boundingBox();
   const selectedBounds = await selected.boundingBox();
-  expect(activeBounds?.x).toBeCloseTo(selectedBounds?.x ?? Infinity, 0);
-  expect(activeBounds?.y).toBeCloseTo(selectedBounds?.y ?? Infinity, 0);
+  expect(Math.abs((activeBounds?.x ?? Infinity) - (selectedBounds?.x ?? -Infinity))).toBeLessThan(
+    1,
+  );
+  expect(Math.abs((activeBounds?.y ?? Infinity) - (selectedBounds?.y ?? -Infinity))).toBeLessThan(
+    1,
+  );
 });

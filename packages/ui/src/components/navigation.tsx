@@ -14,12 +14,13 @@ import { useReducedMotion } from "../useReducedMotion";
 import { Button } from "./ui/button";
 import { Text } from "./ui/text";
 
-export type Tab = "discover" | "lab" | "about";
+export type Tab = "discover" | "lab" | "about" | "account";
 
 const navigation: { id: Tab; label: string; symbol: string }[] = [
   { id: "discover", label: "发现", symbol: "safari" },
   { id: "lab", label: "PCB 实验室", symbol: "cpu" },
   { id: "about", label: "关于", symbol: "info.circle" },
+  { id: "account", label: "账户", symbol: "person" },
 ];
 
 type NavigationProps = {
