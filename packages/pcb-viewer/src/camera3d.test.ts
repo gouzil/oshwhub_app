@@ -18,13 +18,20 @@ describe("3D camera", () => {
           }
     }
   });
-  it("keeps repeated zoom, pole rotation and panning finite and bounded", () => {
+  it("keeps orbiting past a full turn without angle clamps", () => {
+    let camera = fitCamera(bounds, 1);
+    for (let i = 0; i < 100; i++) camera = orbitCamera(camera, -400, -400);
+    expect(camera.yaw).toBeGreaterThan(2 * Math.PI);
+    expect(camera.pitch).toBeLessThan(-2 * Math.PI);
+    expect(projection(camera, 1).every(Number.isFinite)).toBe(true);
+  });
+  it("keeps repeated zoom, pole rotation and panning finite", () => {
     const start = fitCamera(bounds, 1);
     let camera = start;
     for (let i = 0; i < 100; i++) camera = zoomCamera(orbitCamera(camera, 400, 400), 2);
     expect(camera.distance).toBeGreaterThan(0);
     expect(projection(camera, 0).every(Number.isFinite)).toBe(true);
-    expect(Math.abs(camera.pitch)).toBeLessThanOrEqual(Math.PI / 2);
+    expect(Number.isFinite(camera.pitch)).toBe(true);
     const panned = panCamera(start, 100, 0, 800);
     expect(panned.target).not.toEqual(start.target);
     expect(panned.distance).toBe(start.distance);
