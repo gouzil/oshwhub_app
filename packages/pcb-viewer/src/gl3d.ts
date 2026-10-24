@@ -138,6 +138,8 @@ export class Renderer3d {
       String(gl.getParameter(gl.VERSION)).startsWith("WebGL 2") ||
       gl.getExtension("OES_element_index_uint");
     if (indices && !uintIndices) {
+      if (this.bytes + indices.length * 36 > 64 * 1024 * 1024)
+        throw new Error("当前设备展开三维网格需要超过 64 MiB，请使用支持索引绘制的设备。");
       const expanded = new Float32Array(indices.length * 9);
       for (let i = 0; i < indices.length; i++)
         expanded.set(data.subarray(indices[i] * 9, indices[i] * 9 + 9), i * 9);

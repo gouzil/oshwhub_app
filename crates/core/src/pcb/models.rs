@@ -1,7 +1,7 @@
 use super::{
     geometry::Transform,
     history::Project,
-    solid::{self, Bounds3, MM, Mesh, PackedMesh},
+    solid::{self, Bounds3, MM, Mesh, MeshBuilder, PackedMesh},
 };
 use crate::{
     client::HttpClient,
@@ -212,10 +212,10 @@ pub fn parse_obj(bytes: &[u8]) -> Result<Mesh> {
         })
         .map_err(|_| solid::invalid())?;
     let materials = materials.map_err(|_| solid::invalid())?;
-    let mut result = Mesh::new();
+    let mut result = MeshBuilder::new();
     for model in models {
         let m = model.mesh;
-        if m.indices.len() + result.vertices.len() / 9 > 400_000
+        if m.indices.len() + result.mesh.indices.len() > 400_000
             || !m.positions.iter().all(|v| v.is_finite() && v.abs() < 1e6)
         {
             return Err(AppError::new(
@@ -240,11 +240,7 @@ pub fn parse_obj(bytes: &[u8]) -> Result<Mesh> {
                     .try_into()
                     .map_err(|_| solid::invalid())?;
             }
-            let before = result.vertices.len();
-            result.triangle(points, None, color)?;
-            if result.vertices.len() == before {
-                continue;
-            }
+            let mut normals = [None; 3];
             for (corner, index) in tri.iter().enumerate() {
                 if let Some(n) = m.normals.get(*index as usize * 3..*index as usize * 3 + 3) {
                     let length = n.iter().map(|v| v * v).sum::<f32>().sqrt();
@@ -252,18 +248,17 @@ pub fn parse_obj(bytes: &[u8]) -> Result<Mesh> {
                         return Err(solid::invalid());
                     }
                     if length > 1e-8 {
-                        for (i, value) in n.iter().enumerate() {
-                            result.vertices[before + corner * 9 + 3 + i] = value / length;
-                        }
+                        normals[corner] = Some(n.try_into().unwrap());
                     }
                 }
             }
+            result.triangle_with_normals(points, normals, color)?;
         }
     }
-    if result.vertices.is_empty() {
+    if result.mesh.vertices.is_empty() {
         return Err(solid::invalid());
     }
-    Ok(result)
+    Ok(result.finish())
 }
 
 #[derive(Serialize)]
@@ -326,7 +321,7 @@ pub async fn load(
         while cache.len() > 16
             || cache
                 .iter()
-                .map(|(_, m)| m.vertices.len() * 4)
+                .map(|(_, m)| (m.vertices.len() + m.indices.len()) * 4)
                 .sum::<usize>()
                 > 48 * 1024 * 1024
         {
@@ -383,6 +378,16 @@ mod tests {
         assert!((mesh.vertices[6] - 0.8).abs() < 0.0001);
         assert!(mesh.vertices.iter().all(|v| v.is_finite()));
         assert!((mesh.vertices[5] - 1.).abs() < 0.001);
+    }
+
+    #[test]
+    fn shared_obj_positions_keep_distinct_corner_normals() {
+        let obj = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvn 0 0 2\nvn 0 2 0\nf 1//1 2//1 3//1\nf 1//2 3//2 4//2\n";
+        let mesh = parse_obj(obj.as_bytes()).unwrap();
+        assert_eq!(mesh.vertices.len(), 54);
+        assert_eq!(mesh.indices, [0, 1, 2, 3, 4, 5]);
+        assert_eq!(&mesh.vertices[3..6], &[0., 0., 1.]);
+        assert_eq!(&mesh.vertices[30..33], &[0., 1., 0.]);
     }
 
     #[test]

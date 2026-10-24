@@ -1270,6 +1270,8 @@ pub fn prepare_3d(scene_id: &str) -> Result<solid::Scene3d> {
     )?;
     tracing::info!(
         vertices = result.board.vertex_count,
+        indices = result.board.index_count,
+        mesh_bytes = result.board.vertex_count * 36 + result.board.index_count * 4,
         models = result.model_keys.len(),
         elapsed_ms = start.elapsed().as_millis() as u64,
         "pcb.solid.complete"
