@@ -24,7 +24,6 @@ impl HttpClient {
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent("OSHWHubApp/0.1 (+https://github.com/gouzil/oshwhub_app)")
             .build()
             .map_err(|_| AppError::new("NETWORK", "无法初始化网络客户端"))?;
         Ok(Self { inner })
