@@ -28,7 +28,7 @@ struct HitObject {
     contours: Vec<Vec<Point>>,
     fill: bool,
     width: f64,
-    priority: (bool, i32, usize),
+    priority: (u8, bool, i32, usize),
     layers: Vec<i32>,
 }
 struct Stored {
@@ -1167,12 +1167,18 @@ pub fn compile(
             }
         }
         if paint.selectable {
+            let semantic = match paint.result.kind.as_str() {
+                "PAD" | "VIA" => 2,
+                "COMPONENT" => 1,
+                _ if paint.fill => 0,
+                _ => 1,
+            };
             objects.push(HitObject {
                 result: paint.result,
                 contours: paint.geometry.contours,
                 fill: paint.fill,
                 width: paint.width,
-                priority: (precise, paint.stage, sequence),
+                priority: (semantic, precise, paint.stage, sequence),
                 layers: paint.pick_layers,
             });
         }
@@ -1338,14 +1344,15 @@ pub fn pick(
         .max_by_key(|o| {
             (
                 o.priority.0,
+                o.priority.1,
                 o.layers
                     .iter()
                     .filter(|l| allowed.contains(l))
                     .map(|l| order(*l))
                     .max()
                     .unwrap_or(i32::MIN),
-                o.priority.1,
                 o.priority.2,
+                o.priority.3,
             )
         });
     Ok(found.map(|o| {
@@ -1565,6 +1572,44 @@ mod tests {
                 .unwrap()
                 .id,
             "via"
+        );
+    }
+
+    #[test]
+    fn component_pick_wins_over_overlapping_pour() {
+        let mut project = Project::default();
+        history::replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"fp","docType":"FOOTPRINT"}|
+{"type":"PAD","id":"left"}||{"num":"1","layerId":1,"centerX":-10,"centerY":0,"defaultPad":{"padType":"RECT","width":2,"height":2}}|
+{"type":"PAD","id":"right"}||{"num":"2","layerId":1,"centerX":10,"centerY":0,"defaultPad":{"padType":"RECT","width":2,"height":2}}|
+{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"COMPONENT","id":"c1"}||{"x":100,"y":100,"layerId":1,"attrs":{"Footprint":"fp","Designator":"C1","Value":"100 nF"}}|
+{"type":"POUR","id":"pour"}||{"layerId":1,"netName":"GND","path":[[85,90,"L",115,90,115,110,85,110,85,90]]}|
+{"type":"POURED","id":["POURED","pour"]}||{"pourFill":[{"fill":true,"strokeWidth":0,"path":[[8.5,9,"L",11.5,9,11.5,11,8.5,11,8.5,9]]}]}|"#,
+        )
+        .unwrap();
+        let scene = compile(
+            project,
+            "board",
+            "component-pick".into(),
+            Metrics::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            pick(&scene.id, 100., -100., 0.01, Some(&[1]))
+                .unwrap()
+                .unwrap()
+                .kind,
+            "COMPONENT"
+        );
+        assert_eq!(
+            pick(&scene.id, 90., -100., 0.01, Some(&[1]))
+                .unwrap()
+                .unwrap()
+                .kind,
+            "PAD"
         );
     }
 
