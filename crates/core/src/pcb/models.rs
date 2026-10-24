@@ -269,10 +269,12 @@ pub struct Instance {
 #[derive(Serialize)]
 pub struct Model3d {
     pub key: String,
+    #[serde(rename = "meshKey")]
+    pub mesh_key: String,
     pub mesh: PackedMesh,
     pub instances: Vec<Instance>,
 }
-type Cache = VecDeque<(String, Arc<Mesh>)>;
+type Cache = VecDeque<(String, String, Arc<Mesh>)>;
 fn cache() -> &'static Mutex<Cache> {
     static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
@@ -288,19 +290,21 @@ pub async fn load(
         return Err(AppError::new("invalid_request", "模型不属于当前 PCB"));
     }
     let start = Instant::now();
+    let component = key.split('|').next().ok_or_else(solid::invalid)?;
+    crate::api::validate_id(component)?;
     let cached = cache()
         .lock()
         .map_err(|_| solid::invalid())?
         .iter()
-        .find(|(k, _)| k == key)
-        .map(|(_, m)| Arc::clone(m));
-    let mesh = if let Some(mesh) = cached {
-        mesh
+        .find(|(k, _, _)| k == component)
+        .map(|(_, model, mesh)| (model.clone(), Arc::clone(mesh)));
+    let (mesh_key, mesh) = if let Some((model, mesh)) = cached {
+        (model, mesh)
     } else {
-        let uuid = key.split('|').next().ok_or_else(solid::invalid)?;
-        crate::api::validate_id(uuid)?;
         let metadata = client
-            .get_json(&format!("https://pro.lceda.cn/api/v5/components/{uuid}"))
+            .get_json(&format!(
+                "https://pro.lceda.cn/api/v5/components/{component}"
+            ))
             .await?;
         let model = metadata["result"]["3d_model_uuid"]
             .as_str()
@@ -317,17 +321,17 @@ pub async fn load(
             .await
             .map_err(|_| solid::invalid())??;
         let mut cache = cache().lock().map_err(|_| solid::invalid())?;
-        cache.push_back((key.into(), Arc::clone(&mesh)));
+        cache.push_back((component.into(), model.into(), Arc::clone(&mesh)));
         while cache.len() > 16
             || cache
                 .iter()
-                .map(|(_, m)| (m.vertices.len() + m.indices.len()) * 4)
+                .map(|(_, _, m)| (m.vertices.len() + m.indices.len()) * 4)
                 .sum::<usize>()
                 > 48 * 1024 * 1024
         {
             cache.pop_front();
         }
-        mesh
+        (model.into(), mesh)
     };
     let key = key.to_owned();
     let result = tokio::task::spawn_blocking(move || {
@@ -348,6 +352,7 @@ pub async fn load(
         }
         Ok(Model3d {
             key,
+            mesh_key,
             mesh: mesh.packed(),
             instances,
         })
