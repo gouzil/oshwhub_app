@@ -26,7 +26,7 @@ export function fitCamera(bounds: Bounds3, aspect: number): Camera3d {
 export function orbitCamera(camera: Camera3d, dx: number, dy: number): Camera3d {
   return {
     ...camera,
-    yaw: camera.yaw - dx * 0.008,
+    yaw: camera.yaw + dx * 0.008,
     pitch: camera.pitch + dy * 0.008,
   };
 }

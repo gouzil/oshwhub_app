@@ -20,10 +20,15 @@ describe("3D camera", () => {
   });
   it("keeps orbiting past a full turn without angle clamps", () => {
     let camera = fitCamera(bounds, 1);
-    for (let i = 0; i < 100; i++) camera = orbitCamera(camera, -400, -400);
+    for (let i = 0; i < 100; i++) camera = orbitCamera(camera, 400, -400);
     expect(camera.yaw).toBeGreaterThan(2 * Math.PI);
     expect(camera.pitch).toBeLessThan(-2 * Math.PI);
     expect(projection(camera, 1).every(Number.isFinite)).toBe(true);
+  });
+  it("moves the camera with the horizontal drag direction", () => {
+    const start = fitCamera(bounds, 1);
+    expect(orbitCamera(start, 100, 0).yaw).toBeGreaterThan(start.yaw);
+    expect(orbitCamera(start, -100, 0).yaw).toBeLessThan(start.yaw);
   });
   it("keeps repeated zoom, pole rotation and panning finite", () => {
     const start = fitCamera(bounds, 1);
