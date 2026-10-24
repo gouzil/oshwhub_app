@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -154,6 +155,31 @@ test("packaging rejects foreign architecture or platform", () => {
   assert.doesNotThrow(() => assertHostBuild([]));
   assert.throws(() => assertHostBuild([process.arch === "arm64" ? "--x64" : "--arm64"]));
   assert.throws(() => assertHostBuild([process.platform === "win32" ? "--mac" : "--win"]));
+});
+
+test("Linux DEB artifacts stay in the release root despite the scoped package name", () => {
+  const require = createRequire(new URL("../apps/desktop/package.json", import.meta.url));
+  require("electron-builder");
+  const builderRequire = createRequire(require.resolve("electron-builder"));
+  const { LinuxPackager } = builderRequire("app-builder-lib/out/linuxPackager");
+  const { Arch } = builderRequire("builder-util");
+  const config = require("./electron-builder.config.cjs");
+  const packager = new LinuxPackager({ config, metadata: require("./package.json") });
+  for (const [arch, suffix] of [
+    [Arch.x64, "_amd64.deb"],
+    [Arch.arm64, "_arm64.deb"],
+  ]) {
+    const filename = packager.expandArtifactNamePattern(
+      config.deb,
+      "deb",
+      arch,
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: FpmTarget's default artifact pattern.
+      "${name}_${version}_${arch}.${ext}",
+      false,
+    );
+    assert.equal(path.dirname(filename), ".");
+    assert.ok(filename.endsWith(suffix), filename);
+  }
 });
 
 test("sandbox preload exposes only two named promise-based methods", async () => {

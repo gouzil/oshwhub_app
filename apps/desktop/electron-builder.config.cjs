@@ -31,6 +31,8 @@ module.exports = {
     icon: "electron/icons/icon.png",
     maintainer: "OSHWHub contributors",
   },
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder expands these macros.
+  deb: { artifactName: "oshwhub_${version}_${arch}.${ext}" },
   beforePack: async (context) => {
     const arch = { 1: "x64", 3: "arm64" }[context.arch];
     if (context.electronPlatformName !== process.platform || arch !== process.arch) {

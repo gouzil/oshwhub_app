@@ -2,6 +2,14 @@
 
 首轮日期：2026-10-23（Asia/Shanghai）。当时范围为公开项目浏览、搜索、详情、BOM 和专业版二维 PCB 查看。后续三维阶段记录如下；账号、写入和 PCB 编辑仍待后续迭代。
 
+## 2026-10-24 Linux DEB CI 修复
+
+[合并主线后的 Linux 构建](https://github.com/gouzil/oshwhub_app/actions/runs/40073383004/job/120811450125) 确认 AppImage 成功、DEB 失败：默认文件名展开为 `release/@oshwhub/desktop_0.1.0_amd64.deb`，fpm 无法写入不存在的 `release/@oshwhub` 目录。为 DEB 单独指定 `oshwhub_${version}_${arch}.${ext}`，保留 scoped npm 包名和其他平台的产物配置。
+
+- 回归测试调用实际 electron-builder `LinuxPackager` 的产物名称展开逻辑，使用项目真实配置及包元数据，检查 x64 / arm64 的 DEB 留在输出根目录且带正确架构后缀。旧配置先以 `@oshwhub` 子目录复现失败，修复后通过；不需要下载 Electron 或跨平台打包。
+- 本机 `pnpm check` 通过：55 项 Vitest、22 项 Node 测试；Rust 核心 52、契约 19、桌面协议 3、开发服务与 FFI 各 1 项通过，原有 2 项忽略。完整原生 Linux 打包及新提交的远端回归仍以 GitHub Actions 结果为准。
+- 修复前提交 `6fb4156` 的远端 quality、macOS 和 Windows 构建已通过。本轮没有重跑本机界面或设备验收，未修改渲染和交互代码。
+
 ## 2026-10-24 UI 迁移分支同步 main
 
 将 `main` 的 `7bf91bb` 合入 `codex/electron-shared-ui`。应用壳保留 Electron / Tailwind 的组件拆分，将列表刷新、固定搜索与排序栏迁入 `screens/DiscoverPage.tsx`；验收文档保留双方阶段记录。Rust API 拆分、三维大小限制修复和刷新控制器与 `main` 保持一致。
