@@ -13,7 +13,7 @@ export class Sidecar {
 
   constructor(
     child,
-    { timeoutMs = 240_000, maxPending = 32, maxResponseBytes = 128 * 1024 * 1024 } = {},
+    { timeoutMs = 240_000, maxPending = 32, maxResponseBytes = 256 * 1024 * 1024 } = {},
   ) {
     this.#child = child;
     this.#timeoutMs = timeoutMs;

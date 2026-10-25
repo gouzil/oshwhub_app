@@ -11,7 +11,7 @@ it("decodes packed little-endian GPU vertices and rejects corrupt or oversized m
   };
   expect(decodeMesh(packed)[0]).toBe(1.5);
   expect(() => decodeMesh({ ...packed, vertexCount: 6 })).toThrow();
-  expect(() => decodeMesh({ ...packed, vertexCount: 1_500_003 })).toThrow();
+  expect(() => decodeMesh({ ...packed, vertexCount: 3_000_003 })).toThrow();
   expect(() => decodeMesh({ ...packed, data: "corrupt" })).toThrow();
   expect(() => decodeMesh({ ...packed, bounds: { min: [NaN, 0, 0], max: [2, 2, 2] } })).toThrow();
   expect(() => decodeMesh({ ...packed, bounds: { min: [3, 0, 0], max: [2, 2, 2] } })).toThrow();
@@ -34,8 +34,20 @@ it("decodes indexed meshes and rejects out-of-range or incomplete indices", () =
   expect(() => decodeIndices({ ...packed, indices: undefined })).toThrow();
 });
 
-it("accepts shared vertices with more indices than the old expanded-vertex limit", () => {
-  const count = 1_500_003;
+it("accepts large indexed boards above the previous vertex limit", () => {
+  const count = 1_500_001;
+  const packed = {
+    data: Buffer.alloc(count * 36).toString("base64"),
+    vertexCount: count,
+    indices: Buffer.alloc(12).toString("base64"),
+    indexCount: 3,
+    bounds: { min: [0, 0, 0], max: [1, 1, 0] },
+  };
+  expect(decodeMesh(packed)).toHaveLength(count * 9);
+});
+
+it("accepts shared vertices with more indices than the previous index limit", () => {
+  const count = 6_000_003;
   const packed = {
     data: Buffer.alloc(3 * 36).toString("base64"),
     vertexCount: 3,
@@ -44,5 +56,5 @@ it("accepts shared vertices with more indices than the old expanded-vertex limit
     bounds: { min: [0, 0, 0], max: [1, 1, 0] },
   };
   expect(decodeIndices(packed)).toHaveLength(count);
-  expect(() => decodeIndices({ ...packed, indexCount: 6_000_003 })).toThrow();
+  expect(() => decodeIndices({ ...packed, indexCount: 8_000_001 })).toThrow();
 });

@@ -15,7 +15,7 @@ export function decodeMesh(mesh: PackedMesh): Float32Array {
     !Number.isInteger(count) ||
     count <= 0 ||
     (mesh.indices === undefined && count % 3 !== 0) ||
-    count > 1_500_000 ||
+    count > 3_000_000 ||
     mesh.data.length !== count * 48 ||
     mesh.bounds.min.length !== 3 ||
     mesh.bounds.max.length !== 3 ||
@@ -45,7 +45,7 @@ export function decodeIndices(mesh: PackedMesh): Uint32Array<ArrayBuffer> | null
     !Number.isInteger(count) ||
     count <= 0 ||
     count % 3 !== 0 ||
-    count > 6_000_000
+    count > 8_000_000
   )
     throw new Error("三维网格索引无效。");
   const bytes = decodeBase64(mesh.indices, count * 4);
