@@ -4,26 +4,58 @@
 @source ".";
 
 @theme {
-  --color-background: #ffffff;
-  --color-canvas: #f8f8fa;
-  --color-surface: #f5f6fa;
-  --color-skeleton: #e4e7ef;
   --color-viewer: #0b121a;
   --color-viewer-panel: #1b242f;
-  --color-foreground: #202d40;
-  --color-card: #ffffff;
-  --color-card-foreground: #202d40;
-  --color-primary: #2c65e8;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #edf3ff;
-  --color-secondary-foreground: #2c65e8;
-  --color-muted: #f1f3f7;
-  --color-muted-foreground: #636573;
-  --color-accent: #edf3ff;
-  --color-accent-foreground: #2c65e8;
-  --color-destructive: #b42318;
-  --color-border: #e5e7eb;
-  --color-input: #dde2ec;
-  --color-ring: #2c65e8;
   --radius-md: 0.6875rem;
+}
+
+@layer theme {
+  :root {
+    @variant light {
+      color-scheme: light;
+      --color-background: #ffffff;
+      --color-canvas: #f8f8fa;
+      --color-surface: #f5f6fa;
+      --color-skeleton: #e4e7ef;
+      --color-foreground: #202d40;
+      --color-card: #ffffff;
+      --color-card-foreground: #202d40;
+      --color-primary: #2c65e8;
+      --color-primary-foreground: #ffffff;
+      --color-secondary: #edf3ff;
+      --color-secondary-foreground: #2c65e8;
+      --color-muted: #f1f3f7;
+      --color-muted-foreground: #636573;
+      --color-accent: #edf3ff;
+      --color-accent-foreground: #2c65e8;
+      --color-destructive: #b42318;
+      --color-destructive-foreground: #ffffff;
+      --color-border: #e5e7eb;
+      --color-input: #dde2ec;
+      --color-ring: #2c65e8;
+    }
+    @variant dark {
+      color-scheme: dark;
+      --color-background: #101724;
+      --color-canvas: #0f1520;
+      --color-surface: #151e2c;
+      --color-skeleton: #2b3648;
+      --color-foreground: #e6edf7;
+      --color-card: #182230;
+      --color-card-foreground: #e6edf7;
+      --color-primary: #8bb3ff;
+      --color-primary-foreground: #0f1724;
+      --color-secondary: #1d2d4b;
+      --color-secondary-foreground: #8bb3ff;
+      --color-muted: #222d3e;
+      --color-muted-foreground: #a6b3c7;
+      --color-accent: #1d2d4b;
+      --color-accent-foreground: #8bb3ff;
+      --color-destructive: #ff9a92;
+      --color-destructive-foreground: #35120f;
+      --color-border: #334155;
+      --color-input: #44536a;
+      --color-ring: #8bb3ff;
+    }
+  }
 }

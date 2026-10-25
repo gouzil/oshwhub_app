@@ -5,6 +5,7 @@ export interface NativeTabBarProps extends ViewProps {
   items: { label: string; symbol: string }[];
   selectedIndex: number;
   tintColor: string;
+  colorScheme: "light" | "dark";
   onSelect: (event: NativeSyntheticEvent<{ index: number }>) => void;
 }
 

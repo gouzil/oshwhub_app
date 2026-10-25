@@ -17,7 +17,6 @@ final class LiquidTabBar: ExpoView, UITabBarDelegate {
     backgroundColor = .clear
     bar.delegate = self
     bar.tintColor = UIColor(red: 44 / 255, green: 101 / 255, blue: 232 / 255, alpha: 1)
-    bar.overrideUserInterfaceStyle = .light
     addSubview(bar)
   }
 
@@ -41,6 +40,10 @@ final class LiquidTabBar: ExpoView, UITabBarDelegate {
 
   func setTintColor(_ color: UIColor) {
     bar.tintColor = color
+  }
+
+  func setColorScheme(_ scheme: String) {
+    bar.overrideUserInterfaceStyle = scheme == "dark" ? .dark : .light
   }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {

@@ -11,6 +11,12 @@ public class OshwhubCoreModule: Module {
     Function("setThemeColor") { (value: String) in
       UserDefaults.standard.set(value, forKey: "themeColor")
     }
+    Function("getThemeMode") {
+      UserDefaults.standard.string(forKey: "themeMode")
+    }
+    Function("setThemeMode") { (value: String) in
+      UserDefaults.standard.set(value, forKey: "themeMode")
+    }
     OnCreate {
       let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path ?? ""
       cache.withCString { oshwhub_initialize($0) }
@@ -34,6 +40,9 @@ public class OshwhubCoreModule: Module {
       }
       Prop("tintColor") { (view, color: UIColor) in
         view.setTintColor(color)
+      }
+      Prop("colorScheme") { (view, scheme: String) in
+        view.setColorScheme(scheme)
       }
     }
   }

@@ -41,7 +41,7 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
         className={cn(
           wide
             ? "flex-row border-b border-border"
-            : "gap-2.5 rounded-[10px] border border-border bg-white p-3.5",
+            : "gap-2.5 rounded-[10px] border border-border bg-card p-3.5",
           wide && row % 2 === 1 && "bg-canvas",
         )}
       >

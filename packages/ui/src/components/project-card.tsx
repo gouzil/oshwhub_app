@@ -28,7 +28,7 @@ export function ProjectCard({
         {project.tags[0] && (
           <Badge
             variant="outline"
-            className="absolute bottom-2 left-2 max-w-[85%] rounded-[5px] bg-[#ffffffed] px-[7px] py-[3px]"
+            className="absolute bottom-2 left-2 max-w-[85%] rounded-[5px] bg-card/95 px-[7px] py-[3px]"
           >
             <Text numberOfLines={1} className="text-[9px] text-foreground">
               {project.tags[0]}

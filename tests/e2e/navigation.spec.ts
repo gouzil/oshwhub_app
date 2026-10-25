@@ -109,7 +109,10 @@ test("glass navigation switches pages and leaves page endings reachable", async 
   await page.screenshot({ path: test.info().outputPath("navigation-lab.png") });
 });
 
-test("reduced transparency uses an opaque navigation surface", async ({ page, browserName }) => {
+test("reduced transparency uses an opaque navigation surface in both appearances", async ({
+  page,
+  browserName,
+}) => {
   test.skip(
     browserName !== "chromium",
     "Chromium exposes reduced-transparency emulation through CDP",
@@ -145,4 +148,14 @@ test("reduced transparency uses an opaque navigation surface", async ({ page, br
   expect(Math.abs((activeBounds?.y ?? Infinity) - (selectedBounds?.y ?? 0))).toBeLessThanOrEqual(
     0.5,
   );
+  await session.send("Emulation.setEmulatedMedia", {
+    features: [
+      { name: "prefers-reduced-transparency", value: "reduce" },
+      { name: "prefers-color-scheme", value: "dark" },
+      { name: "prefers-reduced-motion", value: "reduce" },
+    ],
+  });
+  await expect(navigation).toHaveCSS("background-color", "rgb(21, 30, 44)");
+  await expect(navigation).toHaveCSS("backdrop-filter", "none");
+  await expect(lens).toHaveCSS("background-color", "rgb(29, 45, 75)");
 });

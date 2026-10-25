@@ -1,21 +1,29 @@
 import { Pressable, ScrollView, View } from "react-native";
+import { useUniwind } from "uniwind";
 import { ActionButton } from "../components/action-button";
 import { Card } from "../components/ui/card";
 import { Text } from "../components/ui/text";
 import { cn } from "../lib/utils";
-import { type ThemeColor, themeColors } from "../theme";
+import { type ThemeColor, type ThemeMode, themeColors, themeModes } from "../theme";
 
 export function SettingsPage({
   bottomInset,
+  themeMode,
+  onThemeMode,
+  modeError,
   themeColor,
   onThemeColor,
   error,
 }: {
   bottomInset: number;
+  themeMode: ThemeMode;
+  onThemeMode: (mode: ThemeMode) => void;
+  modeError: string | null;
   themeColor: ThemeColor;
   onThemeColor: (theme: ThemeColor) => void;
   error: string | null;
 }) {
+  const { theme: colorScheme } = useUniwind();
   return (
     <ScrollView
       contentContainerClassName="w-full max-w-[800px] grow self-center gap-4 p-7"
@@ -32,10 +40,45 @@ export function SettingsPage({
       </Text>
       <Card className="mt-4 gap-4 rounded-[20px] p-5">
         <Text accessibilityRole="header" className="text-[17px] font-semibold">
+          外观
+        </Text>
+        <Text className="text-[13px] leading-[23px] text-muted-foreground">
+          默认跟随系统，也可以固定使用亮色或暗色模式。
+        </Text>
+        <View accessibilityRole="radiogroup" accessibilityLabel="外观" className="gap-2.5">
+          {themeModes.map((mode) => {
+            const selected = themeMode === mode.id;
+            return (
+              <Pressable
+                key={mode.id}
+                accessibilityRole="radio"
+                accessibilityLabel={`外观 ${mode.label}`}
+                accessibilityState={{ checked: selected }}
+                aria-checked={selected}
+                onPress={() => onThemeMode(mode.id)}
+                className={cn(
+                  "min-h-14 flex-row items-center gap-3 rounded-xl border border-border px-4 py-3 active:opacity-80 web:focus-visible:outline-ring",
+                  selected && "border-primary bg-secondary",
+                )}
+              >
+                <Text className="min-w-0 flex-1 text-[14px] font-medium">{mode.label}</Text>
+                <Text className="text-[12px] text-primary">{selected ? "✓ 已选" : ""}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {modeError && (
+          <Text accessibilityRole="alert" className="text-[12px] leading-5 text-destructive">
+            {modeError}
+          </Text>
+        )}
+      </Card>
+      <Card className="gap-4 rounded-[20px] p-5">
+        <Text accessibilityRole="header" className="text-[17px] font-semibold">
           主题颜色
         </Text>
         <Text className="text-[13px] leading-[23px] text-muted-foreground">
-          默认参考 OSHWHub 官网的蓝色与浅灰白配色。选择后立即应用，并自动保存。
+          默认蓝色参考 OSHWHub 官网。选择后立即应用，并自动保存。
         </Text>
         <View accessibilityRole="radiogroup" accessibilityLabel="主题颜色" className="gap-2.5">
           {themeColors.map((theme) => {
@@ -57,7 +100,9 @@ export function SettingsPage({
                   aria-hidden
                   accessibilityElementsHidden
                   className="size-7 rounded-full"
-                  style={{ backgroundColor: theme.primary }}
+                  style={{
+                    backgroundColor: colorScheme === "dark" ? theme.darkPrimary : theme.primary,
+                  }}
                 />
                 <Text className="min-w-0 flex-1 text-[14px] font-medium">{theme.label}</Text>
                 <Text className="text-[12px] text-primary">

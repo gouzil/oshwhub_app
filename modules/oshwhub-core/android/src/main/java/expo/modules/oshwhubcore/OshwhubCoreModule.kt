@@ -17,6 +17,10 @@ class OshwhubCoreModule : Module() {
     Function("setThemeColor") { value: String ->
       check(preferences.edit().putString("themeColor", value).commit()) { "Unable to save theme color" }
     }
+    Function("getThemeMode") { preferences.getString("themeMode", null) }
+    Function("setThemeMode") { value: String ->
+      check(preferences.edit().putString("themeMode", value).commit()) { "Unable to save theme mode" }
+    }
     OnCreate {
       appContext.reactContext?.cacheDir?.absolutePath?.let { nativeInitialize(it) }
     }

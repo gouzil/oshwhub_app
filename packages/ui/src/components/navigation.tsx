@@ -6,7 +6,7 @@ import {
   Platform,
   View,
 } from "react-native";
-import { useCSSVariable } from "uniwind";
+import { useCSSVariable, useUniwind } from "uniwind";
 import { GlassSurface } from "../GlassSurface";
 import { cn } from "../lib/utils";
 import { NativeTabBar } from "../NativeTabBar";
@@ -33,11 +33,13 @@ type NavigationProps = {
 
 export function Navigation(props: NavigationProps) {
   const tintColor = useCSSVariable("--color-primary") as string;
+  const { theme } = useUniwind();
   if (Platform.OS === "ios" && !props.desktop) {
     return (
       <NativeTabBar
         items={navigation}
         tintColor={tintColor}
+        colorScheme={theme}
         selectedIndex={navigation.findIndex((item) => item.id === props.tab)}
         onSelect={({ nativeEvent }) => {
           const item = navigation[nativeEvent.index];
@@ -95,7 +97,7 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
           pointerEvents="none"
           aria-hidden
           accessibilityElementsHidden
-          className="absolute top-0 left-0 border-[0.5px] border-[#ffffffc7] bg-[#ffffff80] shadow-[0_2px_6px_rgba(32,45,64,0.06)] web:bg-white/[0.18] web:bg-[linear-gradient(150deg,rgba(255,255,255,0.7),rgba(255,255,255,0.12))] web:[transition:left_320ms_cubic-bezier(0.2,0.8,0.2,1),top_320ms_cubic-bezier(0.2,0.8,0.2,1)] web:motion-reduce:transition-none! web:[@media(prefers-reduced-transparency:reduce)]:bg-secondary! web:[@media(prefers-reduced-transparency:reduce)]:bg-none!"
+          className="absolute top-0 left-0 border-[0.5px] border-[#ffffffc7] bg-[#ffffff80] dark:border-border dark:bg-secondary shadow-[0_2px_6px_rgba(32,45,64,0.06)] web:bg-white/[0.18] web:bg-[linear-gradient(150deg,rgba(255,255,255,0.7),rgba(255,255,255,0.12))] dark:web:bg-secondary dark:web:bg-none web:[transition:left_320ms_cubic-bezier(0.2,0.8,0.2,1),top_320ms_cubic-bezier(0.2,0.8,0.2,1)] web:motion-reduce:transition-none! web:[@media(prefers-reduced-transparency:reduce)]:bg-secondary! web:[@media(prefers-reduced-transparency:reduce)]:bg-none!"
           style={{
             width: bounds.width,
             height: bounds.height,
