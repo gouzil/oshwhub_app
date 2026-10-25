@@ -34,19 +34,29 @@ impl HttpClient {
     }
 
     pub async fn get_json_with_limit(&self, url: &str, max_bytes: usize) -> Result<Value> {
-        let bytes = self.request(url, None, max_bytes, true).await?;
+        let bytes = self.request(url, None, max_bytes, true, &[]).await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
+    }
+
+    pub(crate) async fn get_json_with_headers(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Value> {
+        let bytes = self.request(url, None, JSON_LIMIT, true, headers).await?;
         serde_json::from_slice(&bytes)
             .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
     }
 
     pub async fn post_json(&self, url: &str, body: &Value) -> Result<Value> {
-        let bytes = self.request(url, Some(body), JSON_LIMIT, true).await?;
+        let bytes = self.request(url, Some(body), JSON_LIMIT, true, &[]).await?;
         serde_json::from_slice(&bytes)
             .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
     }
 
     pub async fn get_bytes(&self, url: &str, max_bytes: usize) -> Result<Vec<u8>> {
-        self.request(url, None, max_bytes, false).await
+        self.request(url, None, max_bytes, false, &[]).await
     }
 
     async fn request(
@@ -55,6 +65,7 @@ impl HttpClient {
         body: Option<&Value>,
         max_bytes: usize,
         json: bool,
+        headers: &[(&str, &str)],
     ) -> Result<Vec<u8>> {
         let url = validate_url(url)?;
         if max_bytes == 0 {
@@ -66,11 +77,14 @@ impl HttpClient {
         } else {
             self.inner.get(url.clone())
         };
-        let request = if json {
+        let mut request = if json {
             request.header(reqwest::header::ACCEPT, "application/json")
         } else {
             request
         };
+        for &(name, value) in headers {
+            request = request.header(name, value);
+        }
         let mut response = request.send().await.map_err(network_error)?;
         let status = response.status().as_u16();
         tracing::debug!(
