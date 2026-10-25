@@ -1421,13 +1421,35 @@ mod tests {
 {"type":"DOCHEAD"}||{"uuid":"attrs-fp","docType":"FOOTPRINT"}|
 {"type":"ATTR","id":"master-value","ticket":1}||{"key":"Value","value":"DEFAULT","valueVisible":true,"x":0,"y":0,"fontSize":10,"layerId":3}|
 {"type":"ATTR","id":"master-description","ticket":1}||{"key":"Description","value":"MASTER","valueVisible":true,"x":10,"y":20,"fontSize":10,"layerId":3}|"#;
-    fn fixture_scene() -> &'static Scene {
-        static SCENE: OnceLock<Scene> = OnceLock::new();
-        SCENE.get_or_init(|| {
-            let mut p = Project::default();
-            history::replay(&mut p, FIXTURE).unwrap();
-            compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
-        })
+    // Keep compile-to-pick sequences atomic across tests sharing the two-scene cache.
+    fn scene_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+    fn fixture_scene() -> Scene {
+        let mut p = Project::default();
+        history::replay(&mut p, FIXTURE).unwrap();
+        compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
+    }
+    #[test]
+    fn scene_cache_expires_only_the_oldest_of_three_scenes() {
+        let _guard = scene_test_guard();
+        let first = fixture_scene();
+        let second = fixture_scene();
+        let third = fixture_scene();
+        assert_eq!(
+            pick(&first.id, 100., -111.5, 0.1, Some(&[1, 12]))
+                .unwrap_err()
+                .code,
+            "scene_expired"
+        );
+        for scene in [second, third] {
+            let found = pick(&scene.id, 100., -111.5, 0.1, Some(&[1, 12]))
+                .unwrap()
+                .unwrap();
+            assert_eq!(found.kind, "PAD");
+            assert_eq!(found.net.as_deref(), Some("GND"));
+        }
     }
     #[test]
     fn picked_component_parts_include_instance_values_and_readable_footprint_names() {
@@ -1464,6 +1486,7 @@ mod tests {
     }
     #[test]
     fn three_dimensional_scene_reports_missing_font_and_source_geometry_warnings() {
+        let _guard = scene_test_guard();
         let mut project = Project::default();
         history::replay(
             &mut project,
@@ -1520,6 +1543,7 @@ mod tests {
     }
     #[test]
     fn scene_resolves_footprints_pad_nets_pours_and_geometry_picking_without_filling_holes() {
+        let _guard = scene_test_guard();
         let s = fixture_scene();
         assert!(s.object_count >= 7);
         assert!(
@@ -1577,6 +1601,7 @@ mod tests {
 
     #[test]
     fn component_pick_wins_over_overlapping_pour() {
+        let _guard = scene_test_guard();
         let mut project = Project::default();
         history::replay(
             &mut project,
@@ -1615,6 +1640,7 @@ mod tests {
 
     #[test]
     fn component_bbox_is_not_pickable_when_all_its_actual_layers_are_hidden() {
+        let _guard = scene_test_guard();
         let s = fixture_scene();
         assert!(pick(&s.id, 400., 0., 0.01, Some(&[1])).unwrap().is_none());
         // The component's empty space is selectable on its actual silkscreen layer.
@@ -1624,6 +1650,7 @@ mod tests {
 
     #[test]
     fn actual_bottom_track_has_priority_over_empty_top_component_bbox() {
+        let _guard = scene_test_guard();
         let s = fixture_scene();
         let found = pick(&s.id, 500., 0., 0.01, Some(&[1, 2])).unwrap().unwrap();
         assert_eq!(
@@ -1641,6 +1668,7 @@ mod tests {
 
     #[test]
     fn rotated_fallback_text_extents_are_inside_scene_bounds() {
+        let _guard = scene_test_guard();
         let s = fixture_scene();
         assert!(s.bounds.min_y <= -1160.);
     }
@@ -1648,6 +1676,7 @@ mod tests {
     #[test]
     fn visible_attributes_draw_instance_and_inherited_labels_without_restoring_hidden_master_values()
      {
+        let _guard = scene_test_guard();
         let s = fixture_scene();
         assert!(
             s.texts
