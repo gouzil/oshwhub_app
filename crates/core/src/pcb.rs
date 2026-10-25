@@ -22,8 +22,10 @@ use std::{
     time::Instant,
 };
 
-// History pages include opaque per-version metadata; keep their larger budget scoped to PCB loads.
-const HISTORY_JSON_LIMIT: usize = 64 * 1024 * 1024;
+// One history part can contain a complete board rather than a small delta.
+const HISTORY_PART_LIMIT: usize = 32 * 1024 * 1024;
+// Bound the whole replay separately from the 256 MiB decompression cap on each part.
+const HISTORY_REPLAY_LIMIT: usize = 1024 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,9 +176,7 @@ pub(crate) async fn load_project(
             ("history", id.as_str()),
             ("limit", "100"),
         ]);
-        let page = client
-            .get_json_with_limit(url.as_str(), HISTORY_JSON_LIMIT)
-            .await?;
+        let page = client.get_json(url.as_str()).await?;
         let page: Vec<history::History> = serde_json::from_value(result(&page)?.clone())
             .map_err(|_| AppError::new("pcb_format", "历史索引无效"))?;
         next = history::extend_chain(&mut histories, &mut seen, page, id)?;
@@ -195,7 +195,7 @@ pub(crate) async fn load_project(
     let payloads: Vec<_> = stream::iter(plan.into_iter().map(|(url, key, iv)| {
         let total = Arc::clone(&downloaded_bytes);
         async move {
-            let bytes = client.get_bytes(&url, 16 * 1024 * 1024).await?;
+            let bytes = client.get_bytes(&url, HISTORY_PART_LIMIT).await?;
             let before = total.fetch_add(bytes.len(), Ordering::Relaxed);
             if before.saturating_add(bytes.len()) > 128 * 1024 * 1024 {
                 return Err(AppError::new("pcb_limit", "工程下载超过 128 MiB 限制"));
@@ -216,7 +216,7 @@ pub(crate) async fn load_project(
                 &key,
                 &iv,
                 &bytes,
-                history::MAX_DECODED.saturating_sub(decoded),
+                history::MAX_DECODED.min(HISTORY_REPLAY_LIMIT.saturating_sub(decoded)),
             )?;
             decoded = decoded.saturating_add(text.len());
             history::replay(&mut project, &text)?;

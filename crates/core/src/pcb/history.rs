@@ -45,7 +45,8 @@ pub struct History {
 }
 
 pub const MAX_DECODED: usize = 256 * 1024 * 1024;
-pub const MAX_RECORDS: usize = 1_000_000;
+// Replayed updates include superseded records from earlier versions.
+pub const MAX_RECORDS: usize = 4_000_000;
 
 fn invalid(message: impl Into<String>) -> AppError {
     AppError::new("pcb_format", message)
@@ -108,11 +109,15 @@ pub fn replay(project: &mut Project, text: &str) -> Result<()> {
         let (header, body) = line.split_once("||").ok_or_else(error)?;
         let header_text = header;
         let header: Value = serde_json::from_str(header).map_err(|_| error())?;
+        let body = body.strip_suffix('|').unwrap_or(body).trim();
+        if header.as_object().is_some_and(|h| h.is_empty()) && body.is_empty() {
+            current = None;
+            continue;
+        }
         let kind = header["type"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 64)
             .ok_or_else(error)?;
-        let body = body.strip_suffix('|').unwrap_or(body).trim();
         let data: Option<Value> = if body.is_empty() {
             None
         } else {
@@ -406,6 +411,30 @@ mod tests {
     fn malformed_log_fails_instead_of_silently_discarding_geometry() {
         assert!(replay(&mut Project::default(), "not a record").is_err());
         assert!(replay(&mut Project::default(), "{\"type\":\"LINE\"}||{}|").is_err());
+    }
+    #[test]
+    fn empty_records_end_documents_without_discarding_following_geometry() {
+        let mut project = Project::default();
+        replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"first","docType":"PCB"}|
+{"type":"LINE","id":"track"}||{"width":5}|
+{}|||
+{"type":"DOCHEAD"}||{"uuid":"second","docType":"PCB"}|
+{"type":"LINE","id":"track"}||{"width":7}|"#,
+        )
+        .unwrap();
+        assert_eq!(project.record_count, 2);
+        assert_eq!(project.docs["first"].first("LINE").unwrap()["width"], 5);
+        assert_eq!(project.docs["second"].first("LINE").unwrap()["width"], 7);
+        assert!(
+            replay(
+                &mut project,
+                "{\"type\":\"DOCHEAD\"}||{\"uuid\":\"first\"}|\n{}|||\n{\"type\":\"LINE\"}||{}|"
+            )
+            .is_err()
+        );
+        assert!(replay(&mut project, "{}||{\"width\":9}|").is_err());
     }
     #[test]
     fn aes_gcm_with_sixteen_byte_iv_authenticates_then_gunzips_and_bounds_output() {
