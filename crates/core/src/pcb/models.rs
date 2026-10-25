@@ -1,6 +1,6 @@
 use super::{
     geometry::Transform,
-    history::Project,
+    history::{self, Project},
     solid::{self, Bounds3, MM, Mesh, MeshBuilder, PackedMesh},
 };
 use crate::{
@@ -280,6 +280,60 @@ fn cache() -> &'static Mutex<Cache> {
     CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
 }
 
+fn unavailable() -> AppError {
+    AppError::new("pcb_3d_unavailable", "官方未提供可读取的器件模型")
+}
+
+fn descriptor_model(data: &str) -> Result<String> {
+    let value: Value = serde_json::from_str(data).map_err(|_| unavailable())?;
+    let model = value
+        .get("model")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("3d_model_uuid").and_then(Value::as_str))
+        .filter(|model| !model.is_empty())
+        .ok_or_else(unavailable)?;
+    crate::api::validate_id(model)?;
+    Ok(model.to_owned())
+}
+
+async fn resolve_model(client: &HttpClient, metadata: &Value) -> Result<String> {
+    if metadata["success"] != true || metadata["code"] != 0 {
+        return Err(unavailable());
+    }
+    let result = metadata["result"].as_object().ok_or_else(unavailable)?;
+    if let Some(data_str_id) = result
+        .get("dataStrId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        let key = result
+            .get("key")
+            .and_then(Value::as_str)
+            .ok_or_else(unavailable)?;
+        let iv = result
+            .get("iv")
+            .and_then(Value::as_str)
+            .ok_or_else(unavailable)?;
+        let bytes = client.get_bytes(data_str_id, MODEL_LIMIT).await?;
+        let data = history::decode(key, iv, &bytes, MODEL_LIMIT)?;
+        return descriptor_model(&data);
+    }
+    if let Some(data_str) = result
+        .get("dataStr")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        return descriptor_model(data_str);
+    }
+    let model = result
+        .get("3d_model_uuid")
+        .and_then(Value::as_str)
+        .filter(|model| !model.is_empty())
+        .ok_or_else(unavailable)?;
+    crate::api::validate_id(model)?;
+    Ok(model.to_owned())
+}
+
 pub async fn load(
     client: &HttpClient,
     key: &str,
@@ -290,27 +344,39 @@ pub async fn load(
         return Err(AppError::new("invalid_request", "模型不属于当前 PCB"));
     }
     let start = Instant::now();
-    let component = key.split('|').next().ok_or_else(solid::invalid)?;
+    let (component, path) = key
+        .split_once('|')
+        .map_or((key, None), |(id, path)| (id, Some(path)));
     crate::api::validate_id(component)?;
+    if let Some(path) = path {
+        crate::api::validate_id(path)?;
+    }
+    let metadata_url = match path {
+        Some(path) => format!(
+            "https://pro.lceda.cn/api/v5/components/{component}?uuid={component}&path={path}"
+        ),
+        None => format!("https://pro.lceda.cn/api/v5/components/{component}?uuid={component}"),
+    };
     let cached = cache()
         .lock()
         .map_err(|_| solid::invalid())?
         .iter()
-        .find(|(k, _, _)| k == component)
+        .find(|(k, _, _)| k == key)
         .map(|(_, model, mesh)| (model.clone(), Arc::clone(mesh)));
     let (mesh_key, mesh) = if let Some((model, mesh)) = cached {
         (model, mesh)
     } else {
-        let metadata = client
-            .get_json(&format!(
-                "https://pro.lceda.cn/api/v5/components/{component}"
-            ))
-            .await?;
-        let model = metadata["result"]["3d_model_uuid"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| AppError::new("pcb_3d_unavailable", "官方未提供可读取的器件模型"))?;
-        crate::api::validate_id(model)?;
+        let metadata = if let Some(path) = path {
+            client
+                .get_json_with_headers(
+                    &metadata_url,
+                    &[("Content-Type", "application/json"), ("path", path)],
+                )
+                .await?
+        } else {
+            client.get_json(&metadata_url).await?
+        };
+        let model = resolve_model(client, &metadata).await?;
         let bytes = client
             .get_bytes(
                 &format!("https://modules.lceda.cn/3dmodel/{model}"),
@@ -321,7 +387,7 @@ pub async fn load(
             .await
             .map_err(|_| solid::invalid())??;
         let mut cache = cache().lock().map_err(|_| solid::invalid())?;
-        cache.push_back((component.into(), model.into(), Arc::clone(&mesh)));
+        cache.push_back((key.into(), model.clone(), Arc::clone(&mesh)));
         while cache.len() > 16
             || cache
                 .iter()
@@ -331,7 +397,7 @@ pub async fn load(
         {
             cache.pop_front();
         }
-        (model.into(), mesh)
+        (model, mesh)
     };
     let key = key.to_owned();
     let result = tokio::task::spawn_blocking(move || {
@@ -405,6 +471,20 @@ mod tests {
             assert!(parse_obj(bytes).is_err());
         }
         assert!(parse_obj(&vec![b' '; 12 * 1024 * 1024 + 1]).is_err());
+    }
+
+    #[test]
+    fn official_model_descriptors_support_data_str_and_legacy_metadata() {
+        let model = "d4738b125a044f51b0a4c55602341077";
+        assert_eq!(
+            descriptor_model(&format!(r#"{{"model":"{model}"}}"#)).unwrap(),
+            model
+        );
+        assert_eq!(
+            descriptor_model(&format!(r#"{{"3d_model_uuid":"{model}"}}"#)).unwrap(),
+            model
+        );
+        assert!(descriptor_model(r#"{"model":"not-an-id"}"#).is_err());
     }
 
     #[test]
