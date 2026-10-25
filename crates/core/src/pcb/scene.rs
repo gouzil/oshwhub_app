@@ -1150,6 +1150,8 @@ pub fn compile(
                     && last.width == paint.width
                     && last.fill == paint.fill
                     && last.color == paint.color
+                    && last.net == paint.result.net
+                    && last.kind == paint.result.kind
                     && last.path.len() + paint.geometry.path.len() < 512 * 1024
             });
             if let Some(batch) = append {
@@ -1163,6 +1165,8 @@ pub fn compile(
                     width: paint.width,
                     bounds: paint.result.bounds,
                     color: paint.color,
+                    net: paint.result.net.clone(),
+                    kind: paint.result.kind.clone(),
                 });
             }
         }
@@ -1522,6 +1526,12 @@ mod tests {
     fn scene_resolves_footprints_pad_nets_pours_and_geometry_picking_without_filling_holes() {
         let s = fixture_scene();
         assert!(s.object_count >= 7);
+        assert!(s.batches.iter().any(|b| b.net.as_deref() == Some("GND")));
+        assert!(
+            s.batches
+                .iter()
+                .any(|b| b.net.as_deref() == Some("GND") && b.kind == "LINE")
+        );
         assert!(
             s.batches
                 .iter()
@@ -1573,6 +1583,25 @@ mod tests {
                 .id,
             "via"
         );
+    }
+
+    #[test]
+    fn batches_keep_same_style_paths_separate_when_networks_differ() {
+        let mut project = Project::default();
+        history::replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"LINE","id":"gnd"}||{"layerId":1,"startX":0,"startY":0,"endX":10,"endY":0,"width":2,"netName":"GND"}|
+{"type":"LINE","id":"vcc"}||{"layerId":1,"startX":20,"startY":0,"endX":30,"endY":0,"width":2,"netName":"VCC"}|"#,
+        )
+        .unwrap();
+        let scene = compile(project, "board", "net-batches".into(), Metrics::default()).unwrap();
+        let nets: Vec<_> = scene
+            .batches
+            .iter()
+            .filter_map(|batch| batch.net.as_deref())
+            .collect();
+        assert_eq!(nets, ["GND", "VCC"]);
     }
 
     #[test]

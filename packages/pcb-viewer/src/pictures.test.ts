@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Scene } from "@oshwhub/bridge";
 import { Skia } from "@shopify/react-native-skia";
 import { describe, expect, it, vi } from "vitest";
-import { buildPictures } from "./pictures";
+import { buildNetworkOverlayPicture, buildPictures } from "./pictures";
 
 // Run the shipped CanvasKit backend, replacing only the native module entry point.
 vi.mock("@shopify/react-native-skia", async () => {
@@ -93,5 +93,48 @@ describe("real CanvasKit picture recording", () => {
     surface.dispose();
     typeface.dispose();
     data.dispose();
+  });
+
+  it("draws a selected network on a separate overlay", () => {
+    const picture = buildNetworkOverlayPicture(
+      {
+        ...scene,
+        batches: [
+          {
+            ...scene.batches[0],
+            path: "M4 4L20 4",
+            fill: false,
+            width: 2,
+            net: "GND",
+            kind: "LINE",
+          },
+        ],
+      },
+      undefined,
+      {
+        highlighted: new Set(["GND"]),
+        visibleLayers: new Set([1]),
+        colors: { GND: "#00ff00" },
+        showLabels: false,
+        showPadLabels: true,
+        showTrackLabels: true,
+        showViaLabels: true,
+      },
+    );
+    expect(picture).not.toBeNull();
+    const surface = Skia.Surface.Make(40, 30);
+    if (!surface || !picture) throw new Error("CanvasKit software surface unavailable");
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color("#000000"));
+    canvas.drawPicture(picture);
+    const image = surface.makeImageSnapshot();
+    const pixels = image.readPixels();
+    if (!pixels) throw new Error("CanvasKit pixels unavailable");
+    const pixel = (x: number, y: number) =>
+      Array.from(pixels.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4));
+    expect(pixel(12, 4)[1]).toBeGreaterThan(180);
+    picture.dispose();
+    image.dispose();
+    surface.dispose();
   });
 });

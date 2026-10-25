@@ -17,6 +17,6 @@ fonttools varLib.instancer NotoSansSC.ttf wght=400 --output NotoSansSC-Regular.t
 
 打包文件 SHA-256：`ff2a28427e399dd838c02c142fcfeff6aae202609d60a970fb258994a533ab6a`。字体通过 Skia `useTypeface` 直接加载；原生入口静态 `require` asset，Web 入口使用 Vite `?url`，因此 Web 解析扩展必须优先 `.web.ts`。`fontSource` 接受 Skia 的 `DataSource`，可提供工程字体。缺字会在画布下方明确提示；应用不隐瞒字形缺失，也不声称复制原工程字体和排版。
 
-交互：单指/鼠标拖动平移，双指围绕中心缩放，滚轮围绕鼠标缩放，`+`/`-` 缩放，方向键平移，`0` 适应窗口。工具栏触控目标至少 44px，图层开关使用可访问 checkbox。
+交互：单指/鼠标拖动平移，双指围绕中心缩放，滚轮围绕鼠标缩放，`+`/`-` 缩放，方向键平移，`0` 适应窗口。工具栏触控目标至少 44px，图层开关使用可访问 checkbox。网络面板支持网络定位、整网高亮、悬停高亮、预设颜色切换，以及总网络名/焊盘/走线/过孔标签开关；选中带网络的图元后可按 `H` 高亮、`Shift+H` 清除高亮。
 
 离线测试包括真实 CanvasKit 软件表面像素验证（填充、孔洞、字体、损坏路径），以及图层分组和触控数学。[Playwright 回归](../../tests/e2e/README.md)使用真实 CanvasKit WASM、中文字体和浏览器触摸事件，覆盖六组尺寸的缩放、拖动、双指缩放、图层、拾取与返回。此自动化未覆盖原生 GPU、密集真实工程和真机手势。

@@ -962,6 +962,8 @@ impl<'a> Builder<'a> {
                         width: paint.width,
                         bounds: paint.result.bounds,
                         color: paint.color.clone(),
+                        net: None,
+                        kind: String::new(),
                     });
                 }
             }

@@ -51,6 +51,8 @@ pub struct DrawBatch {
     pub width: f64,
     pub bounds: Bounds,
     pub color: Option<String>,
+    pub net: Option<String>,
+    pub kind: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

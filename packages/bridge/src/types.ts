@@ -69,6 +69,8 @@ export interface DrawBatch {
   width: number;
   bounds: Bounds;
   color?: string | null;
+  net?: string | null;
+  kind?: string | null;
 }
 export interface TextLabel {
   layer: number;
