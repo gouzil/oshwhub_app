@@ -234,6 +234,26 @@ fn preserves_bom_manufacturer_and_supplier_as_distinct_fields() {
 }
 
 #[test]
+fn preserves_schematic_document_ids_for_boards() {
+    let detail = normalize_project(&fixture("detail"), Some(&fixture("images"))).unwrap();
+    assert_eq!(
+        detail.boards[0].schematic_id.as_deref(),
+        Some("6e9bf6c0323c94de")
+    );
+    let serialized = serde_json::to_value(detail).unwrap();
+    assert_eq!(serialized["boards"][0]["schematicId"], "6e9bf6c0323c94de");
+
+    let mut images = fixture("images");
+    images["result"]["boards"][0]["sch"] = json!("not-an-id");
+    assert_eq!(
+        normalize_project(&fixture("detail"), Some(&images))
+            .unwrap_err()
+            .code,
+        "INVALID_RESPONSE"
+    );
+}
+
+#[test]
 fn converts_nested_html_once_without_scripts_or_unsafe_links() {
     let detail = normalize_project(&fixture("detail"), Some(&fixture("images"))).unwrap();
     let texts: Vec<_> = detail.content.iter().map(|b| b.text.as_str()).collect();

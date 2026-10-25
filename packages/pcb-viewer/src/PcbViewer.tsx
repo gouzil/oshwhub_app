@@ -41,6 +41,7 @@ type Props = {
   scene: Scene;
   onPick?: (result: PickResult | null) => void;
   fontSource?: DataSource;
+  variant?: "pcb" | "schematic";
 };
 type Gesture = {
   points: Point[];
@@ -62,7 +63,13 @@ const touchPoints = (event: GestureResponderEvent): Point[] =>
     y: touch.locationY,
   }));
 
-export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Props) {
+export function PcbViewer({
+  scene,
+  onPick,
+  fontSource = defaultFontSource,
+  variant = "pcb",
+}: Props) {
+  const viewerLabel = variant === "schematic" ? "原理图" : "PCB";
   const { width, height } = useWindowDimensions();
   const compact = height < 500;
   const bottomPanel = width < 600 && !compact;
@@ -154,12 +161,13 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         setCache(next);
         setRasterWarning(null);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "PCB 细节缓存构建失败。";
+        const message =
+          error instanceof Error ? error.message : `${viewerLabel} 细节缓存构建失败。`;
         console.warn("pcb.raster.refine_failed", { sceneId: scene.id, message });
         setRasterWarning(`${message} 当前保留全板预览，可继续操作。`);
       }
     }, 180);
-  }, [cancelRefinement, scene]);
+  }, [cancelRefinement, scene, viewerLabel]);
   const applyViewport = useCallback(
     (next: Viewport) => {
       current.current = next;
@@ -201,7 +209,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
       // Canvas can retain these handles past effect cleanup; Skia releases them when unreachable.
       setCompiled({ scene, ...result });
     } catch (error) {
-      setRenderError(error instanceof Error ? error.message : "PCB 绘制失败。");
+      setRenderError(error instanceof Error ? error.message : `${viewerLabel} 绘制失败。`);
     }
     setVisible(new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)));
     setSelection(null);
@@ -211,7 +219,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
     return () => {
       pickVersion.current += 1;
     };
-  }, [scene, typeface]);
+  }, [scene, typeface, viewerLabel]);
 
   const pictures = useMemo(
     () =>
@@ -244,7 +252,8 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         try {
           detail = rasterize(pictures, previous.detail);
         } catch (error) {
-          const message = error instanceof Error ? error.message : "PCB 细节缓存构建失败。";
+          const message =
+            error instanceof Error ? error.message : `${viewerLabel} 细节缓存构建失败。`;
           console.warn("pcb.raster.refine_failed", { sceneId: scene.id, message });
           warning = `${message} 当前保留全板预览，可继续操作。`;
         }
@@ -256,10 +265,10 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
       setRasterWarning(warning);
       refine();
     } catch (error) {
-      setRenderError(error instanceof Error ? error.message : "PCB 绘制缓存构建失败。");
+      setRenderError(error instanceof Error ? error.message : `${viewerLabel} 绘制缓存构建失败。`);
     }
     return cancelRefinement;
-  }, [pictures, scene, refine, cancelRefinement]);
+  }, [pictures, scene, refine, cancelRefinement, viewerLabel]);
 
   useEffect(() => {
     if (!size.width || !size.height) return;
@@ -435,7 +444,12 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         focusable
         accessible
         accessibilityRole="image"
-        accessibilityLabel={`${scene.name}，PCB 画布。拖动平移，双指或滚轮缩放。键盘加减号缩放，方向键平移，0 适应窗口。`}
+        accessibilityLabel={
+          scene.name +
+          "，" +
+          viewerLabel +
+          " 画布。拖动平移，双指或滚轮缩放。键盘加减号缩放，方向键平移，0 适应窗口。"
+        }
         accessibilityActions={[
           { name: "zoomIn", label: "放大" },
           { name: "zoomOut", label: "缩小" },
@@ -461,7 +475,10 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
                 {renderError || fontError}
               </Text>
             ) : (
-              <ActivityIndicator color="#9bc8ff" accessibilityLabel="正在构建 PCB 绘制缓存" />
+              <ActivityIndicator
+                color="#9bc8ff"
+                accessibilityLabel={`正在构建 ${viewerLabel} 绘制缓存`}
+              />
             )}
           </View>
         )}
@@ -491,7 +508,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         <>
           <View style={styles.orientation} pointerEvents="none">
             <Text style={styles.orientationTitle}>俯视</Text>
-            <Text style={styles.caption}>二维 PCB</Text>
+            <Text style={styles.caption}>二维 {viewerLabel}</Text>
           </View>
           <View style={styles.hint} pointerEvents="none">
             <Text style={styles.hintText}>拖动平移 · 双指 / 滚轮缩放 · 点选图元</Text>
@@ -507,11 +524,11 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
         )}
       </View>
       <View style={styles.zoomTools}>
-        <Tool label="缩小 PCB" text="−" onPress={() => zoomBy(0.8)} />
+        <Tool label={`缩小 ${viewerLabel}`} text="−" onPress={() => zoomBy(0.8)} />
         <Text style={styles.zoomLabel} accessibilityLiveRegion="polite">
           {zoom}%
         </Text>
-        <Tool label="放大 PCB" text="+" onPress={() => zoomBy(1.25)} />
+        <Tool label={`放大 ${viewerLabel}`} text="+" onPress={() => zoomBy(1.25)} />
       </View>
       {pickError && (
         <Text accessibilityRole="alert" style={styles.pickError}>
@@ -520,7 +537,7 @@ export function PcbViewer({ scene, onPick, fontSource = defaultFontSource }: Pro
       )}
       {panel && (
         <View
-          testID={panel === "selection" ? "pcb-selection-panel" : undefined}
+          testID={panel === "selection" ? `${variant}-selection-panel` : undefined}
           style={[
             styles.panel,
             compact && styles.compactPanel,

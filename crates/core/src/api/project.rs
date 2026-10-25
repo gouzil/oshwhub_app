@@ -153,6 +153,28 @@ fn board(data: &Value, standalone: bool) -> Result<Board> {
     if let Some(id) = pcb_id {
         validate_id(id).map_err(|_| invalid_response())?;
     }
+    let direct_schematic = match data.get("sch") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) if value.is_empty() => None,
+        Some(Value::String(value)) => Some(value.as_str()),
+        Some(_) => return Err(invalid_response()),
+    };
+    let nested_schematic = match data.pointer("/schematic/uuid") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) if value.is_empty() => None,
+        Some(Value::String(value)) => Some(value.as_str()),
+        Some(_) => return Err(invalid_response()),
+    };
+    if direct_schematic.is_some()
+        && nested_schematic.is_some()
+        && direct_schematic != nested_schematic
+    {
+        return Err(invalid_response());
+    }
+    let schematic_id = direct_schematic.or(nested_schematic);
+    if let Some(id) = schematic_id {
+        validate_id(id).map_err(|_| invalid_response())?;
+    }
     let thumbnail = if standalone {
         &data["thumb"]
     } else {
@@ -170,6 +192,7 @@ fn board(data: &Value, standalone: bool) -> Result<Board> {
             .unwrap_or("未命名板子")
             .to_owned(),
         pcb_id: pcb_id.map(str::to_owned),
+        schematic_id: schematic_id.map(str::to_owned),
         thumbnail: thumbnail
             .as_str()
             .and_then(|s| web_url(s, "https://oshwhub.com")),

@@ -139,8 +139,24 @@ function Shell() {
                 width={width - layout.sidebar}
                 bottomInset={bottomInset}
                 onBack={() => setProjectId(null)}
-                onPcb={(documentId, name) =>
-                  setViewer({ projectId, documentId, title: name, demo: false })
+                onPcb={(pcbDocumentId, schematicDocumentId, name) =>
+                  setViewer({
+                    projectId,
+                    pcbDocumentId,
+                    schematicDocumentId,
+                    title: name,
+                    demo: false,
+                  })
+                }
+                onSchematic={(pcbDocumentId, documentId, name) =>
+                  setViewer({
+                    projectId,
+                    pcbDocumentId,
+                    schematicDocumentId: documentId,
+                    title: name,
+                    initialMode: "schematic",
+                    demo: false,
+                  })
                 }
               />
             </View>

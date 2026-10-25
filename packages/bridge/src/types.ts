@@ -39,6 +39,7 @@ export interface Board {
   id: string;
   name: string;
   pcbId: string | null;
+  schematicId: string | null;
   thumbnail: string | null;
   bom: BomItem[];
 }
@@ -136,6 +137,7 @@ export type Command =
   | { command: "project"; id: string }
   | { command: "searchBom"; items: BomItem[]; query: string }
   | { command: "pcb"; projectId: string; documentId: string }
+  | { command: "schematic"; projectId: string; documentId: string }
   | { command: "demo" }
   | { command: "pcb3d"; sceneId: string }
   | { command: "model3d"; sceneId: string; key: string }

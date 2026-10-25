@@ -21,12 +21,14 @@ export function ProjectPage({
   bottomInset,
   onBack,
   onPcb,
+  onSchematic,
 }: {
   id: string;
   width: number;
   bottomInset: number;
   onBack: () => void;
-  onPcb: (documentId: string, name: string) => void;
+  onPcb: (pcbDocumentId: string, schematicDocumentId: string | null, name: string) => void;
+  onSchematic: (pcbDocumentId: string | null, documentId: string, name: string) => void;
 }) {
   const command = useMemo(() => ({ command: "project" as const, id }), [id]);
   const { value: project, loading, error, retry } = useCommand<ProjectDetail>(command);
@@ -199,13 +201,30 @@ export function ProjectPage({
                                   个元件
                                 </Text>
                               </View>
-                              <Button
-                                label={selected.pcbId ? "查看 PCB" : "未公开 PCB 文件"}
-                                disabled={!selected.pcbId}
-                                onPress={() => {
-                                  if (selected.pcbId) onPcb(selected.pcbId, selected.name);
-                                }}
-                              />
+                              <View className="flex-row flex-wrap gap-2">
+                                <Button
+                                  label={selected.pcbId ? "查看 PCB" : "未公开 PCB 文件"}
+                                  disabled={!selected.pcbId}
+                                  onPress={() => {
+                                    if (selected.pcbId) {
+                                      onPcb(selected.pcbId, selected.schematicId, selected.name);
+                                    }
+                                  }}
+                                />
+                                <Button
+                                  label={selected.schematicId ? "查看原理图" : "未公开原理图文件"}
+                                  disabled={!selected.schematicId}
+                                  onPress={() => {
+                                    if (selected.schematicId) {
+                                      onSchematic(
+                                        selected.pcbId,
+                                        selected.schematicId,
+                                        selected.name,
+                                      );
+                                    }
+                                  }}
+                                />
+                              </View>
                             </View>
                             <Text className="mb-2 text-[12px] tracking-[0.5px] text-muted-foreground">
                               物料清单 / BOM
