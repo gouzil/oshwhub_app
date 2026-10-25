@@ -22,6 +22,9 @@ use std::{
     time::Instant,
 };
 
+// History pages include opaque per-version metadata; keep their larger budget scoped to PCB loads.
+const HISTORY_JSON_LIMIT: usize = 64 * 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bounds {
@@ -145,7 +148,9 @@ pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> R
             ("history", id.as_str()),
             ("limit", "100"),
         ]);
-        let page = client.get_json(url.as_str()).await?;
+        let page = client
+            .get_json_with_limit(url.as_str(), HISTORY_JSON_LIMIT)
+            .await?;
         let page: Vec<history::History> = serde_json::from_value(result(&page)?.clone())
             .map_err(|_| AppError::new("pcb_format", "历史索引无效"))?;
         next = history::extend_chain(&mut histories, &mut seen, page, id)?;

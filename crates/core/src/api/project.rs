@@ -30,7 +30,10 @@ impl Api {
 pub fn normalize_project(detail: &Value, previews: Option<&Value>) -> Result<ProjectDetail> {
     let data = payload(detail)?;
     let summary = summary(data)?;
-    let content = content_blocks(data["content"].as_str().unwrap_or_default())?;
+    let markdown = data["text_editor_type"]
+        .as_str()
+        .is_some_and(|kind| kind.eq_ignore_ascii_case("markdown"));
+    let content = content_blocks(data["content"].as_str().unwrap_or_default(), markdown)?;
     let mut boards = Vec::new();
     let mut seen = HashSet::new();
     if let Some(previews) = previews {

@@ -15,6 +15,7 @@ reqwest.workspace = true
 url.workspace = true
 uuid.workspace = true
 scraper = "0.24"
+pulldown-cmark = "0.13.5"
 html-escape = "0.2"
 aes-gcm = "0.10"
 flate2 = "1.1"

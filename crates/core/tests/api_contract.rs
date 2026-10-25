@@ -267,6 +267,64 @@ fn converts_nested_html_once_without_scripts_or_unsafe_links() {
 }
 
 #[test]
+fn converts_markdown_project_content_into_safe_blocks() {
+    let mut detail = fixture("detail");
+    detail["result"]["content"] = json!(
+        "## Markdown 标题\n\n正文 **加粗**\n\n![板子](//image.lceda.cn/board.webp)\n\n- 第一项\n- 第二项\n\n[资料](https://example.com/docs)\n\n```rust\nlet x = 1;\n```\n\n<script>DROP_ME</script>\n[坏链接](javascript:alert(1))"
+    );
+
+    let detail = normalize_project(&detail, Some(&fixture("images"))).unwrap();
+    assert!(
+        detail
+            .content
+            .iter()
+            .any(|b| b.kind == "heading" && b.text == "Markdown 标题")
+    );
+    assert!(
+        detail
+            .content
+            .iter()
+            .any(|b| b.kind == "paragraph" && b.text == "正文 加粗")
+    );
+    assert!(detail.content.iter().any(|b| {
+        b.kind == "image" && b.url.as_deref() == Some("https://image.lceda.cn/board.webp")
+    }));
+    assert!(
+        detail
+            .content
+            .iter()
+            .any(|b| b.kind == "paragraph" && b.text == "第一项")
+    );
+    assert!(
+        detail
+            .content
+            .iter()
+            .any(|b| b.kind == "paragraph" && b.text == "第二项")
+    );
+    assert!(detail.content.iter().any(|b| {
+        b.kind == "link" && b.text == "资料" && b.url.as_deref() == Some("https://example.com/docs")
+    }));
+    assert!(
+        detail
+            .content
+            .iter()
+            .any(|b| b.kind == "code" && b.text == "let x = 1;")
+    );
+    assert!(
+        detail
+            .content
+            .iter()
+            .all(|b| !b.text.contains("DROP_ME") && !b.text.contains("## "))
+    );
+    assert!(
+        detail
+            .content
+            .iter()
+            .all(|b| b.url.as_deref() != Some("javascript:alert(1)"))
+    );
+}
+
+#[test]
 fn malformed_bom_is_an_explicit_error_instead_of_an_empty_table() {
     let mut images = fixture("images");
     images["result"]["boards"][0]["schematic"]["boms"]["boms"] = json!("not json");
