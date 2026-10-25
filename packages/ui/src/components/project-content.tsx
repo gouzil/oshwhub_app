@@ -20,11 +20,11 @@ export function ProjectContent({ block, visible }: { block: ContentBlock; visibl
     );
   if (block.kind === "code")
     return (
-      <View className="rounded-[10px] bg-[#f2f5f2] p-4">
+      <View className="rounded-[10px] bg-muted p-4">
         <Text
           selectable
           className={cn(
-            "text-xs leading-[21px] text-[#45574b]",
+            "text-xs leading-[21px] text-foreground",
             Platform.OS === "ios" ? "font-[Menlo]" : "font-[monospace]",
           )}
         >
@@ -35,7 +35,7 @@ export function ProjectContent({ block, visible }: { block: ContentBlock; visibl
   if (block.kind === "link" && block.url)
     return <ExternalLink url={block.url} label={block.text || "打开链接"} />;
   return (
-    <Text selectable className="text-[15px] leading-[27px] text-[#42574b]">
+    <Text selectable className="text-[15px] leading-[27px] text-foreground">
       {block.text}
     </Text>
   );

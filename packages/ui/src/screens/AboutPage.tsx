@@ -32,7 +32,7 @@ export function AboutPage({ bottomInset }: { bottomInset: number }) {
         </Text>
         <ExternalLink url="https://github.com/gouzil/oshwhub_app" label="查看项目源码" />
       </View>
-      <Text className="text-[11px] leading-[19px] text-[#99a39c]">
+      <Text className="text-[11px] leading-[19px] text-muted-foreground">
         v0.1.0 · 为每一位硬件创造者而做
       </Text>
     </ScrollView>

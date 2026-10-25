@@ -4,6 +4,7 @@ import { type NativeSyntheticEvent, View, type ViewProps } from "react-native";
 export interface NativeTabBarProps extends ViewProps {
   items: { label: string; symbol: string }[];
   selectedIndex: number;
+  tintColor: string;
   onSelect: (event: NativeSyntheticEvent<{ index: number }>) => void;
 }
 

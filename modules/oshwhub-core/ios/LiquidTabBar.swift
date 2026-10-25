@@ -16,7 +16,7 @@ final class LiquidTabBar: ExpoView, UITabBarDelegate {
     super.init(appContext: appContext)
     backgroundColor = .clear
     bar.delegate = self
-    bar.tintColor = UIColor(red: 0, green: 0.51, blue: 0.37, alpha: 1)
+    bar.tintColor = UIColor(red: 44 / 255, green: 101 / 255, blue: 232 / 255, alpha: 1)
     bar.overrideUserInterfaceStyle = .light
     addSubview(bar)
   }
@@ -37,6 +37,10 @@ final class LiquidTabBar: ExpoView, UITabBarDelegate {
     selectedIndex = index
     guard let items = bar.items, items.indices.contains(index) else { return }
     bar.selectedItem = items[index]
+  }
+
+  func setTintColor(_ color: UIColor) {
+    bar.tintColor = color
   }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {

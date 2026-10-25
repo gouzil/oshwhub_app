@@ -133,18 +133,18 @@ export function ProjectPage({
                       由 {project.summary.author || "开源创作者"} 分享
                     </Text>
                     {project.summary.description.length > 0 && (
-                      <Text selectable className="text-[14px] leading-6 text-[#56695e]">
+                      <Text selectable className="text-[14px] leading-6 text-foreground">
                         {project.summary.description}
                       </Text>
                     )}
                     <View className="flex-row flex-wrap gap-1.5">
                       {[...new Set(project.summary.tags)].map((tag) => (
                         <View key={tag} className="rounded-[6px] bg-secondary px-[9px] py-[5px]">
-                          <Text className="text-[11px] text-[#568065]">{tag}</Text>
+                          <Text className="text-[11px] text-secondary-foreground">{tag}</Text>
                         </View>
                       ))}
                     </View>
-                    <Text className="text-[12px] text-[#8a978e]">
+                    <Text className="text-[12px] text-muted-foreground">
                       ♡ {project.summary.likes.toLocaleString()} 喜欢{" "}
                       {project.summary.views.toLocaleString()} 次浏览
                     </Text>

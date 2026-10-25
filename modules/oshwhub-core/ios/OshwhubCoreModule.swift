@@ -1,9 +1,16 @@
 import ExpoModulesCore
 import Foundation
+import UIKit
 
 public class OshwhubCoreModule: Module {
   public func definition() -> ModuleDefinition {
     Name("OshwhubCore")
+    Function("getThemeColor") {
+      UserDefaults.standard.string(forKey: "themeColor")
+    }
+    Function("setThemeColor") { (value: String) in
+      UserDefaults.standard.set(value, forKey: "themeColor")
+    }
     OnCreate {
       let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.path ?? ""
       cache.withCString { oshwhub_initialize($0) }
@@ -24,6 +31,9 @@ public class OshwhubCoreModule: Module {
       }
       Prop("selectedIndex") { (view, index: Int) in
         view.select(index)
+      }
+      Prop("tintColor") { (view, color: UIColor) in
+        view.setTintColor(color)
       }
     }
   }

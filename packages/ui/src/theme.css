@@ -5,25 +5,25 @@
 
 @theme {
   --color-background: #ffffff;
-  --color-canvas: #f7f9f7;
-  --color-surface: #f6f9f7;
-  --color-skeleton: #e5ede7;
+  --color-canvas: #f8f8fa;
+  --color-surface: #f5f6fa;
+  --color-skeleton: #e4e7ef;
   --color-viewer: #0b121a;
   --color-viewer-panel: #1b242f;
-  --color-foreground: #192d26;
+  --color-foreground: #202d40;
   --color-card: #ffffff;
-  --color-card-foreground: #192d26;
-  --color-primary: #07845d;
+  --color-card-foreground: #202d40;
+  --color-primary: #2c65e8;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #eaf6ef;
-  --color-secondary-foreground: #07845d;
-  --color-muted: #f3f6f3;
-  --color-muted-foreground: #738079;
-  --color-accent: #eaf6ef;
-  --color-accent-foreground: #07845d;
+  --color-secondary: #edf3ff;
+  --color-secondary-foreground: #2c65e8;
+  --color-muted: #f1f3f7;
+  --color-muted-foreground: #636573;
+  --color-accent: #edf3ff;
+  --color-accent-foreground: #2c65e8;
   --color-destructive: #b42318;
-  --color-border: #e9eeeb;
-  --color-input: #e3ebe5;
-  --color-ring: #07845d;
+  --color-border: #e5e7eb;
+  --color-input: #dde2ec;
+  --color-ring: #2c65e8;
   --radius-md: 0.6875rem;
 }

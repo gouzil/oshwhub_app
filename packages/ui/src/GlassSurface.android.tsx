@@ -20,7 +20,7 @@ export function GlassSurface({ className, ...props }: ViewProps) {
       refractionHeight={10}
       refractionAmount={18}
       surfaceColor="#ffffff45"
-      fallbackColor="#f6f9f7"
+      fallbackColor="#f5f6fa"
       shadow={false}
     />
   );

@@ -24,7 +24,7 @@ export function BoardOption({
       onPress={onPress}
       className={cn(
         "min-h-[154px] w-40 gap-2 rounded-xl border border-border p-3",
-        selected && "border-primary bg-[#f6fcf7]",
+        selected && "border-primary bg-secondary",
       )}
     >
       <View className="h-[62px] items-center justify-center overflow-hidden">
