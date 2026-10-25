@@ -3,13 +3,21 @@ use crate::{
     error::{AppError, Result},
     model::ContentBlock,
 };
+use pulldown_cmark::{Options, Parser, html::push_html};
 use scraper::ElementRef;
 
-pub(super) fn content_blocks(html: &str) -> Result<Vec<ContentBlock>> {
-    if html.len() > 2 * 1024 * 1024 {
+pub(super) fn content_blocks(content: &str, markdown: bool) -> Result<Vec<ContentBlock>> {
+    if content.len() > 2 * 1024 * 1024 {
         return Err(AppError::new("CONTENT_LIMIT", "工程正文超过安全大小上限"));
     }
-    let fragment = scraper::Html::parse_fragment(html);
+    let html = if markdown {
+        let mut rendered = String::new();
+        push_html(&mut rendered, Parser::new_ext(content, Options::all()));
+        rendered
+    } else {
+        content.to_owned()
+    };
+    let fragment = scraper::Html::parse_fragment(&html);
     let mut blocks = Vec::new();
     let mut text = String::new();
     walk_html(fragment.root_element(), 0, &mut blocks, &mut text)?;

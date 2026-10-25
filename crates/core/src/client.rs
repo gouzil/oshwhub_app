@@ -30,7 +30,11 @@ impl HttpClient {
     }
 
     pub async fn get_json(&self, url: &str) -> Result<Value> {
-        let bytes = self.request(url, None, JSON_LIMIT, true).await?;
+        self.get_json_with_limit(url, JSON_LIMIT).await
+    }
+
+    pub async fn get_json_with_limit(&self, url: &str, max_bytes: usize) -> Result<Value> {
+        let bytes = self.request(url, None, max_bytes, true).await?;
         serde_json::from_slice(&bytes)
             .map_err(|_| AppError::new("INVALID_RESPONSE", "站点返回了无法解析的 JSON"))
     }
