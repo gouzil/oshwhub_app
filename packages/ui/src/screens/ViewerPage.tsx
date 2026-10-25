@@ -1,6 +1,6 @@
 import type { Scene } from "@oshwhub/bridge";
-import { Pcb3dViewer, PcbViewer } from "@oshwhub/pcb-viewer";
-import { useMemo, useState } from "react";
+import { Pcb3dViewer, PcbViewer, SchematicViewer } from "@oshwhub/pcb-viewer";
+import { useEffect, useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { ErrorPanel, Loading } from "../components/states";
 import { TabBar } from "../components/tab-bar";
@@ -9,21 +9,68 @@ import { ViewerBoundary } from "../components/viewer-boundary";
 import { useCommand } from "../hooks/use-command";
 import { cn } from "../lib/utils";
 
+export type ViewerMode = "pcb2d" | "schematic" | "3d";
 export type ViewerRoute =
   | { demo: true }
-  | { demo: false; projectId: string; documentId: string; title: string };
+  | {
+      demo: false;
+      projectId: string;
+      pcbDocumentId: string | null;
+      schematicDocumentId: string | null;
+      title: string;
+      initialMode?: "pcb2d" | "schematic";
+    };
+
+const DEMO_COMMAND = { command: "demo" as const };
 
 export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () => void }) {
-  const [mode, setMode] = useState<"2d" | "3d">("2d");
+  const [mode, setMode] = useState<ViewerMode>(() => {
+    if (route.demo) return "pcb2d";
+    if (!route.pcbDocumentId) return "schematic";
+    return route.initialMode === "schematic" ? "schematic" : "pcb2d";
+  });
   const [three, setThree] = useState(false);
-  const command = useMemo(
-    () =>
-      route.demo
-        ? { command: "demo" as const }
-        : { command: "pcb" as const, projectId: route.projectId, documentId: route.documentId },
-    [route],
-  );
+  useEffect(() => {
+    if (
+      !route.demo &&
+      route.schematicDocumentId &&
+      (!route.pcbDocumentId || route.initialMode === "schematic")
+    ) {
+      setMode("schematic");
+    } else {
+      setMode("pcb2d");
+    }
+  }, [route]);
+  const command = useMemo(() => {
+    if (route.demo) return DEMO_COMMAND;
+    if (mode === "schematic" && route.schematicDocumentId) {
+      return {
+        command: "schematic" as const,
+        projectId: route.projectId,
+        documentId: route.schematicDocumentId,
+      };
+    }
+    return {
+      command: "pcb" as const,
+      projectId: route.projectId,
+      documentId: route.pcbDocumentId ?? route.schematicDocumentId ?? "",
+    };
+  }, [mode, route]);
   const { value: scene, loading, error, retry } = useCommand<Scene>(command);
+  const items = useMemo(() => {
+    const values: { value: ViewerMode; label: string; accessibilityLabel: string }[] = [];
+    if (route.demo || route.pcbDocumentId) {
+      values.push({ value: "pcb2d", label: "2D", accessibilityLabel: "二维模式" });
+    }
+    if (!route.demo && route.schematicDocumentId) {
+      values.push({ value: "schematic", label: "原理图", accessibilityLabel: "原理图模式" });
+    }
+    if (route.demo || route.pcbDocumentId) {
+      values.push({ value: "3d", label: "3D", accessibilityLabel: "三维模式" });
+    }
+    return values;
+  }, [route]);
+  const label = mode === "schematic" ? "原理图" : mode === "3d" ? "PCB 三维" : "PCB";
   return (
     <View className="min-h-0 flex-1 bg-viewer">
       <View className="min-h-[60px] flex-row items-center gap-3 border-b border-[#ffffff14] bg-viewer-panel px-3 py-1.5">
@@ -41,17 +88,14 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
             numberOfLines={1}
             className="text-[14px] font-semibold text-[#edf2f7]"
           >
-            {scene?.name ?? (route.demo ? "PCB 示例板" : route.title || "PCB 查看器")}
+            {scene?.name ?? (route.demo ? "PCB 示例板" : `${route.title || label} 查看器`)}
           </Text>
           <Text numberOfLines={1} className="text-[10px] text-[#9aaaba]">
-            {route.demo ? "本地自制示例 · 只读" : `${route.title || "PCB 工作区"} · 只读`}
+            {route.demo ? "本地自制示例 · 只读" : `${route.title || label} · 只读`}
           </Text>
         </View>
         <TabBar
-          items={[
-            { value: "2d", label: "2D", accessibilityLabel: "二维模式" },
-            { value: "3d", label: "3D", accessibilityLabel: "三维模式" },
-          ]}
+          items={items}
           value={mode}
           onValueChange={(next) => {
             setMode(next);
@@ -64,7 +108,7 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
         />
       </View>
       {loading ? (
-        <Loading label={route.demo ? "正在准备本地示例" : "正在下载并解析 PCB"} />
+        <Loading label={route.demo ? "正在准备本地示例" : `正在下载并解析 ${label}`} />
       ) : error ? (
         <ScrollView contentContainerClassName="grow justify-center bg-canvas p-5">
           <ErrorPanel error={error} retry={retry} />
@@ -73,20 +117,27 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
         scene && (
           <ViewerBoundary key={`${scene.id}-${scene.revision}`} retry={retry}>
             <View className="min-h-0 flex-1">
-              <View
-                ref={(node) => {
-                  if (Platform.OS === "web" && node)
-                    (node as unknown as HTMLElement).inert = mode !== "2d";
-                }}
-                className={cn("absolute inset-0", mode !== "2d" && "opacity-0")}
-                pointerEvents={mode === "2d" ? "auto" : "none"}
-                aria-hidden={mode !== "2d"}
-                accessibilityElementsHidden={mode !== "2d"}
-                importantForAccessibility={mode === "2d" ? "auto" : "no-hide-descendants"}
-              >
-                <PcbViewer scene={scene} />
-              </View>
-              {three && (
+              {mode !== "schematic" && (
+                <View
+                  ref={(node) => {
+                    if (Platform.OS === "web" && node)
+                      (node as unknown as HTMLElement).inert = mode !== "pcb2d";
+                  }}
+                  className={cn("absolute inset-0", mode !== "pcb2d" && "opacity-0")}
+                  pointerEvents={mode === "pcb2d" ? "auto" : "none"}
+                  aria-hidden={mode !== "pcb2d"}
+                  accessibilityElementsHidden={mode !== "pcb2d"}
+                  importantForAccessibility={mode === "pcb2d" ? "auto" : "no-hide-descendants"}
+                >
+                  <PcbViewer scene={scene} />
+                </View>
+              )}
+              {mode === "schematic" && (
+                <View className="absolute inset-0">
+                  <SchematicViewer scene={scene} />
+                </View>
+              )}
+              {three && mode !== "schematic" && (
                 <View
                   ref={(node) => {
                     if (Platform.OS === "web" && node)

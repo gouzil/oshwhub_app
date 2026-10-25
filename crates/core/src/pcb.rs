@@ -1,6 +1,6 @@
 //! Read-only EasyEDA Pro state and independent 2D/3D scene compilers.
-mod geometry;
-mod history;
+pub(crate) mod geometry;
+pub(crate) mod history;
 mod models;
 mod scene;
 mod solid;
@@ -110,9 +110,35 @@ fn result(value: &Value) -> Result<&Value> {
 }
 
 pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> Result<Scene> {
+    let start = Instant::now();
+    let document_id = document_id.to_owned();
+    let (project, head, metrics) = load_project(client, project_id, &document_id).await?;
+    let mut scene =
+        tokio::task::spawn_blocking(move || scene::compile(project, &document_id, head, metrics))
+            .await
+            .map_err(|_| AppError::new("internal", "PCB 场景处理失败"))??;
+    scene.metrics.load_ms = start.elapsed().as_millis() as u64;
+    tracing::info!(
+        histories = scene.metrics.history_count,
+        download_bytes = scene.metrics.download_bytes,
+        records = scene.metrics.record_count,
+        objects = scene.object_count,
+        batches = scene.batches.len(),
+        load_ms = scene.metrics.load_ms,
+        parse_ms = scene.metrics.parse_ms,
+        scene_ms = scene.metrics.scene_ms,
+        "pcb.scene.complete"
+    );
+    Ok(scene)
+}
+
+pub(crate) async fn load_project(
+    client: &HttpClient,
+    project_id: &str,
+    document_id: &str,
+) -> Result<(history::Project, String, Metrics)> {
     crate::api::validate_id(project_id)?;
     crate::api::validate_id(document_id)?;
-    let start = Instant::now();
     let metadata = client
         .get_json(&format!(
             "https://pro.lceda.cn/api/v4/projects/{project_id}"
@@ -181,8 +207,7 @@ pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> R
     .try_collect()
     .await?;
     let download_bytes = downloaded_bytes.load(Ordering::Relaxed);
-    let document_id = document_id.to_owned();
-    let mut scene = tokio::task::spawn_blocking(move || {
+    let (project, metrics) = tokio::task::spawn_blocking(move || {
         let parse_start = Instant::now();
         let mut project = history::Project::default();
         let mut decoded = 0usize;
@@ -203,23 +228,11 @@ pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> R
             download_bytes,
             ..Metrics::default()
         };
-        scene::compile(project, &document_id, head, metrics)
+        Ok::<_, AppError>((project, metrics))
     })
     .await
-    .map_err(|_| AppError::new("internal", "PCB 场景处理失败"))??;
-    scene.metrics.load_ms = start.elapsed().as_millis() as u64;
-    tracing::info!(
-        histories = history_count,
-        download_bytes,
-        records = scene.metrics.record_count,
-        objects = scene.object_count,
-        batches = scene.batches.len(),
-        load_ms = scene.metrics.load_ms,
-        parse_ms = scene.metrics.parse_ms,
-        scene_ms = scene.metrics.scene_ms,
-        "pcb.scene.complete"
-    );
-    Ok(scene)
+    .map_err(|_| AppError::new("internal", "EDA 历史处理失败"))??;
+    Ok((project, head, metrics))
 }
 pub fn demo() -> Scene {
     scene::demo()

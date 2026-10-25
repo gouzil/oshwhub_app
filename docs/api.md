@@ -28,6 +28,13 @@
 - 模型元数据使用 `GET https://pro.lceda.cn/api/v5/components/{seedUuid}` 的 `3d_model_uuid`，再下载 `https://modules.lceda.cn/3dmodel/{fileUuid}`。ID、所属场景、状态、大小均需校验；每个 OBJ 最多 12 MiB，内嵌材质以外的 MTL 和贴图不发请求。
 - 当前在线元数据受 418/超时阻断，v5 响应形状与官方模型下载尚未完成本轮在线验收，详见 [3d.md](3d.md)。
 
+## 原理图查看
+
+- 专业版板卡的 `boards[].sch` 或 `schematic.uuid` 归一化为 `Board.schematicId`；缺失表示没有公开原理图，非法或冲突 ID 会返回明确的响应错误。
+- `{ command: "schematic", projectId, documentId }` 复用 PCB 的公开历史、AES-GCM/gzip 解码、大小上限和只读错误协议，返回同一 `Scene` 结构。统一 `{ command: "pick", sceneId, x, y, tolerance, layers }` 同时支持 PCB 与原理图场景。
+- 原理图编译器读取 `SCH_PAGE` 与 `SYMBOL/PART`，支持线、总线、总线入口、引脚、文本/属性、矩形、多边形、圆、椭圆、圆弧、贝塞尔和连接点；元件旋转、镜像、平移后写入可绘制批次和可拾取属性。
+- 未知类型、缺失符号/PART、损坏图元会聚合为 `Scene.warnings` 或稳定错误；不把空场景当成成功结果。OBJ、表格和复杂层级复用仍未实现。
+
 ## 数据转换
 
 - 摘要必须有合法 UUID、名称和 `owner/project` 路径。缺失可选作者信息以“未知作者”显示；缺失计数为 0；无效图片 URL 省略。

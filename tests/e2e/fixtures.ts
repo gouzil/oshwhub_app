@@ -43,6 +43,7 @@ const project = (id: string): ProjectDetail => ({
       id: "board-main",
       name: "自制主板",
       pcbId: "pcb-main",
+      schematicId: "schematic-main",
       thumbnail: null,
       bom: [
         {
@@ -67,7 +68,14 @@ const project = (id: string): ProjectDetail => ({
         },
       ],
     },
-    { id: "board-empty", name: "自制扩展板", pcbId: null, thumbnail: null, bom: [] },
+    {
+      id: "board-empty",
+      name: "自制扩展板",
+      pcbId: null,
+      schematicId: null,
+      thumbnail: null,
+      bom: [],
+    },
   ],
   attachments: [
     { name: "自制说明书", url: "https://example.com/manual.pdf" },
@@ -115,6 +123,46 @@ export const scene: Scene = {
   objectCount: 5,
   warnings: [],
   metrics: { loadMs: 1, parseMs: 2, sceneMs: 3, recordCount: 5, historyCount: 1, downloadBytes: 0 },
+};
+
+export const schematicScene: Scene = {
+  id: "self-made-schematic-scene",
+  name: "自制控制板原理图",
+  revision: "offline-sch-1",
+  bounds: { minX: 0, minY: 0, maxX: 160, maxY: 100 },
+  layers: [
+    { id: 1, name: "连线", color: "#5ca9e6", visible: true, order: 100 },
+    { id: 3, name: "符号", color: "#e8d38b", visible: true, order: 300 },
+    { id: 4, name: "引脚", color: "#e38c8c", visible: true, order: 400 },
+    { id: 5, name: "文本", color: "#ffffff", visible: true, order: 500 },
+  ],
+  batches: [
+    {
+      layer: 1,
+      path: "M20 50H80 M80 50V30",
+      fill: false,
+      width: 1,
+      bounds: { minX: 20, minY: 30, maxX: 80, maxY: 50 },
+    },
+    {
+      layer: 3,
+      path: "M70 40H100V60H70Z",
+      fill: false,
+      width: 1,
+      bounds: { minX: 70, minY: 40, maxX: 100, maxY: 60 },
+    },
+    {
+      layer: 4,
+      path: "M100 50H125",
+      fill: false,
+      width: 1,
+      bounds: { minX: 100, minY: 50, maxX: 125, maxY: 50 },
+    },
+  ],
+  texts: [{ layer: 5, x: 28, y: 25, text: "POWER", size: 8, rotation: 0, align: "left" }],
+  objectCount: 4,
+  warnings: ["离线原理图夹具"],
+  metrics: { loadMs: 1, parseMs: 2, sceneMs: 3, recordCount: 8, historyCount: 1, downloadBytes: 0 },
 };
 
 // Original box geometry, independent of the Rust board/model compiler.
@@ -236,10 +284,26 @@ export const test = base.extend<{
           break;
         }
         case "pcb":
+          data = scene;
+          break;
+        case "schematic":
+          data = schematicScene;
+          break;
         case "demo":
           data = scene;
           break;
         case "pick": {
+          if (command.sceneId === schematicScene.id) {
+            data = {
+              id: "self-symbol",
+              kind: "COMPONENT",
+              layer: 3,
+              net: null,
+              properties: { Designator: "U1", Value: "自制 MCU" },
+              bounds: { minX: 70, minY: 40, maxX: 100, maxY: 60 },
+            };
+            break;
+          }
           const top = command.layers?.includes(1) ?? true;
           const result: PickResult = {
             id: top ? "self-top-pad" : "self-bottom-pad",

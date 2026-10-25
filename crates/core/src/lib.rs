@@ -6,6 +6,7 @@ pub mod diagnostics;
 pub mod error;
 pub mod model;
 pub mod pcb;
+pub mod schematic;
 
 use api::Api;
 use client::HttpClient;
@@ -37,6 +38,12 @@ enum Command {
         query: String,
     },
     Pcb {
+        #[serde(rename = "projectId")]
+        project_id: String,
+        #[serde(rename = "documentId")]
+        document_id: String,
+    },
+    Schematic {
         #[serde(rename = "projectId")]
         project_id: String,
         #[serde(rename = "documentId")]
@@ -118,6 +125,15 @@ async fn execute(command: Command) -> Result<Value> {
             let data = pcb::load(&http_client()?, &project_id, &document_id).await?;
             serde_json::to_value(data).map_err(serialization_error)
         }
+        Command::Schematic {
+            project_id,
+            document_id,
+        } => {
+            api::validate_id(&project_id)?;
+            api::validate_id(&document_id)?;
+            let data = schematic::load(&http_client()?, &project_id, &document_id).await?;
+            serde_json::to_value(data).map_err(serialization_error)
+        }
         Command::Demo => serde_json::to_value(pcb::demo()).map_err(serialization_error),
         Command::Pcb3d { scene_id } => {
             serde_json::to_value(pcb::prepare_3d(scene_id).await?).map_err(serialization_error)
@@ -141,8 +157,14 @@ async fn execute(command: Command) -> Result<Value> {
             {
                 return Err(AppError::new("invalid_request", "拾取坐标或范围无效"));
             }
-            serde_json::to_value(pcb::pick(&scene_id, x, y, tolerance, layers.as_deref())?)
-                .map_err(serialization_error)
+            let picked = match pcb::pick(&scene_id, x, y, tolerance, layers.as_deref()) {
+                Ok(result) => Ok(result),
+                Err(error) if error.code == "scene_expired" => {
+                    schematic::pick(&scene_id, x, y, tolerance, layers.as_deref())
+                }
+                Err(error) => Err(error),
+            }?;
+            serde_json::to_value(picked).map_err(serialization_error)
         }
     }
 }
@@ -256,6 +278,15 @@ mod tests {
         let input = json!({"command":"searchBom", "items":[], "query":"C6"});
         let value: Value = serde_json::from_str(&dispatch_json(&input.to_string()).await).unwrap();
         assert_eq!(value["data"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn schematic_command_validates_ids_before_loading() {
+        let value: Value = serde_json::from_str(
+            &dispatch_json(r#"{"command":"schematic","projectId":"bad","documentId":"bad"}"#).await,
+        )
+        .unwrap();
+        assert_eq!(value["error"]["code"], "INVALID_ID");
     }
 
     #[tokio::test]

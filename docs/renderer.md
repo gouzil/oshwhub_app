@@ -32,6 +32,23 @@ handles the viewport and layer controls. No EasyEDA viewer renderer or closed
    index. No separate external footprint service is required for the checked
    public project.
 
+## Schematic scenes
+
+The same history replay can target a `SCH_PAGE` document. The schematic
+compiler indexes `SYMBOL` documents and their `PART` records, applies the
+component transform, and emits the existing `Scene`/`DrawBatch`/`TextLabel`
+protocol. Logical layers separate wires, buses, symbols, pins, text, shapes,
+and junctions. Visible attributes and symbol metadata remain available in
+`PickResult.properties`; net attributes become `PickResult.net`.
+
+Schematic scenes use their own bounded two-entry picking cache. The `pick`
+command first checks the PCB cache and then the schematic cache, so scene IDs
+remain opaque and the bridge does not need a second picking command. Missing
+pages return `schematic_not_found`; expired scenes return `scene_expired`.
+Unsupported records stay visible in the warning panel. The implementation
+shares the history, path, transform, contour-hit, object and generated-path
+limits with PCB scenes.
+
 Requests use the core client's HTTPS host allowlist, response limits, timeouts,
 and explicit status/MIME validation. The loader downloads four parts concurrently
 while preserving replay order. Decompression, replay, and scene compilation run

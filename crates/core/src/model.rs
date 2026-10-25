@@ -51,6 +51,7 @@ pub struct Board {
     pub id: String,
     pub name: String,
     pub pcb_id: Option<String>,
+    pub schematic_id: Option<String>,
     pub thumbnail: Option<String>,
     pub bom: Vec<BomItem>,
 }
