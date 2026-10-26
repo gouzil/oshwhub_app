@@ -1,5 +1,28 @@
 import { expect, test } from "./fixtures";
 
+test("project 2D and 3D switches reuse the loaded PCB scene", async ({ page, bridge }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^自制开源控制板 01，/ }).click();
+  await page.getByRole("tab", { name: "板子与 BOM (2)", exact: true }).click();
+  await page.getByRole("button", { name: "查看 PCB", exact: true }).click();
+  await page.getByRole("button", { name: "放大 PCB", exact: true }).click();
+  await expect(page.getByText("125%", { exact: true })).toBeVisible();
+  const original = await page.locator("canvas").first().elementHandle();
+
+  await page.getByRole("tab", { name: "三维模式", exact: true }).click();
+  await expect(page.getByText("3D 视图已就绪")).toBeVisible();
+  expect(bridge.requests.filter((r) => r.command === "pcb")).toHaveLength(1);
+  expect(bridge.requests.filter((r) => r.command === "pcb3d")).toHaveLength(1);
+
+  await page.getByRole("tab", { name: "二维模式", exact: true }).click();
+  await expect(page.getByText("125%", { exact: true })).toBeVisible();
+  expect(await original?.evaluate((element) => element.isConnected)).toBe(true);
+  await page.getByRole("tab", { name: "三维模式", exact: true }).click();
+  await expect(page.getByText("3D 视图已就绪")).toBeVisible();
+  expect(bridge.requests.filter((r) => r.command === "pcb")).toHaveLength(1);
+  expect(bridge.requests.filter((r) => r.command === "pcb3d")).toHaveLength(1);
+});
+
 test("3D orbits without rebuilding the board and preserves the 2D camera and layers", async ({
   page,
   bridge,
