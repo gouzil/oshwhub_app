@@ -165,6 +165,7 @@ struct Builder<'a> {
     tf: Transform,
     paints: Vec<Paint>,
     texts: Vec<TextLabel>,
+    net_labels: Vec<NetLabel>,
     layers: BTreeMap<i32, SceneLayer>,
     warnings: BTreeMap<String, usize>,
     attrs: HashMap<String, BTreeMap<String, Value>>,
@@ -281,6 +282,7 @@ impl<'a> Builder<'a> {
             tf: Transform::board(n(canvas, "originX", 0.), n(canvas, "originY", 0.)),
             paints: Vec::new(),
             texts: Vec::new(),
+            net_labels: Vec::new(),
             layers,
             warnings: BTreeMap::new(),
             attrs,
@@ -419,18 +421,46 @@ impl<'a> Builder<'a> {
                 } else {
                     json!([a.0, a.1, "ARC", required(d, "angle")?, b.0, b.1])
                 };
+                let geometry = g::path(&v, tf, 1., false)?;
+                let segment = geometry
+                    .contours
+                    .iter()
+                    .flat_map(|c| c.windows(2))
+                    .max_by(|a, b| {
+                        (a[1].0 - a[0].0)
+                            .hypot(a[1].1 - a[0].1)
+                            .total_cmp(&(b[1].0 - b[0].0).hypot(b[1].1 - b[0].1))
+                    })
+                    .map(|s| (s[0], s[1]));
                 self.paint(
                     r,
-                    g::path(&v, tf, 1., false)?,
+                    geometry,
                     lid,
                     false,
                     width,
                     2,
                     component,
-                    net,
+                    net.clone(),
                     true,
                     color,
                 )?;
+                if matches!(lid, 1 | 2 | 12 | 15..=46)
+                    && net.is_some()
+                    && let Some((a, b)) = segment
+                {
+                    self.net_labels.push(NetLabel {
+                        layer: lid,
+                        kind: r.kind.clone(),
+                        net,
+                        pad_number: String::new(),
+                        x: (a.0 + b.0) / 2.,
+                        y: (a.1 + b.1) / 2.,
+                        width: (b.0 - a.0).hypot(b.1 - a.1),
+                        height: width,
+                        rotation: (b.1 - a.1).atan2(b.0 - a.0).to_degrees(),
+                        hole: false,
+                    });
+                }
             }
             "POLY" | "FILL" | "REGION" | "POUR" | "TEARDROP" | "FPC_FILL" => {
                 let fill = matches!(r.kind.as_str(), "FILL" | "TEARDROP" | "FPC_FILL");
@@ -518,6 +548,19 @@ impl<'a> Builder<'a> {
                 if !d["ruleName"].as_str().unwrap_or("").is_empty() {
                     self.warn("盲埋孔按多层环显示，层跨度待校准");
                 }
+                let (x, y) = tf.point((x, y));
+                self.net_labels.push(NetLabel {
+                    layer: 12,
+                    kind: r.kind.clone(),
+                    net,
+                    pad_number: String::new(),
+                    x,
+                    y,
+                    width: dia,
+                    height: dia,
+                    rotation: 0.,
+                    hole: hole > 0.,
+                });
             }
             "POURED" => {
                 let target = d["targetId"].as_str().or_else(|| {
@@ -770,6 +813,25 @@ impl<'a> Builder<'a> {
             true,
             None,
         )?;
+        // shortcut: polygon interiors need an inscribed box before placing labels inside them.
+        if !polygon
+            && matches!(lid, 1 | 2 | 12 | 15..=46)
+            && (through || !num.is_empty() || net.is_some())
+        {
+            let local = tf.component(cx, cy, angle, false);
+            self.net_labels.push(NetLabel {
+                layer: lid,
+                kind: r.kind.clone(),
+                net: net.clone(),
+                pad_number: num.to_owned(),
+                x: local.tx,
+                y: local.ty,
+                width,
+                height,
+                rotation: local.b.atan2(local.a).to_degrees(),
+                hole: through,
+            });
+        }
         if d["specialPad"].as_array().is_some_and(|s| !s.is_empty()) {
             self.warn("PAD specialPad 使用默认焊盘预览，特殊层形状待支持");
         }
@@ -1201,6 +1263,16 @@ pub fn compile(
         .into_iter()
         .map(|(s, n)| format!("{s} ({n})"))
         .collect();
+    b.net_labels.sort_by_key(|label| {
+        (
+            match label.kind.as_str() {
+                "PAD" => 0,
+                "VIA" => 1,
+                _ => 2,
+            },
+            std::cmp::Reverse(order(label.layer)),
+        )
+    });
     let scene = Scene {
         id: id.clone(),
         name,
@@ -1209,6 +1281,7 @@ pub fn compile(
         layers: layers.clone(),
         batches,
         texts: b.texts,
+        net_labels: b.net_labels,
         object_count: objects.len(),
         warnings,
         metrics,
@@ -1606,6 +1679,70 @@ mod tests {
                 .unwrap()
                 .id,
             "via"
+        );
+    }
+
+    #[test]
+    fn drills_without_networks_still_reserve_space_for_label_layout() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(&mut project, r#"{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"VIA","id":"via"}||{"centerX":0,"centerY":0,"viaDiameter":8,"holeDiameter":3}|
+{"type":"PAD","id":"pad"}||{"layerId":1,"centerX":20,"centerY":0,"defaultPad":{"padType":"ROUND","width":8,"height":8},"hole":{"width":3}}|"#).unwrap();
+        let scene = compile(project, "board", "drill-labels".into(), Metrics::default()).unwrap();
+        assert_eq!(scene.net_labels.len(), 2);
+        assert!(scene.net_labels.iter().all(|l| l.net.is_none() && l.hole));
+    }
+
+    #[test]
+    fn net_labels_include_only_individual_copper_objects_and_keep_drills_clear() {
+        let _guard = scene_test_guard();
+        let scene = fixture_scene();
+        assert_eq!(scene.net_labels.len(), 3);
+        let pad = scene.net_labels.iter().find(|l| l.kind == "PAD").unwrap();
+        assert_eq!(pad.pad_number, "1");
+        assert_eq!(pad.net.as_deref(), Some("GND"));
+        assert_eq!(
+            (pad.x, pad.y, pad.width, pad.height, pad.rotation),
+            (100., -110., 8., 6., -90.)
+        );
+        assert!(pad.hole);
+        let track = scene.net_labels.iter().find(|l| l.kind == "LINE").unwrap();
+        assert_eq!(
+            (track.x, track.y, track.width, track.height),
+            (100., -130., 40., 3.)
+        );
+        assert!(scene.net_labels.iter().all(|l| matches!(l.layer, 1 | 12)));
+        assert!(scene.net_labels.iter().any(|l| l.kind == "VIA" && l.hole));
+    }
+
+    #[test]
+    fn pad_labels_survive_batching_and_follow_component_transforms() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(&mut project, r#"{"type":"DOCHEAD"}||{"uuid":"fp","docType":"FOOTPRINT"}|
+{"type":"PAD","id":"p1"}||{"num":"1","layerId":1,"centerX":-10,"centerY":0,"padAngle":0,"defaultPad":{"padType":"RECT","width":8,"height":6}}|
+{"type":"PAD","id":"p2"}||{"num":"2","layerId":1,"centerX":10,"centerY":0,"padAngle":0,"defaultPad":{"padType":"RECT","width":8,"height":6}}|
+{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"COMPONENT","id":"c1"}||{"x":100,"y":100,"angle":90,"layerId":1,"attrs":{"Footprint":"fp"}}|
+{"type":"PAD_NET","id":"[\"PAD_NET\",\"c1\",\"1\",\"p1\"]"}||{"padNet":"GND"}|
+{"type":"PAD_NET","id":"[\"PAD_NET\",\"c1\",\"2\",\"p2\"]"}||{"padNet":"GND"}|"#).unwrap();
+        let scene = compile(project, "board", "pad-labels".into(), Metrics::default()).unwrap();
+        assert_eq!(
+            scene
+                .batches
+                .iter()
+                .filter(|batch| batch.kind == "PAD")
+                .count(),
+            1
+        );
+        let value = serde_json::to_value(scene).unwrap();
+        assert_eq!(
+            value["netLabels"],
+            json!([
+                {"layer":1,"kind":"PAD","net":"GND","padNumber":"1","x":100.,"y":-90.,"width":8.,"height":6.,"rotation":-90.,"hole":false},
+                {"layer":1,"kind":"PAD","net":"GND","padNumber":"2","x":100.,"y":-110.,"width":8.,"height":6.,"rotation":-90.,"hole":false},
+            ])
         );
     }
 

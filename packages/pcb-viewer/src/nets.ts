@@ -1,12 +1,10 @@
-import type { Bounds, DrawBatch, Scene } from "@oshwhub/bridge";
+import type { Bounds, Scene } from "@oshwhub/bridge";
 
 export type NetKind = "pad" | "track" | "via" | "other";
-export type NetAnchor = { x: number; y: number; kind: NetKind; layer: number };
 export type NetSummary = {
   name: string;
   bounds: Bounds;
   primitiveCount: number;
-  anchors: NetAnchor[];
 };
 
 export const DEFAULT_NET_COLORS = [
@@ -25,6 +23,10 @@ export function netKind(kind: string | null | undefined): NetKind {
   return "other";
 }
 
+export function isCopperLayer(layer: number): boolean {
+  return layer === 1 || layer === 2 || layer === 12 || (layer >= 15 && layer <= 46);
+}
+
 function extendBounds(a: Bounds, b: Bounds): Bounds {
   return {
     minX: Math.min(a.minX, b.minX),
@@ -34,32 +36,20 @@ function extendBounds(a: Bounds, b: Bounds): Bounds {
   };
 }
 
-function batchAnchor(batch: DrawBatch): NetAnchor {
-  return {
-    x: (batch.bounds.minX + batch.bounds.maxX) / 2,
-    y: (batch.bounds.minY + batch.bounds.maxY) / 2,
-    kind: netKind(batch.kind),
-    layer: batch.layer,
-  };
-}
-
 export function collectNets(scene: Pick<Scene, "batches">): NetSummary[] {
   const byName = new Map<string, NetSummary>();
   for (const batch of scene.batches) {
     const name = batch.net?.trim();
-    if (!name) continue;
+    if (!name || !isCopperLayer(batch.layer)) continue;
     const previous = byName.get(name);
-    const anchor = batchAnchor(batch);
     if (previous) {
       previous.bounds = extendBounds(previous.bounds, batch.bounds);
       previous.primitiveCount += 1;
-      previous.anchors.push(anchor);
     } else {
       byName.set(name, {
         name,
         bounds: { ...batch.bounds },
         primitiveCount: 1,
-        anchors: [anchor],
       });
     }
   }

@@ -81,6 +81,18 @@ export interface TextLabel {
   rotation: number;
   align?: "left" | "center" | "right";
 }
+export interface NetLabel {
+  layer: number;
+  kind: string;
+  net: string | null;
+  padNumber: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  hole: boolean;
+}
 export interface Scene {
   id: string;
   name: string;
@@ -89,6 +101,7 @@ export interface Scene {
   layers: SceneLayer[];
   batches: DrawBatch[];
   texts: TextLabel[];
+  netLabels?: NetLabel[];
   objectCount: number;
   warnings: string[];
   metrics: {

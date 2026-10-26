@@ -1,7 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { Scene } from "@oshwhub/bridge";
 import { Skia } from "@shopify/react-native-skia";
 import { describe, expect, it, vi } from "vitest";
+import { labelScene } from "../../../tests/fixtures/pcb-labels";
+import { buildNetLabelPicture, type NetLabelOptions } from "./labels";
 import { buildNetworkOverlayPicture, buildPictures } from "./pictures";
 
 // Run the shipped CanvasKit backend, replacing only the native module entry point.
@@ -38,7 +40,195 @@ const scene: Scene = {
   metrics: { loadMs: 0, parseMs: 0, sceneMs: 0, recordCount: 3, historyCount: 1, downloadBytes: 0 },
 };
 
+function labelPixels(source: Scene, overrides: Partial<NetLabelOptions> = {}, artifact?: string) {
+  const data = Skia.Data.fromBytes(
+    readFileSync(new URL("./assets/NotoSansSC-Regular.ttf", import.meta.url)),
+  );
+  const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
+  if (!typeface) throw new Error("Bundled font unavailable");
+  const options = {
+    visibleLayers: new Set([1, 3]),
+    showLabels: true,
+    showPadLabels: true,
+    showTrackLabels: true,
+    showViaLabels: true,
+    viewport: { scale: 8, x: -80, y: 20 },
+    width: 560,
+    height: 480,
+    ...overrides,
+  };
+  const picture = buildNetLabelPicture(source, typeface, options);
+  if (!picture) {
+    typeface.dispose();
+    data.dispose();
+    return null;
+  }
+  const surface = Skia.Surface.Make(options.width, options.height);
+  if (!surface) throw new Error("CanvasKit software surface unavailable");
+  const canvas = surface.getCanvas();
+  canvas.clear(Skia.Color("transparent"));
+  canvas.translate(options.viewport.x, options.viewport.y);
+  canvas.scale(options.viewport.scale, options.viewport.scale);
+  canvas.drawPicture(picture);
+  const image = surface.makeImageSnapshot();
+  const pixels = image.readPixels();
+  if (!pixels) throw new Error("CanvasKit pixels unavailable");
+  if (artifact) {
+    const { pictures } = buildPictures(source, typeface);
+    canvas.clear(Skia.Color("#0b121a"));
+    for (const layer of pictures) canvas.drawPicture(layer.picture);
+    canvas.drawPicture(picture);
+    const preview = surface.makeImageSnapshot();
+    writeFileSync(artifact, preview.encodeToBytes());
+    preview.dispose();
+    for (const layer of pictures) layer.picture.dispose();
+  }
+  picture.dispose();
+  image.dispose();
+  surface.dispose();
+  typeface.dispose();
+  data.dispose();
+  return pixels;
+}
+
 describe("real CanvasKit picture recording", () => {
+  it("keeps each pad's number and network inside that pad at high zoom", () => {
+    const pixels = labelPixels(labelScene, {}, process.env.PCB_LABEL_ARTIFACT);
+    if (!pixels) throw new Error("Expected readable pad labels");
+    const regions = [
+      { left: 64, right: 160, top: 140, bottom: 220 },
+      { left: 256, right: 352, top: 140, bottom: 220 },
+      { left: 64, right: 160, top: 332, bottom: 412 },
+      { left: 256, right: 352, top: 332, bottom: 412 },
+    ];
+    const counts = [0, 0, 0, 0];
+    let outside = 0;
+    for (let y = 0; y < 480; y++) {
+      for (let x = 0; x < 560; x++) {
+        const i = (y * 560 + x) * 4;
+        if (pixels[i + 3] < 20) continue;
+        const region = regions.findIndex(
+          (r) => x >= r.left && x < r.right && y >= r.top && y < r.bottom,
+        );
+        if (region < 0) outside++;
+        else counts[region]++;
+      }
+    }
+    expect(outside, "Labels must not cover the gaps or silkscreen").toBe(0);
+    for (const count of counts)
+      expect(count, "Every pad must have its own label").toBeGreaterThan(20);
+  });
+
+  it.each([8, 80])("caps label glyphs at screen size and uses white text at %sx zoom", (scale) => {
+    const pad = labelScene.netLabels?.[0];
+    if (!pad) throw new Error("Missing test pad");
+    const pixels = labelPixels(
+      { ...labelScene, netLabels: [pad] },
+      {
+        viewport: { scale, x: 280 - pad.x * scale, y: 240 - pad.y * scale },
+      },
+    );
+    if (!pixels) throw new Error("Expected readable pad labels");
+    const runs: number[] = [];
+    let run = 0;
+    for (let y = 0; y < 480; y++) {
+      let ink = false;
+      for (let x = 0; x < 560; x++) {
+        const i = (y * 560 + x) * 4;
+        if (pixels[i + 3] < 20) continue;
+        ink = true;
+        expect(pixels[i]).toBe(255);
+        expect(pixels[i + 1]).toBe(255);
+        expect(pixels[i + 2]).toBe(255);
+      }
+      if (ink) run++;
+      else if (run) {
+        runs.push(run);
+        run = 0;
+      }
+    }
+    if (run) runs.push(run);
+    expect(runs).toHaveLength(2);
+    for (const height of runs) expect(height).toBeLessThanOrEqual(13);
+  });
+
+  it("hides labels below readable size, outside the viewport, and on disabled layers or categories", () => {
+    for (const options of [
+      { showLabels: false },
+      { showPadLabels: false },
+      { visibleLayers: new Set<number>() },
+      { viewport: { scale: 0.1, x: 0, y: 0 } },
+      { viewport: { scale: 8, x: -10000, y: 0 } },
+    ])
+      expect(labelPixels(labelScene, options)).toBeNull();
+  });
+
+  it("suppresses duplicate labels on coincident pads", () => {
+    const pad = labelScene.netLabels?.[0];
+    if (!pad) throw new Error("Missing test pad");
+    const single = labelPixels({ ...labelScene, netLabels: [pad] });
+    const duplicate = labelPixels({ ...labelScene, netLabels: [pad, { ...pad, net: "OTHER" }] });
+    expect(single).not.toBeNull();
+    expect(duplicate).toEqual(single);
+  });
+
+  it.each([
+    [1, 12],
+    [1, 47],
+  ])("keeps track text off drills with layers %s/%s and via labels off", (...layers) => {
+    const pad = labelScene.netLabels?.[0];
+    if (!pad) throw new Error("Missing test pad");
+    const pixels = labelPixels(
+      {
+        ...labelScene,
+        netLabels: [
+          { ...pad, kind: "VIA", layer: 12, hole: true, width: 8, height: 8, padNumber: "" },
+          { ...pad, kind: "LINE", net: "GND", width: 30, height: 3, padNumber: "" },
+        ],
+      },
+      { visibleLayers: new Set(layers), showViaLabels: false },
+    );
+    expect(pixels).toBeNull();
+  });
+
+  it("fits rotated pads along their long axis and keeps via labels beside the hole", () => {
+    const pad = labelScene.netLabels?.[0];
+    if (!pad) throw new Error("Missing test pad");
+    for (const label of [
+      { ...pad, rotation: 45 },
+      { ...pad, kind: "VIA", layer: 12, hole: true, padNumber: "", width: 4, height: 4 },
+    ]) {
+      const pixels = labelPixels(
+        { ...labelScene, netLabels: [label] },
+        { visibleLayers: new Set([1, 12]) },
+      );
+      if (!pixels) throw new Error("Expected readable label");
+      let ink = 0;
+      for (let y = 0; y < 480; y++)
+        for (let x = 0; x < 560; x++) {
+          if (pixels[(y * 560 + x) * 4 + 3] < 20) continue;
+          ink++;
+          if (label.kind === "VIA") expect(x).toBeGreaterThan(128);
+          else {
+            const localX = (x - 112 + (y - 180)) / Math.SQRT2;
+            const localY = (-(x - 112) + (y - 180)) / Math.SQRT2;
+            expect(Math.abs(localX)).toBeLessThan(48);
+            expect(Math.abs(localY)).toBeLessThan(40);
+          }
+        }
+      expect(ink).toBeGreaterThan(20);
+      expect(
+        labelPixels(
+          { ...labelScene, netLabels: [label] },
+          {
+            visibleLayers: new Set([1, 12]),
+            showPadLabels: false,
+            showViaLabels: false,
+          },
+        ),
+      ).toBeNull();
+    }
+  });
   it("keeps overlapping copper solid and reverse-winding holes empty", () => {
     const { pictures } = buildPictures(scene);
     const surface = Skia.Surface.Make(40, 30);
@@ -108,17 +298,13 @@ describe("real CanvasKit picture recording", () => {
             net: "GND",
             kind: "LINE",
           },
+          { ...scene.batches[0], layer: 47, net: "GND", kind: "VIA", path: "M8 8H16V16H8Z" },
         ],
       },
-      undefined,
       {
         highlighted: new Set(["GND"]),
-        visibleLayers: new Set([1]),
+        visibleLayers: new Set([1, 47]),
         colors: { GND: "#00ff00" },
-        showLabels: false,
-        showPadLabels: true,
-        showTrackLabels: true,
-        showViaLabels: true,
       },
     );
     expect(picture).not.toBeNull();
@@ -133,6 +319,8 @@ describe("real CanvasKit picture recording", () => {
     const pixel = (x: number, y: number) =>
       Array.from(pixels.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4));
     expect(pixel(12, 4)[1]).toBeGreaterThan(180);
+    expect(pixel(12, 2)).toEqual([0, 0, 0, 255]);
+    expect(pixel(12, 12)).toEqual([0, 0, 0, 255]);
     picture.dispose();
     image.dispose();
     surface.dispose();

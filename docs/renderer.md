@@ -134,6 +134,50 @@ errors remain directly visible. The dark canvas stays synchronized with the
 drill-mask color above; this UI change adds no grid, rendering passes, or blur to
 the drawing surface.
 
+## Networks and pad labels
+
+The reference is the PCB editing canvas in the installed 嘉立创EDA(专业版)
+V4.1.60: small white pad numbers and network names sit inside individual pads.
+This differs from its material-oriented “2D预览” window. See the professional
+[network display settings](https://prodocs.easyeda.com/en/pcb/settings-pcb/)
+and [network highlighting](https://prodocs.lceda.cn/cn/pcb/view-highlight/).
+
+Batches retain network and primitive kind when merging. Separate `netLabels`
+retain each pad's number, position, dimensions and rotation before batching loses
+individual object boundaries. Footprint labels use the same component transform
+and `PAD_NET` binding as copper. Schematic scenes emit an empty label list.
+
+Normal labels are white, fit their pad or straight track segment, and use 8–12
+logical-pixel fonts. Pad numbers and network names occupy separate rows. Labels
+below readable size, outside the viewport, on hidden layers, or colliding with
+other labels are omitted. Drilled pads and vias place text beside their copper;
+drill areas remain reserved even when via labels are disabled. Copper network
+highlighting preserves stroke width and excludes drill/mask drawings. Color
+controls affect highlighted geometry rather than ordinary text.
+
+Label pictures update with the viewport independently of the highlight picture
+and raster cache, so zooming does not reparse highlighted SVG paths. The network
+panel retains location, hover highlighting, category switches, preset colors,
+and H / Shift+H controls. Its counts represent copper draw batches.
+
+The following original two-resistor fixture is rendered with the actual CanvasKit
+backend at the same 8× scale. The upper copper batch deliberately contains two
+pads sharing `VCC+3.3V`. Tests check all four pad regions, screen font limits,
+rotation, collision avoidance, drill clearance, layer visibility and switches.
+
+Before:
+
+![Previous network labels](evidence/pcb2d-labels-before.png)
+
+After:
+
+![Individual pad numbers and fitted network names](evidence/pcb2d-labels-after.png)
+
+Custom polygon-pad interiors do not yet provide a safe text box, so their labels
+remain available through picking rather than being overlaid. Curved tracks only
+offer their longest flattened straight segment for labels. Native-device visual
+validation remains separate from CanvasKit and browser checks.
+
 ## Interaction raster cache
 
 Layer pictures retain the complete vector geometry. Replaying them on every

@@ -1011,6 +1011,7 @@ impl<'a> Builder<'a> {
             layers: layers.clone(),
             batches,
             texts: self.texts,
+            net_labels: Vec::new(),
             object_count: objects.len(),
             warnings,
             metrics,

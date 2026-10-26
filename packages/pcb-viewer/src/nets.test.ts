@@ -51,14 +51,13 @@ const scene: Scene = {
 };
 
 describe("PCB network summaries", () => {
-  it("deduplicates networks, unions bounds, and keeps label categories", () => {
+  it("deduplicates networks and unions copper bounds", () => {
     const nets = collectNets(scene);
     expect(nets.map((net) => net.name)).toEqual(["3V3", "GND"]);
     expect(nets[1]).toMatchObject({
       primitiveCount: 2,
       bounds: { minX: 0, minY: 0, maxX: 30, maxY: 20 },
     });
-    expect(nets[1].anchors.map((anchor) => anchor.kind)).toEqual(["track", "pad"]);
   });
 
   it("classifies professional-style pad, track, and via labels", () => {
@@ -72,5 +71,15 @@ describe("PCB network summaries", () => {
   it("assigns stable colors from the built-in palette", () => {
     expect(DEFAULT_NET_COLORS).toContain(defaultNetColor("GND"));
     expect(defaultNetColor("GND")).toBe(defaultNetColor("GND"));
+  });
+
+  it("ignores network metadata on drill and mask drawings", () => {
+    const nets = collectNets({
+      batches: [
+        { ...scene.batches[0], layer: 47, net: "DRILL" },
+        { ...scene.batches[0], layer: 5, net: "MASK" },
+      ],
+    });
+    expect(nets).toEqual([]);
   });
 });

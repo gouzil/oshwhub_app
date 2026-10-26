@@ -67,6 +67,20 @@ pub struct TextLabel {
     pub rotation: f64,
     pub align: String,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetLabel {
+    pub layer: i32,
+    pub kind: String,
+    pub net: Option<String>,
+    pub pad_number: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub rotation: f64,
+    pub hole: bool,
+}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Metrics {
@@ -87,6 +101,8 @@ pub struct Scene {
     pub layers: Vec<SceneLayer>,
     pub batches: Vec<DrawBatch>,
     pub texts: Vec<TextLabel>,
+    #[serde(default)]
+    pub net_labels: Vec<NetLabel>,
     pub object_count: usize,
     pub warnings: Vec<String>,
     pub metrics: Metrics,

@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { defaultFontSource } from "./fontSource";
+import { buildNetLabelPicture } from "./labels";
 import { collectNets, defaultNetColor, type NetSummary, nextNetColor } from "./nets";
 import {
   type BoardRaster,
@@ -100,10 +101,8 @@ export function PcbViewer({
   );
   // CanvasKit font.getTypeface() exposes a raw pointer; retain the directly loaded Typeface.
   const typeface =
-    useTypeface(
-      scene.texts.length || scene.batches.some((batch) => Boolean(batch.net)) ? fontSource : null,
-      onFontError,
-    ) ?? undefined;
+    useTypeface(scene.texts.length || scene.netLabels?.length ? fontSource : null, onFontError) ??
+    undefined;
   const [visible, setVisible] = useState(
     () => new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)),
   );
@@ -133,6 +132,7 @@ export function PcbViewer({
   const refinement = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const surface = useRef<ViewInstance>(null);
   const current = useRef<Viewport>({ scale: 1, x: 0, y: 0 });
+  const [labelView, setLabelView] = useState(current.current);
   const fitted = useRef<Viewport>({ scale: 1, x: 0, y: 0 });
   const dimensions = useRef(size);
   dimensions.current = size;
@@ -196,6 +196,7 @@ export function PcbViewer({
     (next: Viewport) => {
       current.current = next;
       camera.value = next;
+      setLabelView(next);
       refine();
     },
     [camera, refine],
@@ -261,18 +262,27 @@ export function PcbViewer({
   }, [highlightedNets, hoveredNet]);
   const networkOverlay = useMemo(
     () =>
-      buildNetworkOverlayPicture(scene, typeface, {
+      buildNetworkOverlayPicture(scene, {
         highlighted,
         visibleLayers: visible,
         colors: netColors,
+      }),
+    [highlighted, netColors, scene, visible],
+  );
+  const netLabelPicture = useMemo(
+    () =>
+      buildNetLabelPicture(scene, typeface, {
+        visibleLayers: visible,
         showLabels: showNetLabels,
         showPadLabels: showPadNetNames,
         showTrackLabels: showTrackNetNames,
         showViaLabels: showViaNetNames,
+        viewport: labelView,
+        width: size.width,
+        height: size.height,
       }),
     [
-      highlighted,
-      netColors,
+      labelView,
       scene,
       showNetLabels,
       showPadNetNames,
@@ -280,9 +290,10 @@ export function PcbViewer({
       showViaNetNames,
       typeface,
       visible,
+      size,
     ],
   );
-  useEffect(() => () => networkOverlay?.dispose(), [networkOverlay]);
+  // Canvas can retain picture handles past effect cleanup; release them when unreachable.
 
   const pictures = useMemo(
     () =>
@@ -545,10 +556,11 @@ export function PcbViewer({
                 ),
             )}
             {networkOverlay && <Picture picture={networkOverlay} />}
+            {netLabelPicture && <Picture picture={netLabelPicture} />}
           </Group>
         </Canvas>
       ),
-    [cache, matrix, networkOverlay],
+    [cache, matrix, networkOverlay, netLabelPicture],
   );
   const warnings = [
     ...scene.warnings,
@@ -820,7 +832,7 @@ export function PcbViewer({
                               {net.name}
                             </Text>
                             <Text style={styles.caption}>
-                              {net.primitiveCount} 个图元 · 点击定位并高亮
+                              {net.primitiveCount} 组图元 · 点击定位并高亮
                             </Text>
                           </View>
                         </Pressable>
