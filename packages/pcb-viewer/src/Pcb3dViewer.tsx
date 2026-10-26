@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { type Camera3d, fitCamera, orbitCamera, panCamera, zoomCamera } from "./camera3d";
 import { GlSurface } from "./GlSurface";
-import { identity, Renderer3d } from "./gl3d";
+import { identity, MAX_GPU_BYTES, Renderer3d } from "./gl3d";
 
 type Point = { x: number; y: number };
 type Progress = { loading: boolean; loaded: number; done: number; failed: number };
@@ -140,7 +140,7 @@ export function Pcb3dViewer({
         while (alive && index < keys.length) {
           const key = keys[index++];
           try {
-            if (drawing.bytes >= 64 * 1024 * 1024) throw new Error("三维缓存已达到上限。");
+            if (drawing.bytes >= MAX_GPU_BYTES) throw new Error("三维缓存已达到上限。");
             const model = await call<Model3d>({ command: "model3d", sceneId, key });
             if (!alive) return;
             if (model.key !== key) throw new Error("器件模型与当前请求不匹配。");

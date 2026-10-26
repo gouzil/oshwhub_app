@@ -3,6 +3,7 @@ import { type Camera3d, eyePosition, projection } from "./camera3d";
 import { decodeIndices, decodeMesh } from "./mesh3d";
 
 export const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+export const MAX_GPU_BYTES = 128 * 1024 * 1024;
 type Part = {
   buffer: WebGLBuffer;
   indices: WebGLBuffer | null;
@@ -184,8 +185,8 @@ export class Renderer3d {
       : undefined;
     if (existing) {
       const instanceBytes = instanced ? instances.length * 16 * 4 : 0;
-      if (this.bytes + instanceBytes > 64 * 1024 * 1024)
-        throw new Error("三维缓存已达到 64 MiB 上限，部分器件未加载。");
+      if (this.bytes + instanceBytes > MAX_GPU_BYTES)
+        throw new Error("三维缓存已达到 128 MiB 上限，部分器件未加载。");
       existing.instances.push(...poses);
       if (existing.instanceBuffer) this.uploadInstances(existing);
       this.bytes += instanceBytes;
@@ -200,8 +201,8 @@ export class Renderer3d {
       String(gl.getParameter(gl.VERSION)).startsWith("WebGL 2") ||
       gl.getExtension("OES_element_index_uint");
     if (indices && !uintIndices) {
-      if (this.bytes + indices.length * VERTEX_STRIDE + instanceBytes > 64 * 1024 * 1024)
-        throw new Error("当前设备展开三维网格需要超过 64 MiB，请使用支持索引绘制的设备。");
+      if (this.bytes + indices.length * VERTEX_STRIDE + instanceBytes > MAX_GPU_BYTES)
+        throw new Error("当前设备展开三维网格需要超过 128 MiB，请使用支持索引绘制的设备。");
       const expanded = new Uint8Array(indices.length * VERTEX_STRIDE);
       for (let i = 0; i < indices.length; i++)
         expanded.set(
@@ -212,8 +213,8 @@ export class Renderer3d {
       indices = null;
     }
     const bytes = data.byteLength + (indices?.byteLength ?? 0) + instanceBytes;
-    if (this.bytes + bytes > 64 * 1024 * 1024)
-      throw new Error("三维缓存已达到 64 MiB 上限，部分器件未加载。");
+    if (this.bytes + bytes > MAX_GPU_BYTES)
+      throw new Error("三维缓存已达到 128 MiB 上限，部分器件未加载。");
 
     const buffer = gl.createBuffer();
     const indexBuffer = indices ? gl.createBuffer() : null;

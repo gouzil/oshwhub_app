@@ -111,6 +111,36 @@ impl Binding {
     }
 }
 
+fn model_reference(key: &str) -> Result<(&str, Option<&str>)> {
+    let (component, path) = key
+        .split_once('|')
+        .map_or((key, None), |(id, path)| (id, Some(path)));
+    crate::api::validate_id(component)?;
+    if let Some(path) = path
+        && path != "user"
+    {
+        crate::api::validate_id(path)?;
+    }
+    Ok((component, path))
+}
+
+fn model_request(key: &str) -> Result<(String, Option<&str>)> {
+    let (component, path) = model_reference(key)?;
+    if path == Some("user") {
+        return Ok((
+            format!("https://pro.lceda.cn/api/components/{component}?uuid={component}"),
+            None,
+        ));
+    }
+    let url = match path {
+        Some(path) => format!(
+            "https://pro.lceda.cn/api/v5/components/{component}?uuid={component}&path={path}"
+        ),
+        None => format!("https://pro.lceda.cn/api/v5/components/{component}?uuid={component}"),
+    };
+    Ok((url, path))
+}
+
 pub fn binding(
     project: &Project,
     d: &Value,
@@ -137,10 +167,7 @@ pub fn binding(
     let Some(key) = attr("3D Model").map(str::trim).filter(|v| !v.is_empty()) else {
         return Ok(None);
     };
-    let parts: Vec<_> = key.split('|').collect();
-    if parts.len() > 2 || parts.iter().any(|id| crate::api::validate_id(id).is_err()) {
-        return Err(solid::invalid());
-    }
+    model_reference(key)?;
     let transform = ModelTransform::parse(attr("3D Model Transform").unwrap_or_default())?;
     let coordinate = |a: &str, b: &str| {
         d.get(a)
@@ -344,19 +371,7 @@ pub async fn load(
         return Err(AppError::new("invalid_request", "模型不属于当前 PCB"));
     }
     let start = Instant::now();
-    let (component, path) = key
-        .split_once('|')
-        .map_or((key, None), |(id, path)| (id, Some(path)));
-    crate::api::validate_id(component)?;
-    if let Some(path) = path {
-        crate::api::validate_id(path)?;
-    }
-    let metadata_url = match path {
-        Some(path) => format!(
-            "https://pro.lceda.cn/api/v5/components/{component}?uuid={component}&path={path}"
-        ),
-        None => format!("https://pro.lceda.cn/api/v5/components/{component}?uuid={component}"),
-    };
+    let (metadata_url, path) = model_request(key)?;
     let cached = cache()
         .lock()
         .map_err(|_| solid::invalid())?
@@ -540,6 +555,77 @@ mod tests {
             binding(&p, &d, &overrides, Transform::board(0., 0.))
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn user_library_model_references_preserve_their_path_when_binding() {
+        let d = serde_json::json!({
+            "x": 100., "y": 200., "layerId": 1,
+            "attrs": {
+                "Designator": "AFB1",
+                "3D Model": "58113d7c82f846a381a07583ea0be0ec|user",
+                "3D Model Transform": "62.992,31.496,31.496,0,0,0,0,0,0"
+            }
+        });
+        let found = binding(
+            &Project::default(),
+            &d,
+            &BTreeMap::new(),
+            Transform::board(0., 0.),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(found.key, "58113d7c82f846a381a07583ea0be0ec|user");
+        assert_eq!(found.title, "AFB1");
+    }
+
+    #[test]
+    fn model_references_allow_user_paths_but_still_validate_ids() {
+        let id = "58113d7c82f846a381a07583ea0be0ec";
+        assert_eq!(model_reference(id).unwrap(), (id, None));
+        let user = format!("{id}|user");
+        assert_eq!(model_reference(&user).unwrap(), (id, Some("user")));
+        let library = format!("{id}|0819f05c4eef4c71ace90d822a990e87");
+        assert_eq!(
+            model_reference(&library).unwrap(),
+            (id, Some("0819f05c4eef4c71ace90d822a990e87"))
+        );
+        assert!(model_reference("user").is_err());
+        for suffix in [
+            "",
+            "USER",
+            "other",
+            "../user",
+            "user|user",
+            "user?path=other",
+        ] {
+            assert!(model_reference(&format!("{id}|{suffix}")).is_err());
+        }
+    }
+
+    #[test]
+    fn metadata_requests_select_legacy_user_models_and_preserve_modern_paths() {
+        assert_eq!(
+            model_request("58113d7c82f846a381a07583ea0be0ec|user").unwrap(),
+            (
+                "https://pro.lceda.cn/api/components/58113d7c82f846a381a07583ea0be0ec?uuid=58113d7c82f846a381a07583ea0be0ec".into(),
+                None
+            )
+        );
+        assert_eq!(
+            model_request("0436eca5925c4476b8c12039190a48c8").unwrap(),
+            (
+                "https://pro.lceda.cn/api/v5/components/0436eca5925c4476b8c12039190a48c8?uuid=0436eca5925c4476b8c12039190a48c8".into(),
+                None
+            )
+        );
+        assert_eq!(
+            model_request("36a51122f27c49738f86b3bfa98863e0|0819f05c4eef4c71ace90d822a990e87").unwrap(),
+            (
+                "https://pro.lceda.cn/api/v5/components/36a51122f27c49738f86b3bfa98863e0?uuid=36a51122f27c49738f86b3bfa98863e0&path=0819f05c4eef4c71ace90d822a990e87".into(),
+                Some("0819f05c4eef4c71ace90d822a990e87")
+            )
         );
     }
 }

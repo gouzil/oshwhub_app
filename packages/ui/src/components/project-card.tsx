@@ -28,9 +28,9 @@ export function ProjectCard({
         {project.tags[0] && (
           <Badge
             variant="outline"
-            className="absolute bottom-2 left-2 max-w-[85%] rounded-[5px] bg-[#ffffffed] px-[7px] py-[3px]"
+            className="absolute bottom-2 left-2 max-w-[85%] rounded-[5px] bg-card/95 px-[7px] py-[3px]"
           >
-            <Text numberOfLines={1} className="text-[9px] text-[#355443]">
+            <Text numberOfLines={1} className="text-[9px] text-foreground">
               {project.tags[0]}
             </Text>
           </Badge>
@@ -44,8 +44,8 @@ export function ProjectCard({
           {avatar ? (
             <Image source={{ uri: avatar }} className="size-[18px] rounded-full bg-secondary" />
           ) : (
-            <View className="size-[18px] items-center justify-center rounded-full bg-[#e6eee8]">
-              <Text className="text-[9px] text-[#6a8c74]">
+            <View className="size-[18px] items-center justify-center rounded-full bg-muted">
+              <Text className="text-[9px] text-muted-foreground">
                 {project.author.slice(0, 1) || "创"}
               </Text>
             </View>
@@ -54,7 +54,7 @@ export function ProjectCard({
             {project.author || "开源创作者"}
           </Text>
         </View>
-        <Text numberOfLines={1} className="max-w-[48%] shrink text-[10px] text-[#819087]">
+        <Text numberOfLines={1} className="max-w-[48%] shrink text-[10px] text-muted-foreground">
           ♡ {project.likes.toLocaleString()}
         </Text>
       </View>

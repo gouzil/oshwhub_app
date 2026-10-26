@@ -75,6 +75,20 @@ it("packs mesh attributes before uploading them to keep large boards within the 
   expect(value.bytes).toBe(3 * 20);
 });
 
+it("allows large boards above 64 MiB but still bounds total GPU buffers", () => {
+  const mesh = {
+    data: Buffer.alloc(3 * 36).toString("base64"),
+    vertexCount: 3,
+    bounds: { min: [0, 0, 0], max: [1, 1, 0] },
+  };
+  const { value } = renderer();
+  value.bytes = 70 * 1024 * 1024;
+  value.add(mesh, [identity]);
+  expect(value.bytes).toBe(70 * 1024 * 1024 + 60);
+  value.bytes = 128 * 1024 * 1024;
+  expect(() => value.add(mesh, [identity])).toThrow("128 MiB");
+});
+
 it("keeps a reverse light for underside shading", () => {
   expect(fragmentShader).toContain("backDiffuse");
   expect(fragmentShader).toContain("max(dot(n, -light), 0.0)");
@@ -143,7 +157,7 @@ it("uses resized native pixel dimensions even when Expo's initial buffer propert
 });
 
 it("checks the fallback budget before allocating expanded triangle data", () => {
-  const count = 3_400_002;
+  const count = 6_800_001;
   const mesh = {
     data: Buffer.alloc(3 * 36).toString("base64"),
     vertexCount: 3,
@@ -153,8 +167,8 @@ it("checks the fallback budget before allocating expanded triangle data", () => 
   };
   const allocations: unknown[] = [];
   vi.stubGlobal(
-    "Float32Array",
-    new Proxy(Float32Array, {
+    "Uint8Array",
+    new Proxy(Uint8Array, {
       construct(target, args) {
         allocations.push(args[0]);
         return Reflect.construct(target, args);
@@ -163,7 +177,7 @@ it("checks the fallback budget before allocating expanded triangle data", () => 
   );
   try {
     const { value, gl } = renderer();
-    expect(() => value.add(mesh, [identity])).toThrow("64 MiB");
+    expect(() => value.add(mesh, [identity])).toThrow("128 MiB");
     expect(allocations).not.toContain(count * 20);
     expect(value.bytes).toBe(0);
     expect(gl.bufferData).not.toHaveBeenCalled();

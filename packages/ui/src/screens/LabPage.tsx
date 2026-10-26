@@ -20,7 +20,7 @@ export function LabPage({ onOpen, bottomInset }: { onOpen: () => void; bottomIns
       <Text className="text-[14px] leading-[25px] text-muted-foreground">
         在项目详情中选择板子，即可切换二维 / 三维，查看图层、拾取图元或旋转板体。
       </Text>
-      <Card className="mt-4 gap-[18px] rounded-[20px] bg-[#fbfdfb] p-6">
+      <Card className="mt-4 gap-[18px] rounded-[20px] bg-card p-6">
         <View className="h-[120px] items-center justify-center rounded-[14px] bg-secondary">
           <BoardMark />
         </View>
@@ -34,7 +34,7 @@ export function LabPage({ onOpen, bottomInset }: { onOpen: () => void; bottomIns
           一块用于演示交互的示例板，支持平移、缩放、图层切换与属性查看。
         </Text>
         <Button label="打开示例板" onPress={onOpen} />
-        <Text className="text-[11px] leading-[19px] text-[#99a39c]">
+        <Text className="text-[11px] leading-[19px] text-muted-foreground">
           示例由应用内置生成，不代表在线项目。
         </Text>
       </Card>

@@ -8,7 +8,7 @@ export function ErrorPanel({ error, retry }: { error: Error; retry: () => void }
   const details = error as Error & { code?: string; requestId?: string };
   return (
     <Card
-      className="my-5 items-center gap-3.5 rounded-2xl border-[#efe2dc] bg-[#fffaf7] p-6 shadow-none"
+      className="my-5 items-center gap-3.5 rounded-2xl border-border bg-card p-6 shadow-none"
       accessibilityRole="alert"
     >
       <Text className="text-center text-lg font-semibold">暂时无法加载</Text>
@@ -16,7 +16,7 @@ export function ErrorPanel({ error, retry }: { error: Error; retry: () => void }
         {error.message}
       </Text>
       {(details.code || details.requestId) && (
-        <Text selectable className="text-center text-[11px] leading-[18px] text-[#946a58]">
+        <Text selectable className="text-center text-[11px] leading-[18px] text-muted-foreground">
           {[details.code, details.requestId].filter(Boolean).join(" · ")}
         </Text>
       )}

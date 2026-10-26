@@ -5,13 +5,14 @@ import {
 } from "expo-glass-effect";
 import { useEffect, useState } from "react";
 import { AccessibilityInfo, View, type ViewProps } from "react-native";
-import { withUniwind } from "uniwind";
+import { useUniwind, withUniwind } from "uniwind";
 import { cn } from "./lib/utils";
 
 const available = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
 const GlassView = withUniwind(NativeGlassView);
 
 export function GlassSurface({ className, ...props }: ViewProps) {
+  const { theme } = useUniwind();
   const [reduceTransparency, setReduceTransparency] = useState(true);
   useEffect(() => {
     if (!available) return;
@@ -40,7 +41,7 @@ export function GlassSurface({ className, ...props }: ViewProps) {
       testID="navigation-glass"
       className={className}
       glassEffectStyle="clear"
-      colorScheme="light"
+      colorScheme={theme}
     />
   );
 }

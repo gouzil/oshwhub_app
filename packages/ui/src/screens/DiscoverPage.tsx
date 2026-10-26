@@ -91,7 +91,7 @@ export function DiscoverPage({
           containerClassName="flex-1"
           accessibilityLabel="搜索开源硬件项目"
           placeholder="搜索项目、开发板、灵感…"
-          placeholderTextColorClassName="accent-[#8e9993]"
+          placeholderTextColorClassName="accent-muted-foreground"
           defaultValue={latestDraft.current}
           onChangeText={changeDraft}
           onSubmitEditing={({ nativeEvent }) => {
@@ -126,7 +126,7 @@ export function DiscoverPage({
         </Text>
         <View className="flex-row flex-wrap items-center gap-2.5">
           {state.total > 0 && (
-            <Text className="text-[11px] text-[#8a978e]">
+            <Text className="text-[11px] text-muted-foreground">
               {state.total.toLocaleString()} 个项目
             </Text>
           )}

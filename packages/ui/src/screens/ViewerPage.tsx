@@ -41,9 +41,10 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
       setMode("pcb2d");
     }
   }, [route]);
+  const schematicMode = mode === "schematic";
   const command = useMemo(() => {
     if (route.demo) return DEMO_COMMAND;
-    if (mode === "schematic" && route.schematicDocumentId) {
+    if (schematicMode && route.schematicDocumentId) {
       return {
         command: "schematic" as const,
         projectId: route.projectId,
@@ -55,7 +56,7 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
       projectId: route.projectId,
       documentId: route.pcbDocumentId ?? route.schematicDocumentId ?? "",
     };
-  }, [mode, route]);
+  }, [schematicMode, route]);
   const { value: scene, loading, error, retry } = useCommand<Scene>(command);
   const items = useMemo(() => {
     const values: { value: ViewerMode; label: string; accessibilityLabel: string }[] = [];
@@ -104,7 +105,7 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
           disabled={loading || !scene}
           accessibilityLabel="PCB 查看模式"
           variant="dark"
-          className="shrink-0 gap-1 rounded-xl bg-[#14221e] p-1"
+          className="shrink-0 gap-1 rounded-xl bg-viewer p-1"
         />
       </View>
       {loading ? (

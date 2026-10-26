@@ -905,6 +905,17 @@ export function PcbViewer({
               selection &&
               selected && (
                 <>
+                  {selected.fields.map(([label, value], index) => (
+                    <Property
+                      key={`${index}-${label}`}
+                      label={label}
+                      value={value}
+                      compact={compact}
+                    />
+                  ))}
+                  {!selected.fields.length && (
+                    <Text style={styles.caption}>此对象未提供名称或参数。</Text>
+                  )}
                   {selection.net && (
                     <View style={styles.selectionNetActions}>
                       <Tool
@@ -927,17 +938,6 @@ export function PcbViewer({
                         }}
                       />
                     </View>
-                  )}
-                  {selected.fields.map(([label, value], index) => (
-                    <Property
-                      key={`${index}-${label}`}
-                      label={label}
-                      value={value}
-                      compact={compact}
-                    />
-                  ))}
-                  {!selected.fields.length && (
-                    <Text style={styles.caption}>此对象未提供名称或参数。</Text>
                   )}
                   <View style={styles.technicalToggle}>
                     <Tool

@@ -37,7 +37,7 @@ export function ExternalLink({ url, label }: { url: string; label: string }) {
       {error && (
         <Text
           accessibilityRole="alert"
-          className="text-center text-[11px] leading-[18px] text-[#946a58]"
+          className="text-center text-[11px] leading-[18px] text-destructive"
         >
           无法打开链接，请稍后重试。
         </Text>

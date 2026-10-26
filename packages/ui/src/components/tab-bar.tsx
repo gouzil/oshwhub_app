@@ -15,7 +15,7 @@ const trigger = cva("min-h-11 rounded-full px-4 shadow-none", {
   },
   compoundVariants: [
     { variant: "underline", selected: true, className: "border-primary bg-transparent" },
-    { variant: "dark", selected: true, className: "bg-[#234438]" },
+    { variant: "dark", selected: true, className: "bg-primary" },
   ],
 });
 
@@ -58,7 +58,8 @@ export function TabBar<T extends string>({
             className={cn(
               "text-sm text-muted-foreground",
               value === item.value && "font-semibold text-primary",
-              variant === "dark" && "text-[#d7e6df]",
+              variant === "dark" && "text-[#cbd5e1]",
+              variant === "dark" && value === item.value && "text-primary-foreground",
             )}
           >
             {item.label}

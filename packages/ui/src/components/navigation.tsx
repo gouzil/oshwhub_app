@@ -6,6 +6,7 @@ import {
   Platform,
   View,
 } from "react-native";
+import { useCSSVariable, useUniwind } from "uniwind";
 import { GlassSurface } from "../GlassSurface";
 import { cn } from "../lib/utils";
 import { NativeTabBar } from "../NativeTabBar";
@@ -14,11 +15,12 @@ import { useReducedMotion } from "../useReducedMotion";
 import { Button } from "./ui/button";
 import { Text } from "./ui/text";
 
-export type Tab = "discover" | "lab" | "about";
+export type Tab = "discover" | "lab" | "settings" | "about";
 
 const navigation: { id: Tab; label: string; symbol: string }[] = [
   { id: "discover", label: "发现", symbol: "safari" },
   { id: "lab", label: "PCB 实验室", symbol: "cpu" },
+  { id: "settings", label: "设置", symbol: "gearshape" },
   { id: "about", label: "关于", symbol: "info.circle" },
 ];
 
@@ -30,10 +32,14 @@ type NavigationProps = {
 };
 
 export function Navigation(props: NavigationProps) {
+  const tintColor = useCSSVariable("--color-primary") as string;
+  const { theme } = useUniwind();
   if (Platform.OS === "ios" && !props.desktop) {
     return (
       <NativeTabBar
         items={navigation}
+        tintColor={tintColor}
+        colorScheme={theme}
         selectedIndex={navigation.findIndex((item) => item.id === props.tab)}
         onSelect={({ nativeEvent }) => {
           const item = navigation[nativeEvent.index];
@@ -79,7 +85,7 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
       className={
         desktop
           ? "mt-11 gap-2"
-          : "w-full max-w-[480px] flex-row gap-1 rounded-[36px] p-1.5 shadow-[0_8px_32px_rgba(31,52,44,0.12)]"
+          : "w-full max-w-[480px] flex-row gap-1 rounded-[36px] p-1.5 shadow-[0_8px_32px_rgba(32,45,64,0.12)]"
       }
       accessibilityRole="tablist"
       onLayout={onLayout}
@@ -91,7 +97,7 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
           pointerEvents="none"
           aria-hidden
           accessibilityElementsHidden
-          className="absolute top-0 left-0 border-[0.5px] border-[#ffffffc7] bg-[#ffffff80] shadow-[0_2px_6px_rgba(31,52,44,0.06)] web:bg-white/[0.18] web:bg-[linear-gradient(150deg,rgba(255,255,255,0.7),rgba(255,255,255,0.12))] web:[transition:left_320ms_cubic-bezier(0.2,0.8,0.2,1),top_320ms_cubic-bezier(0.2,0.8,0.2,1)] web:motion-reduce:transition-none! web:[@media(prefers-reduced-transparency:reduce)]:bg-[#e6eeea]! web:[@media(prefers-reduced-transparency:reduce)]:bg-none!"
+          className="absolute top-0 left-0 border-[0.5px] border-[#ffffffc7] bg-[#ffffff80] dark:border-border dark:bg-secondary shadow-[0_2px_6px_rgba(32,45,64,0.06)] web:bg-white/[0.18] web:bg-[linear-gradient(150deg,rgba(255,255,255,0.7),rgba(255,255,255,0.12))] dark:web:bg-secondary dark:web:bg-none web:[transition:left_320ms_cubic-bezier(0.2,0.8,0.2,1),top_320ms_cubic-bezier(0.2,0.8,0.2,1)] web:motion-reduce:transition-none! web:[@media(prefers-reduced-transparency:reduce)]:bg-secondary! web:[@media(prefers-reduced-transparency:reduce)]:bg-none!"
           style={{
             width: bounds.width,
             height: bounds.height,
@@ -115,7 +121,7 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
             setLayouts((previous) => ({ ...previous, [item.id]: layout }))
           }
           className={cn(
-            "active:scale-[0.96] web:whitespace-normal web:transition-none web:focus-visible:outline-2 web:focus-visible:outline-offset-[3px] web:focus-visible:outline-[#15964a] web:focus-visible:ring-0",
+            "active:scale-[0.96] web:whitespace-normal web:transition-none web:focus-visible:outline-2 web:focus-visible:outline-offset-[3px] web:focus-visible:outline-ring web:focus-visible:ring-0",
             desktop
               ? "min-h-[50px] justify-start gap-3 rounded-[25px] px-3 py-2.5"
               : "min-h-14 flex-1 shrink flex-col gap-0.5 rounded-[28px] px-1 py-1",
@@ -123,12 +129,12 @@ function GlassNavigation({ tab, navigate, desktop = false, onLayout }: Navigatio
         >
           <NavigationIcon
             kind={item.symbol}
-            strokeClassName={tab === item.id ? "border-primary" : "border-[#53645c]"}
-            fillClassName={tab === item.id ? "bg-primary" : "bg-[#53645c]"}
+            strokeClassName={tab === item.id ? "border-primary" : "border-muted-foreground"}
+            fillClassName={tab === item.id ? "bg-primary" : "bg-muted-foreground"}
           />
           <Text
             className={cn(
-              "shrink font-medium text-[#4b5f52] group-active:no-underline web:hover:no-underline web:group-hover:no-underline",
+              "shrink font-medium text-muted-foreground group-active:no-underline web:hover:no-underline web:group-hover:no-underline",
               desktop ? "text-[14px]" : "text-[12px]",
               tab === item.id && "font-semibold text-primary",
             )}

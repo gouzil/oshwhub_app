@@ -39,6 +39,7 @@ export { AboutPage } from "./screens/AboutPage";
 export { DiscoverPage } from "./screens/DiscoverPage";
 export { LabPage } from "./screens/LabPage";
 export { ProjectPage } from "./screens/ProjectPage";
+export { SettingsPage } from "./screens/SettingsPage";
 export { ViewerPage, type ViewerRoute } from "./screens/ViewerPage";
-export { color } from "./theme";
+export { type ThemeColor, themeColors } from "./theme";
 export { useReducedMotion } from "./useReducedMotion";

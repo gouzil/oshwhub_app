@@ -9,7 +9,7 @@ export function AboutPage({ bottomInset }: { bottomInset: number }) {
       contentContainerStyle={{ paddingBottom: 28 + bottomInset }}
     >
       <View className="mt-5 mb-2.5 size-[58px] items-center justify-center rounded-[18px] bg-primary">
-        <Text className="text-[40px] text-white">▦</Text>
+        <Text className="text-[40px] text-primary-foreground">▦</Text>
       </View>
       <Text className="text-[28px] leading-[37px] font-bold tracking-[-0.7px] text-foreground">
         OSHWHub
@@ -32,7 +32,7 @@ export function AboutPage({ bottomInset }: { bottomInset: number }) {
         </Text>
         <ExternalLink url="https://github.com/gouzil/oshwhub_app" label="查看项目源码" />
       </View>
-      <Text className="text-[11px] leading-[19px] text-[#99a39c]">
+      <Text className="text-[11px] leading-[19px] text-muted-foreground">
         v0.1.0 · 为每一位硬件创造者而做
       </Text>
     </ScrollView>
