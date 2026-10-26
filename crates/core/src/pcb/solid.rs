@@ -15,9 +15,10 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 pub const MM: f64 = 0.0254;
-pub const MAX_VERTICES: usize = 1_500_000;
-const MAX_INDICES: usize = 6_000_000;
-const MAX_MESH_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_VERTICES: usize = 3_000_000;
+const MAX_INDICES: usize = 8_000_000;
+// Base64 expands these bytes by 4/3; desktop replies remain bounded at 256 MiB.
+const MAX_MESH_BYTES: usize = 128 * 1024 * 1024;
 const MAX_SURFACE_POINTS: usize = 2_000_000;
 
 pub fn invalid() -> AppError {
@@ -680,7 +681,7 @@ mod tests {
     #[test]
     fn output_index_budget_still_rejects_excess_geometry() {
         let mut mesh = MeshBuilder::new();
-        mesh.mesh.indices.resize(6_000_000, 0);
+        mesh.mesh.indices.resize(8_000_000, 0);
         let error = mesh
             .triangle(
                 [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
@@ -689,14 +690,29 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error.code, "pcb_3d_limit");
+        assert!(error.message.contains("网格索引"));
         assert!(mesh.mesh.vertices.is_empty());
+    }
+
+    #[test]
+    fn supported_mesh_counts_can_exceed_the_previous_byte_budget() {
+        let mut mesh = MeshBuilder::new();
+        mesh.mesh.vertices.resize(1_400_000 * 9, 0.);
+        mesh.mesh.indices.resize(4_177_215, 0);
+        mesh.triangle(
+            [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
+            None,
+            [0., 1., 0.],
+        )
+        .unwrap();
+        assert_eq!(mesh.mesh.indices.len(), 4_177_218);
     }
 
     #[test]
     fn output_byte_budget_applies_even_below_both_count_limits() {
         let mut mesh = MeshBuilder::new();
-        mesh.mesh.vertices.resize(1_400_000 * 9, 0.);
-        mesh.mesh.indices.resize(4_177_215, 0);
+        mesh.mesh.vertices.resize(2_900_000 * 9, 0.);
+        mesh.mesh.indices.resize(7_454_430, 0);
         let error = mesh
             .triangle(
                 [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]],
@@ -705,7 +721,8 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error.code, "pcb_3d_limit");
-        assert_eq!(mesh.mesh.indices.len(), 4_177_215);
+        assert!(error.message.contains("网格内存"));
+        assert_eq!(mesh.mesh.indices.len(), 7_454_430);
     }
 
     #[test]
