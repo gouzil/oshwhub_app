@@ -105,7 +105,7 @@ export function ViewerPage({ route, onBack }: { route: ViewerRoute; onBack: () =
           disabled={loading || !scene}
           accessibilityLabel="PCB 查看模式"
           variant="dark"
-          className="shrink-0 gap-1 rounded-xl bg-[#14221e] p-1"
+          className="shrink-0 gap-1 rounded-xl bg-viewer p-1"
         />
       </View>
       {loading ? (

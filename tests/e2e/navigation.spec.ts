@@ -53,7 +53,7 @@ test("glass navigation switches pages and leaves page endings reachable", async 
     expect(bounds.y + bounds.height).toBeLessThan(page.viewportSize()?.height ?? 0);
     expect(bounds.width).toBeLessThanOrEqual(480);
   }
-  for (const label of ["PCB 实验室", "关于", "发现"]) {
+  for (const label of ["PCB 实验室", "设置", "关于", "发现"]) {
     const tab = navigation.getByRole("tab", { name: label, exact: true });
     await tab.click();
     await expect(tab).toHaveAttribute("aria-selected", "true");
@@ -109,7 +109,10 @@ test("glass navigation switches pages and leaves page endings reachable", async 
   await page.screenshot({ path: test.info().outputPath("navigation-lab.png") });
 });
 
-test("reduced transparency uses an opaque navigation surface", async ({ page, browserName }) => {
+test("reduced transparency uses an opaque navigation surface in both appearances", async ({
+  page,
+  browserName,
+}) => {
   test.skip(
     browserName !== "chromium",
     "Chromium exposes reduced-transparency emulation through CDP",
@@ -129,15 +132,30 @@ test("reduced transparency uses an opaque navigation surface", async ({ page, br
         return { filter: style.backdropFilter, background: style.backgroundColor };
       }),
     )
-    .toEqual({ filter: "none", background: "rgb(246, 249, 247)" });
+    .toEqual({ filter: "none", background: "rgb(245, 246, 250)" });
   await navigation.getByRole("tab", { name: "PCB 实验室", exact: true }).click();
   await expect(page.getByRole("button", { name: "打开示例板", exact: true })).toBeAttached();
   const lens = navigation.getByTestId("navigation-lens");
-  await expect(lens).toHaveCSS("background-color", "rgb(230, 238, 234)");
+  await expect(lens).toHaveCSS("background-color", "rgb(237, 243, 255)");
   // With reduced motion the selected lens must settle without a spring running afterward.
   const selected = navigation.getByRole("tab", { name: "PCB 实验室", exact: true });
   const activeBounds = await lens.boundingBox();
   const selectedBounds = await selected.boundingBox();
-  expect(activeBounds?.x).toBeCloseTo(selectedBounds?.x ?? Infinity, 0);
-  expect(activeBounds?.y).toBeCloseTo(selectedBounds?.y ?? Infinity, 0);
+  // React Native Web measures layout with integer offsetLeft / offsetTop values.
+  expect(Math.abs((activeBounds?.x ?? Infinity) - (selectedBounds?.x ?? 0))).toBeLessThanOrEqual(
+    0.5,
+  );
+  expect(Math.abs((activeBounds?.y ?? Infinity) - (selectedBounds?.y ?? 0))).toBeLessThanOrEqual(
+    0.5,
+  );
+  await session.send("Emulation.setEmulatedMedia", {
+    features: [
+      { name: "prefers-reduced-transparency", value: "reduce" },
+      { name: "prefers-color-scheme", value: "dark" },
+      { name: "prefers-reduced-motion", value: "reduce" },
+    ],
+  });
+  await expect(navigation).toHaveCSS("background-color", "rgb(21, 30, 44)");
+  await expect(navigation).toHaveCSS("backdrop-filter", "none");
+  await expect(lens).toHaveCSS("background-color", "rgb(29, 45, 75)");
 });

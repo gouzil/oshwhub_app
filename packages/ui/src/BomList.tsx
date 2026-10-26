@@ -41,8 +41,8 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
         className={cn(
           wide
             ? "flex-row border-b border-border"
-            : "gap-2.5 rounded-[10px] border border-border bg-white p-3.5",
-          wide && row % 2 === 1 && "bg-[#f7faf8]",
+            : "gap-2.5 rounded-[10px] border border-border bg-card p-3.5",
+          wide && row % 2 === 1 && "bg-canvas",
         )}
       >
         <Text
@@ -155,11 +155,11 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
             >
               <View
                 role={Platform.OS === "web" ? "row" : undefined}
-                className="flex-row border-b border-border bg-[#edf4ef]"
+                className="flex-row border-b border-border bg-surface"
               >
                 <Text
                   role={Platform.OS === "web" ? "columnheader" : undefined}
-                  className="w-12 shrink-0 px-3 py-3.5 text-[12px] leading-[22px] font-semibold text-[#42574b]"
+                  className="w-12 shrink-0 px-3 py-3.5 text-[12px] leading-[22px] font-semibold text-foreground"
                 >
                   序号
                 </Text>
@@ -168,7 +168,7 @@ export function BomList({ items, wide }: { items: BomItem[]; wide: boolean }) {
                     key={column.key}
                     role={Platform.OS === "web" ? "columnheader" : undefined}
                     className={cn(
-                      "shrink-0 px-3 py-3.5 text-[12px] leading-[22px] font-semibold text-[#42574b]",
+                      "shrink-0 px-3 py-3.5 text-[12px] leading-[22px] font-semibold text-foreground",
                       column.className,
                     )}
                   >

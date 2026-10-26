@@ -15,6 +15,6 @@
     @apply [-webkit-tap-highlight-color:transparent];
   }
   :focus-visible {
-    @apply outline-2 outline-offset-[3px] outline-[#15964a];
+    @apply outline-2 outline-offset-[3px] outline-ring;
   }
 }

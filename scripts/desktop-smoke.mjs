@@ -61,7 +61,7 @@ try {
   assert.equal(health.response.data.protocol, 1);
   await page.getByRole("tab", { name: "PCB 实验室", exact: true }).click();
   const openDemo = page.getByRole("button", { name: "打开示例板", exact: true });
-  await expect(openDemo).toHaveCSS("background-color", "rgb(7, 132, 93)");
+  await expect(openDemo).toHaveCSS("background-color", "rgb(44, 101, 232)");
   assert.ok((await openDemo.boundingBox()).height >= 44);
   await page.screenshot({ path: path.join(output, "lab.png") });
   await openDemo.click();
@@ -80,7 +80,7 @@ try {
   );
   await expect(page.getByRole("tab", { name: "三维模式", exact: true })).toHaveCSS(
     "background-color",
-    "rgb(35, 68, 56)",
+    "rgb(44, 101, 232)",
   );
   await expect(page.getByRole("tab", { name: "二维模式", exact: true })).toHaveCSS(
     "background-color",

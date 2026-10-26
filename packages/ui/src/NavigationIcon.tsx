@@ -15,7 +15,11 @@ export function NavigationIcon({
       <View
         className={cn(
           "absolute border-[1.7px]",
-          kind === "cpu" ? "inset-1 rounded-[4px]" : "inset-[1px] rounded-[12px]",
+          kind === "cpu"
+            ? "inset-1 rounded-[4px]"
+            : kind === "gearshape"
+              ? "inset-[4px] rounded-full"
+              : "inset-[1px] rounded-[12px]",
           strokeClassName,
         )}
       />
@@ -65,6 +69,27 @@ export function NavigationIcon({
                 )}
               />
             </View>
+          ))}
+        </>
+      ) : kind === "gearshape" ? (
+        <>
+          <View
+            className={cn("absolute inset-[9px] rounded-full border-[1.7px]", strokeClassName)}
+          />
+          {[
+            "top-0 left-[10px] h-[5px] w-1",
+            "bottom-0 left-[10px] h-[5px] w-1",
+            "left-0 top-[10px] h-1 w-[5px]",
+            "right-0 top-[10px] h-1 w-[5px]",
+            "top-[3px] left-[3px] size-1 rotate-45",
+            "top-[3px] right-[3px] size-1 rotate-45",
+            "bottom-[3px] left-[3px] size-1 rotate-45",
+            "bottom-[3px] right-[3px] size-1 rotate-45",
+          ].map((position) => (
+            <View
+              key={position}
+              className={cn("absolute rounded-[1px]", position, fillClassName)}
+            />
           ))}
         </>
       ) : (

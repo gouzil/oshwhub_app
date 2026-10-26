@@ -54,7 +54,7 @@ export function RemoteImage({
   return (
     <View
       onLayout={(event) => setWidth(Math.round(event.nativeEvent.layout.width))}
-      className={cn("w-full overflow-hidden rounded-[10px] bg-[#f5f8f5]", className)}
+      className={cn("w-full overflow-hidden rounded-[10px] bg-canvas", className)}
       style={[{ aspectRatio: ratio }, style]}
     >
       {failed ? (

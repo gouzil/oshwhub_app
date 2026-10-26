@@ -6,7 +6,7 @@
     "version": "0.1.0",
     "scheme": "oshwhub",
     "orientation": "default",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": { "supportsTablet": true, "bundleIdentifier": "com.gouzil.oshwhub" },
     "android": { "package": "com.gouzil.oshwhub" },
