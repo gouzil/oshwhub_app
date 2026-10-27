@@ -99,7 +99,7 @@ export const scene: Scene = {
   batches: [
     {
       layer: 1,
-      path: "M10 10H110V70H10Z M36 26V44H54V26Z",
+      path: "M10 10H110V70H10Z M36 26V44H54V26Z M20 50V62H40V50Z",
       fill: true,
       width: 0,
       bounds: { minX: 10, minY: 10, maxX: 110, maxY: 70 },
@@ -304,7 +304,7 @@ export const test = base.extend<{
             };
             break;
           }
-          const top = command.layers?.includes(1) ?? true;
+          const top = command.activeLayer !== 2 && (command.layers?.includes(1) ?? true);
           const result: PickResult = {
             id: top ? "self-top-pad" : "self-bottom-pad",
             kind: "焊盘",

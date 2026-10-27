@@ -48,10 +48,12 @@ export function canvasColors(png: Buffer) {
   }
   const counts = { copper: 0, bottom: 0, chinese: 0 };
   for (let i = 0; i < pixels.length; i += channels) {
+    // The floating red/blue side legend is UI rather than board geometry.
+    if (Math.floor(i / stride) < 80 && (i / channels) % width > width - 180) continue;
     const [red, green, blue] = pixels.subarray(i, i + 3);
     // Allow CanvasKit's display-color-space conversion while distinguishing all fixture layers.
-    if (red > 180 && red > green * 1.7 && green > 40 && blue < 160) counts.copper++;
-    if (green > 130 && green > red * 1.8 && green > blue * 1.15) counts.bottom++;
+    if (red > 60 && red > green * 2 && red > blue * 2) counts.copper++;
+    if (blue > 60 && blue > red * 2 && blue > green * 2) counts.bottom++;
     if (red > 220 && green > 220 && blue > 190) counts.chinese++;
   }
   return counts;

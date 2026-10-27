@@ -26,6 +26,7 @@ import {
 import { useDerivedValue, useSharedValue } from "react-native-reanimated";
 import { defaultFontSource } from "./fontSource";
 import { buildNetLabelPicture } from "./labels";
+import { type BoardSide, pcbDisplayLayers } from "./layers";
 import { collectNets, defaultNetColor, type NetSummary, nextNetColor } from "./nets";
 import {
   type BoardRaster,
@@ -65,6 +66,7 @@ type RasterCache = {
   pictures: LayerPicture[];
   base: BoardRaster;
   detail: BoardRaster | null;
+  activeLayer?: BoardSide;
 };
 type Panel = "layers" | "nets" | "info" | "selection" | null;
 const touchPoints = (event: GestureResponderEvent): Point[] =>
@@ -106,6 +108,17 @@ export function PcbViewer({
   const [visible, setVisible] = useState(
     () => new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)),
   );
+  const defaultSide: BoardSide =
+    scene.layers.some((layer) => layer.id === 2 && layer.visible) &&
+    !scene.layers.some((layer) => layer.id === 1 && layer.visible)
+      ? 2
+      : 1;
+  const [activeSide, setActiveSide] = useState<BoardSide>(defaultSide);
+  const activeLayer = variant === "pcb" ? activeSide : undefined;
+  const displayLayers = useMemo(
+    () => (variant === "pcb" ? pcbDisplayLayers(scene.layers) : scene.layers),
+    [scene.layers, variant],
+  );
   const [selection, setSelection] = useState<PickResult | null>(null);
   const [hoveredNet, setHoveredNet] = useState<string | null>(null);
   const [highlightedNets, setHighlightedNets] = useState<Set<string>>(() => new Set());
@@ -119,10 +132,10 @@ export function PcbViewer({
   const [technical, setTechnical] = useState(false);
   const layers = useMemo(
     () =>
-      scene.layers
+      displayLayers
         .slice()
         .sort((a, b) => Number(b.visible) - Number(a.visible) || a.order - b.order),
-    [scene.layers],
+    [displayLayers],
   );
   const [pickError, setPickError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
@@ -138,6 +151,8 @@ export function PcbViewer({
   dimensions.current = size;
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const activeLayerRef = useRef(activeLayer);
+  activeLayerRef.current = activeLayer;
   const gesture = useRef<Gesture | null>(null);
   const pickVersion = useRef(0);
   const hoverPoint = useRef<Point | null>(null);
@@ -180,7 +195,7 @@ export function PcbViewer({
       )
         return;
       try {
-        const next = { ...source, detail: rasterize(source.pictures, plan) };
+        const next = { ...source, detail: rasterize(source.pictures, plan, source.activeLayer) };
         cacheRef.current = next;
         setCache(next);
         setRasterWarning(null);
@@ -230,7 +245,7 @@ export function PcbViewer({
     setRenderError(null);
     if (scene.texts.length && !typeface) return;
     try {
-      const result = buildPictures(scene, typeface);
+      const result = buildPictures({ ...scene, layers: displayLayers }, typeface);
       // Canvas can retain these handles past effect cleanup; Skia releases them when unreachable.
       setCompiled({ scene, ...result });
     } catch (error) {
@@ -239,6 +254,7 @@ export function PcbViewer({
     if (sceneRef.current !== scene) {
       sceneRef.current = scene;
       setVisible(new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)));
+      setActiveSide(defaultSide);
       setSelection(null);
       setHoveredNet(null);
       setHighlightedNets(new Set());
@@ -252,7 +268,7 @@ export function PcbViewer({
     return () => {
       pickVersion.current += 1;
     };
-  }, [scene, typeface, viewerLabel]);
+  }, [scene, typeface, viewerLabel, displayLayers, defaultSide]);
 
   const nets = useMemo(() => collectNets(scene), [scene]);
   const highlighted = useMemo(() => {
@@ -266,8 +282,9 @@ export function PcbViewer({
         highlighted,
         visibleLayers: visible,
         colors: netColors,
+        activeLayer,
       }),
-    [highlighted, netColors, scene, visible],
+    [highlighted, netColors, scene, visible, activeLayer],
   );
   const netLabelPicture = useMemo(
     () =>
@@ -280,6 +297,7 @@ export function PcbViewer({
         viewport: labelView,
         width: size.width,
         height: size.height,
+        activeLayer,
       }),
     [
       labelView,
@@ -291,6 +309,7 @@ export function PcbViewer({
       typeface,
       visible,
       size,
+      activeLayer,
     ],
   );
   // Canvas can retain picture handles past effect cleanup; release them when unreachable.
@@ -319,12 +338,12 @@ export function PcbViewer({
       );
       const previous = cacheRef.current;
       // Replace both resolutions together so toggling a layer never falls back to a blurry frame.
-      const base = rasterize(pictures, plan);
+      const base = rasterize(pictures, plan, activeLayer);
       let detail: BoardRaster | null = null;
       let warning: string | null = null;
       if (previous?.scene === scene && previous.detail) {
         try {
-          detail = rasterize(pictures, previous.detail);
+          detail = rasterize(pictures, previous.detail, activeLayer);
         } catch (error) {
           const message =
             error instanceof Error ? error.message : `${viewerLabel} 细节缓存构建失败。`;
@@ -332,7 +351,7 @@ export function PcbViewer({
           warning = `${message} 当前保留全板预览，可继续操作。`;
         }
       }
-      const next = { scene, pictures, base, detail };
+      const next = { scene, pictures, base, detail, activeLayer };
       cacheRef.current = next;
       setCache(next);
       setRenderError(null);
@@ -342,7 +361,7 @@ export function PcbViewer({
       setRenderError(error instanceof Error ? error.message : `${viewerLabel} 绘制缓存构建失败。`);
     }
     return cancelRefinement;
-  }, [pictures, scene, refine, cancelRefinement, viewerLabel]);
+  }, [pictures, scene, refine, cancelRefinement, viewerLabel, activeLayer]);
 
   useEffect(() => {
     if (!size.width || !size.height) return;
@@ -362,6 +381,7 @@ export function PcbViewer({
           y: world.y,
           tolerance: 8 / current.current.scale,
           layers: [...visibleRef.current],
+          activeLayer: activeLayerRef.current,
         });
         if (version !== pickVersion.current) return;
         const selected = result && visibleRef.current.has(result.layer) ? result : null;
@@ -568,10 +588,20 @@ export function PcbViewer({
     ...(rasterWarning ? [rasterWarning] : []),
   ];
   const selected = selection ? describeSelection(selection) : null;
-  const selectionLayer = scene.layers.find((layer) => layer.id === selection?.layer);
+  const selectionLayer = displayLayers.find((layer) => layer.id === selection?.layer);
   const closeSelection = () => {
     setSelection(null);
     setPanel(null);
+    onPick?.(null);
+  };
+  const changeSide = (side: BoardSide) => {
+    setActiveSide(side);
+    setVisible((previous) => new Set(previous).add(side));
+    pickVersion.current += 1;
+    hoverPoint.current = null;
+    setHoveredNet(null);
+    setSelection(null);
+    setPanel((previous) => (previous === "selection" ? null : previous));
     onPick?.(null);
   };
   return (
@@ -648,12 +678,46 @@ export function PcbViewer({
           />
         </View>
       </View>
+      {variant === "pcb" && (
+        <View
+          style={[styles.orientation, styles.sideTools]}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="当前查看层"
+        >
+          {([1, 2] as const)
+            .filter((side) => scene.layers.some((layer) => layer.id === side))
+            .map((side) => (
+              <Pressable
+                key={side}
+                accessibilityRole="radio"
+                accessibilityLabel={side === 1 ? "查看顶层" : "查看底层"}
+                accessibilityState={{ checked: activeSide === side }}
+                aria-checked={activeSide === side}
+                onPress={() => changeSide(side)}
+                style={({ pressed }) => [
+                  styles.sideTool,
+                  activeSide === side && styles.toolActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View
+                  style={[styles.dot, { backgroundColor: side === 1 ? "#ff0000" : "#0000ff" }]}
+                />
+                <Text style={[styles.toolText, activeSide === side && styles.activeText]}>
+                  {side === 1 ? "顶层" : "底层"}
+                </Text>
+              </Pressable>
+            ))}
+        </View>
+      )}
       {!compact && (
         <>
-          <View style={styles.orientation} pointerEvents="none">
-            <Text style={styles.orientationTitle}>俯视</Text>
-            <Text style={styles.caption}>二维 {viewerLabel}</Text>
-          </View>
+          {variant === "schematic" && (
+            <View style={styles.orientation} pointerEvents="none">
+              <Text style={styles.orientationTitle}>俯视</Text>
+              <Text style={styles.caption}>二维 {viewerLabel}</Text>
+            </View>
+          )}
           <View style={styles.hint} pointerEvents="none">
             <Text style={styles.hintText}>
               拖动平移 · 双指 / 滚轮缩放 · 悬停高亮网络 · H / Shift+H
@@ -753,13 +817,16 @@ export function PcbViewer({
                   aria-checked={visible.has(layer.id)}
                   accessibilityLabel={layer.name}
                   onPress={() => {
-                    setVisible((previous) => {
-                      const next = new Set(previous);
-                      if (next.has(layer.id)) next.delete(layer.id);
-                      else next.add(layer.id);
-                      return next;
-                    });
+                    const next = new Set(visible);
+                    if (next.has(layer.id)) next.delete(layer.id);
+                    else next.add(layer.id);
+                    setVisible(next);
+                    const other = activeSide === 1 ? 2 : 1;
+                    if (layer.id === activeLayer && !next.has(layer.id) && next.has(other))
+                      setActiveSide(other);
                     pickVersion.current += 1;
+                    hoverPoint.current = null;
+                    setHoveredNet(null);
                     setSelection(null);
                     onPick?.(null);
                   }}
@@ -1082,6 +1149,15 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   orientationTitle: { color: "#e1e8f0", fontSize: 13, fontWeight: "600" },
+  sideTools: { flexDirection: "row", padding: 3, gap: 2 },
+  sideTool: {
+    minHeight: 44,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 9,
+  },
   caption: { color: "#9eadbd", fontSize: 11, lineHeight: 18 },
   status: { position: "absolute", left: 16, bottom: 16, gap: 1 },
   hint: { position: "absolute", bottom: 80, left: 12, right: 12, alignItems: "center" },

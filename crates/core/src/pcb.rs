@@ -270,6 +270,7 @@ pub fn pick(
     y: f64,
     tolerance: f64,
     layers: Option<&[i32]>,
+    active_layer: Option<i32>,
 ) -> Result<Option<PickResult>> {
-    scene::pick(scene_id, x, y, tolerance, layers)
+    scene::pick(scene_id, x, y, tolerance, layers, active_layer)
 }

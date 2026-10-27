@@ -1,5 +1,6 @@
 import type { Bounds, Scene } from "@oshwhub/bridge";
 import { Skia, type SkPicture, type SkTypeface } from "@shopify/react-native-skia";
+import { type BoardSide, layerBrightness, layerSide } from "./layers";
 import { netKind } from "./nets";
 import type { Viewport } from "./viewport";
 
@@ -12,6 +13,7 @@ export type NetLabelOptions = {
   viewport: Viewport;
   width: number;
   height: number;
+  activeLayer?: BoardSide;
 };
 
 export function buildNetLabelPicture(
@@ -65,10 +67,7 @@ export function buildNetLabelPicture(
       occupied.set(key, cell);
     }
   };
-  // Drill areas stay clear even when their own label category is disabled.
-  for (const label of scene.netLabels) {
-    if (!label.hole || (!options.visibleLayers.has(label.layer) && !options.visibleLayers.has(47)))
-      continue;
+  const reserveGeometry = (label: NonNullable<Scene["netLabels"]>[number]) => {
     const angle = (label.rotation * Math.PI) / 180;
     const cos = Math.abs(Math.cos(angle)),
       sin = Math.abs(Math.sin(angle));
@@ -83,10 +82,42 @@ export function buildNetLabelPicture(
       maxY: y + halfHeight,
     };
     occupy(rect, cells(rect));
+  };
+  // Drill areas stay clear even when their own label category is disabled.
+  for (const label of scene.netLabels) {
+    if (label.hole && (options.visibleLayers.has(label.layer) || options.visibleLayers.has(47)))
+      reserveGeometry(label);
   }
   let drawn = false;
+  let foregroundReserved = false;
   try {
-    for (const label of scene.netLabels) {
+    // Reserve label space for the foreground face before placing background labels.
+    const labels =
+      options.activeLayer === undefined
+        ? scene.netLabels
+        : scene.netLabels
+            .slice()
+            .sort(
+              (a, b) =>
+                Number(layerSide(b.layer) === options.activeLayer) -
+                Number(layerSide(a.layer) === options.activeLayer),
+            );
+    for (const label of labels) {
+      if (
+        options.activeLayer !== undefined &&
+        layerSide(label.layer) !== options.activeLayer &&
+        !foregroundReserved
+      ) {
+        for (const foreground of labels) {
+          if (
+            layerSide(foreground.layer) === options.activeLayer &&
+            options.visibleLayers.has(foreground.layer) &&
+            !foreground.hole
+          )
+            reserveGeometry(foreground);
+        }
+        foregroundReserved = true;
+      }
       const kind = netKind(label.kind);
       if (
         !options.visibleLayers.has(label.layer) ||
@@ -96,6 +127,8 @@ export function buildNetLabelPicture(
         kind === "other"
       )
         continue;
+      const brightness = layerBrightness(label.layer, options.activeLayer);
+      paint.setColor(Skia.Color(brightness === 1 ? "#ffffff" : "#666666"));
       let w = label.width * view.scale;
       let h = label.height * view.scale;
       if (!(w > 0 && h > 0)) continue;

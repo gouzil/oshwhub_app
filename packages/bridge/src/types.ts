@@ -163,6 +163,7 @@ export type Command =
       y: number;
       tolerance: number;
       layers?: number[];
+      activeLayer?: number;
     };
 export interface CoreError {
   code: string;

@@ -11,7 +11,7 @@ import {
   StrokeCap,
   StrokeJoin,
 } from "@shopify/react-native-skia";
-import { planLayers } from "./layers";
+import { type BoardSide, compareLayers, layerBrightness, planLayers } from "./layers";
 import { defaultNetColor, isCopperLayer } from "./nets";
 import type { RasterPlan } from "./raster";
 
@@ -22,19 +22,36 @@ export type NetworkOverlayOptions = {
   highlighted: ReadonlySet<string>;
   visibleLayers: ReadonlySet<number>;
   colors: Readonly<Record<string, string>>;
+  activeLayer?: BoardSide;
 };
 
-export function rasterize(pictures: LayerPicture[], plan: RasterPlan): BoardRaster {
+export function rasterize(
+  pictures: LayerPicture[],
+  plan: RasterPlan,
+  activeLayer?: BoardSide,
+): BoardRaster {
   const started = performance.now();
   // A CPU surface makes the snapshot portable between CanvasKit's WebGL contexts.
   const surface = Skia.Surface.Make(plan.pixelWidth, plan.pixelHeight);
   if (!surface) throw new Error("无法分配 PCB 绘制缓存。");
+  const dim = Skia.Paint();
+  const filter = Skia.ColorFilter.MakeMatrix([
+    0.4, 0, 0, 0, 0, 0, 0.4, 0, 0, 0, 0, 0, 0.4, 0, 0, 0, 0, 0, 1, 0,
+  ]);
+  dim.setColorFilter(filter);
   try {
     const canvas = surface.getCanvas();
     canvas.clear(Skia.Color("#0b121a"));
     canvas.scale(plan.pixelWidth / plan.width, plan.pixelHeight / plan.height);
     canvas.translate(-plan.x, -plan.y);
-    for (const { picture } of pictures) canvas.drawPicture(picture);
+    for (const { layer, picture } of pictures
+      .slice()
+      .sort((a, b) => compareLayers(a.layer, b.layer, activeLayer))) {
+      const dimmed = layerBrightness(layer.id, activeLayer) < 1;
+      if (dimmed) canvas.saveLayer(dim);
+      canvas.drawPicture(picture);
+      if (dimmed) canvas.restore();
+    }
     surface.flush();
     const image = surface.makeImageSnapshot();
     const elapsedMs = performance.now() - started;
@@ -47,6 +64,8 @@ export function rasterize(pictures: LayerPicture[], plan: RasterPlan): BoardRast
     return { ...plan, image, elapsedMs };
   } finally {
     surface.dispose();
+    dim.dispose();
+    filter.dispose();
   }
 }
 
@@ -167,6 +186,7 @@ export function buildNetworkOverlayPicture(
   scene: Scene,
   options: NetworkOverlayOptions,
 ): SkPicture | null {
+  if (!options.highlighted.size) return null;
   const span = Math.max(
     scene.bounds.maxX - scene.bounds.minX,
     scene.bounds.maxY - scene.bounds.minY,
@@ -185,37 +205,68 @@ export function buildNetworkOverlayPicture(
   const paints = new Map<string, SkPaint>();
   let hasContent = false;
   try {
-    for (const batch of scene.batches) {
-      const name = batch.net?.trim();
-      if (
-        !name ||
-        !options.highlighted.has(name) ||
-        !options.visibleLayers.has(batch.layer) ||
-        !isCopperLayer(batch.layer)
-      )
-        continue;
-      const color = options.colors[name] || defaultNetColor(name);
-      const key = `${color}/${batch.fill}/${batch.width}`;
-      let paint = paints.get(key);
-      if (!paint) {
-        paint = Skia.Paint();
-        paint.setAntiAlias(true);
-        paint.setColor(Skia.Color(batch.fill ? colorWithAlpha(color, "88") : color));
-        paint.setStyle(batch.fill ? PaintStyle.Fill : PaintStyle.Stroke);
-        paint.setStrokeWidth(batch.width);
-        paint.setStrokeCap(StrokeCap.Round);
-        paint.setStrokeJoin(StrokeJoin.Round);
-        paints.set(key, paint);
+    const layers = planLayers({
+      ...scene,
+      texts: [],
+      batches: scene.batches.filter(
+        (batch) =>
+          isCopperLayer(batch.layer) &&
+          options.visibleLayers.has(batch.layer) &&
+          options.highlighted.has(batch.net?.trim() || ""),
+      ),
+    }).sort((a, b) => compareLayers(a.layer, b.layer, options.activeLayer));
+    for (const { layer, batches } of layers)
+      for (const batch of batches) {
+        const name = batch.net?.trim() || "";
+        const color = options.colors[name] || defaultNetColor(name);
+        const brightness = layerBrightness(layer.id, options.activeLayer);
+        const key = `${color}/${batch.fill}/${batch.width}/${brightness}`;
+        let paint = paints.get(key);
+        if (!paint) {
+          paint = Skia.Paint();
+          paint.setAntiAlias(true);
+          paint.setColor(Skia.Color(batch.fill ? colorWithAlpha(color, "88") : color));
+          if (brightness < 1) {
+            const filter = Skia.ColorFilter.MakeMatrix([
+              brightness,
+              0,
+              0,
+              0,
+              0,
+              0,
+              brightness,
+              0,
+              0,
+              0,
+              0,
+              0,
+              brightness,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+            ]);
+            paint.setColorFilter(filter);
+            filter.dispose();
+          }
+          paint.setStyle(batch.fill ? PaintStyle.Fill : PaintStyle.Stroke);
+          paint.setStrokeWidth(batch.width);
+          paint.setStrokeCap(StrokeCap.Round);
+          paint.setStrokeJoin(StrokeJoin.Round);
+          paints.set(key, paint);
+        }
+        const path = Skia.Path.MakeFromSVGString(batch.path);
+        if (!path) continue;
+        try {
+          canvas.drawPath(path, paint);
+          hasContent = true;
+        } finally {
+          path.dispose();
+        }
       }
-      const path = Skia.Path.MakeFromSVGString(batch.path);
-      if (!path) continue;
-      try {
-        canvas.drawPath(path, paint);
-        hasContent = true;
-      } finally {
-        path.dispose();
-      }
-    }
 
     if (!hasContent) return null;
     return recorder.finishRecordingAsPicture();

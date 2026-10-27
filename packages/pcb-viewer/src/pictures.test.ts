@@ -4,7 +4,8 @@ import { Skia } from "@shopify/react-native-skia";
 import { describe, expect, it, vi } from "vitest";
 import { labelScene } from "../../../tests/fixtures/pcb-labels";
 import { buildNetLabelPicture, type NetLabelOptions } from "./labels";
-import { buildNetworkOverlayPicture, buildPictures } from "./pictures";
+import { pcbDisplayLayers } from "./layers";
+import { buildNetworkOverlayPicture, buildPictures, rasterize } from "./pictures";
 
 // Run the shipped CanvasKit backend, replacing only the native module entry point.
 vi.mock("@shopify/react-native-skia", async () => {
@@ -93,6 +94,73 @@ function labelPixels(source: Scene, overrides: Partial<NetLabelOptions> = {}, ar
 }
 
 describe("real CanvasKit picture recording", () => {
+  it.each([
+    1, 2,
+  ] as const)("puts active copper layer %s in front and dims the other side without fading drills", (activeLayer) => {
+    const source: Scene = {
+      ...scene,
+      layers: [
+        { ...scene.layers[0], color: "#bc8e00", order: 600 },
+        { ...scene.layers[0], id: 2, color: "#bc8e00", order: 400 },
+        { ...scene.layers[0], id: 47, color: "#0b121a", order: 1000 },
+      ],
+      batches: [
+        { ...scene.batches[0], path: "M2 2H24V20H2Z", kind: "PAD" },
+        { ...scene.batches[0], layer: 2, path: "M16 10H36V28H16Z", kind: "PAD" },
+        { ...scene.batches[0], layer: 47, path: "M18 12H22V16H18Z" },
+      ],
+    };
+    const { pictures } = buildPictures({ ...source, layers: pcbDisplayLayers(source.layers) });
+    const raster = rasterize(
+      pictures,
+      { x: 0, y: 0, width: 40, height: 30, pixelWidth: 40, pixelHeight: 30 },
+      activeLayer,
+    );
+    const pixels = raster.image.readPixels();
+    if (!pixels) throw new Error("CanvasKit pixels unavailable");
+    const pixel = (x: number, y: number) =>
+      Array.from(pixels.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4));
+    expect(pixel(8, 8)).toEqual(activeLayer === 1 ? [255, 0, 0, 255] : [102, 0, 0, 255]);
+    expect(pixel(30, 24)).toEqual(activeLayer === 2 ? [0, 0, 255, 255] : [0, 0, 102, 255]);
+    expect(pixel(22, 18)).toEqual(activeLayer === 1 ? [255, 0, 0, 255] : [0, 0, 255, 255]);
+    expect(pixel(20, 14)).toEqual([11, 18, 26, 255]);
+    for (const { picture } of pictures) picture.dispose();
+    raster.image.dispose();
+  });
+
+  it("gives coincident pad labels to the active layer even when it was behind in source order", () => {
+    const pad = labelScene.netLabels?.[0];
+    if (!pad) throw new Error("Missing test pad");
+    const bottom = { ...pad, layer: 2, net: "BOTTOM", padNumber: "B" };
+    const options = { activeLayer: 2 as const, visibleLayers: new Set([1, 2]) };
+    const both = labelPixels({ ...labelScene, netLabels: [pad, bottom] }, options);
+    const expected = labelPixels({ ...labelScene, netLabels: [bottom] }, options);
+    expect(both).not.toBeNull();
+    expect(both).toEqual(expected);
+  });
+
+  it("dims labels on the opposite side with their copper", () => {
+    const pixels = labelPixels(labelScene, { activeLayer: 2 });
+    if (!pixels) throw new Error("Expected inactive labels");
+    const ink = Array.from(pixels).filter((_, i) => i % 4 === 0 && pixels[i + 3] > 20);
+    expect(ink.length).toBeGreaterThan(20);
+    expect(Math.max(...ink)).toBe(102);
+  });
+
+  it("keeps background pad text off a foreground track even when that track has no visible label", () => {
+    const pad = labelScene.netLabels?.[0];
+    if (!pad) throw new Error("Missing test pad");
+    expect(
+      labelPixels(
+        {
+          ...labelScene,
+          netLabels: [pad, { ...pad, layer: 2, kind: "LINE", net: "", padNumber: "" }],
+        },
+        { activeLayer: 2, visibleLayers: new Set([1, 2]), showTrackLabels: false },
+      ),
+    ).toBeNull();
+  });
+
   it("keeps each pad's number and network inside that pad at high zoom", () => {
     const pixels = labelPixels(labelScene, {}, process.env.PCB_LABEL_ARTIFACT);
     if (!pixels) throw new Error("Expected readable pad labels");
@@ -369,14 +437,28 @@ describe("real CanvasKit picture recording", () => {
     data.dispose();
   });
 
-  it("draws a selected network on a separate overlay", () => {
+  it.each([
+    undefined,
+    1,
+    2,
+  ] as const)("keeps network highlights in front-to-back order with active layer %s", (activeLayer) => {
     const picture = buildNetworkOverlayPicture(
       {
         ...scene,
+        layers: [...scene.layers, { ...scene.layers[0], id: 2, order: 0 }],
         batches: [
           {
             ...scene.batches[0],
             path: "M4 4L20 4",
+            fill: false,
+            width: 2,
+            net: "GND",
+            kind: "LINE",
+          },
+          {
+            ...scene.batches[0],
+            layer: 2,
+            path: "M4 24H20",
             fill: false,
             width: 2,
             net: "GND",
@@ -387,8 +469,9 @@ describe("real CanvasKit picture recording", () => {
       },
       {
         highlighted: new Set(["GND"]),
-        visibleLayers: new Set([1, 47]),
+        visibleLayers: new Set([1, 2, 47]),
         colors: { GND: "#00ff00" },
+        activeLayer,
       },
     );
     expect(picture).not.toBeNull();
@@ -402,7 +485,8 @@ describe("real CanvasKit picture recording", () => {
     if (!pixels) throw new Error("CanvasKit pixels unavailable");
     const pixel = (x: number, y: number) =>
       Array.from(pixels.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4));
-    expect(pixel(12, 4)[1]).toBeGreaterThan(180);
+    expect(pixel(12, 4)[1]).toBe(activeLayer === 2 ? 102 : 255);
+    expect(pixel(12, 24)[1]).toBe(activeLayer === 1 ? 102 : 255);
     expect(pixel(12, 2)).toEqual([0, 0, 0, 255]);
     expect(pixel(12, 12)).toEqual([0, 0, 0, 255]);
     picture.dispose();

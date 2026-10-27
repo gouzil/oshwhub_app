@@ -1373,6 +1373,7 @@ pub fn pick(
     y: f64,
     tolerance: f64,
     layers: Option<&[i32]>,
+    active_layer: Option<i32>,
 ) -> Result<Option<PickResult>> {
     if ![x, y, tolerance].iter().all(|v| v.is_finite()) || tolerance < 0. || tolerance > 1e6 {
         return Err(AppError::new("invalid_request", "拾取参数无效"));
@@ -1393,6 +1394,7 @@ pub fn pick(
                 .map(|l| l.id)
                 .collect()
         });
+    let active_layer = active_layer.filter(|layer| allowed.contains(layer));
     let p = (x, y);
     let x0 = ((x - tolerance) / CELL).floor() as i32;
     let x1 = ((x + tolerance) / CELL).floor() as i32;
@@ -1422,6 +1424,7 @@ pub fn pick(
             (
                 o.priority.0,
                 o.priority.1,
+                active_layer.is_some_and(|layer| o.layers.contains(&layer)),
                 o.layers
                     .iter()
                     .filter(|l| allowed.contains(l))
@@ -1438,7 +1441,7 @@ pub fn pick(
             .layers
             .iter()
             .filter(|l| allowed.contains(l))
-            .max_by_key(|l| order(**l))
+            .max_by_key(|l| (Some(**l) == active_layer, order(**l)))
             .expect("filtered visible candidate");
         result
     }))
@@ -1509,19 +1512,38 @@ mod tests {
         compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
     }
     #[test]
+    fn picking_overlapping_pads_prefers_the_visible_active_layer() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(&mut project, r#"{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"sides"}|
+{"type":"PAD","id":"top","ticket":1}||{"layerId":1,"centerX":10,"centerY":10,"netName":"TOP","defaultPad":{"padType":"RECT","width":10,"height":10}}|
+{"type":"PAD","id":"bottom","ticket":1}||{"layerId":2,"centerX":10,"centerY":10,"netName":"BOTTOM","defaultPad":{"padType":"RECT","width":10,"height":10}}|"#).unwrap();
+        let scene = compile(project, "sides", "fixture".into(), Metrics::default()).unwrap();
+        for (active, layers, expected) in [
+            (2, vec![1, 2], "BOTTOM"),
+            (1, vec![1, 2], "TOP"),
+            (2, vec![1], "TOP"),
+        ] {
+            let result = pick(&scene.id, 10., -10., 0.1, Some(&layers), Some(active))
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.net.as_deref(), Some(expected));
+        }
+    }
+    #[test]
     fn scene_cache_expires_only_the_oldest_of_three_scenes() {
         let _guard = scene_test_guard();
         let first = fixture_scene();
         let second = fixture_scene();
         let third = fixture_scene();
         assert_eq!(
-            pick(&first.id, 100., -111.5, 0.1, Some(&[1, 12]))
+            pick(&first.id, 100., -111.5, 0.1, Some(&[1, 12]), None)
                 .unwrap_err()
                 .code,
             "scene_expired"
         );
         for scene in [second, third] {
-            let found = pick(&scene.id, 100., -111.5, 0.1, Some(&[1, 12]))
+            let found = pick(&scene.id, 100., -111.5, 0.1, Some(&[1, 12]), None)
                 .unwrap()
                 .unwrap();
             assert_eq!(found.kind, "PAD");
@@ -1639,42 +1661,42 @@ mod tests {
             && t.x == 120.
             && t.y == -180.
             && (t.rotation + 30.).abs() < 1e-8));
-        let found = pick(&s.id, 100., -111.5, 0.1, Some(&[1, 12]))
+        let found = pick(&s.id, 100., -111.5, 0.1, Some(&[1, 12]), None)
             .unwrap()
             .unwrap();
         assert_eq!(found.kind, "PAD");
         assert_eq!(found.net.as_deref(), Some("GND"));
         assert!(found.id.contains("c1"));
         assert!(
-            pick(&s.id, 175., -125., 0.01, Some(&[1]))
+            pick(&s.id, 175., -125., 0.01, Some(&[1]), None)
                 .unwrap()
                 .is_none()
         );
         assert!(
-            pick(&s.id, 154., -104., 0.01, Some(&[1]))
+            pick(&s.id, 154., -104., 0.01, Some(&[1]), None)
                 .unwrap()
                 .is_some()
         );
-        assert!(pick(&s.id, 310., -100., 0.1, None).unwrap().is_none());
+        assert!(pick(&s.id, 310., -100., 0.1, None, None).unwrap().is_none());
         assert_eq!(
-            pick(&s.id, 310., -100., 0.1, Some(&[15]))
+            pick(&s.id, 310., -100., 0.1, Some(&[15]), None)
                 .unwrap()
                 .unwrap()
                 .id,
             "hidden"
         );
         assert!(
-            pick(&s.id, 154., -104., 0.01, Some(&[2]))
+            pick(&s.id, 154., -104., 0.01, Some(&[2]), None)
                 .unwrap()
                 .is_none()
         );
         assert!(
-            pick(&s.id, 133., -120., 0.01, Some(&[1]))
+            pick(&s.id, 133., -120., 0.01, Some(&[1]), None)
                 .unwrap()
                 .is_none()
         );
         assert_eq!(
-            pick(&s.id, 133., -120., 0.01, Some(&[12]))
+            pick(&s.id, 133., -120., 0.01, Some(&[12]), None)
                 .unwrap()
                 .unwrap()
                 .id,
@@ -1790,14 +1812,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            pick(&scene.id, 100., -100., 0.01, Some(&[1]))
+            pick(&scene.id, 100., -100., 0.01, Some(&[1]), None)
                 .unwrap()
                 .unwrap()
                 .kind,
             "COMPONENT"
         );
         assert_eq!(
-            pick(&scene.id, 90., -100., 0.01, Some(&[1]))
+            pick(&scene.id, 90., -100., 0.01, Some(&[1]), None)
                 .unwrap()
                 .unwrap()
                 .kind,
@@ -1809,9 +1831,15 @@ mod tests {
     fn component_bbox_is_not_pickable_when_all_its_actual_layers_are_hidden() {
         let _guard = scene_test_guard();
         let s = fixture_scene();
-        assert!(pick(&s.id, 400., 0., 0.01, Some(&[1])).unwrap().is_none());
+        assert!(
+            pick(&s.id, 400., 0., 0.01, Some(&[1]), None)
+                .unwrap()
+                .is_none()
+        );
         // The component's empty space is selectable on its actual silkscreen layer.
-        let found = pick(&s.id, 400., 0.54, 0.01, Some(&[3])).unwrap().unwrap();
+        let found = pick(&s.id, 400., 0.54, 0.01, Some(&[3]), None)
+            .unwrap()
+            .unwrap();
         assert_eq!(found.layer, 3);
     }
 
@@ -1819,13 +1847,15 @@ mod tests {
     fn actual_bottom_track_has_priority_over_empty_top_component_bbox() {
         let _guard = scene_test_guard();
         let s = fixture_scene();
-        let found = pick(&s.id, 500., 0., 0.01, Some(&[1, 2])).unwrap().unwrap();
+        let found = pick(&s.id, 500., 0., 0.01, Some(&[1, 2]), None)
+            .unwrap()
+            .unwrap();
         assert_eq!(
             (found.kind.as_str(), found.id.as_str()),
             ("LINE", "bottom-track")
         );
         assert_eq!(
-            pick(&s.id, 500., 0., 0.01, Some(&[1]))
+            pick(&s.id, 500., 0., 0.01, Some(&[1]), None)
                 .unwrap()
                 .unwrap()
                 .kind,
