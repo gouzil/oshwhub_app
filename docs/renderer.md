@@ -163,6 +163,14 @@ inventing an insulating gap. Source paths, network bindings, drawing order and
 picking stay unchanged. CanvasKit pixel tests cover same-net pad/track contact,
 clearance holes around another network, inner copper and opaque non-copper fills.
 
+Selecting the red R21 pad in the professional editor confirms **焊盘**, top
+layer, number 2, network `VCC+3.3V`, with a rectangular shape. Red is that
+editor's top-layer display color; other boards may supply a different copper
+color and pad shape. The viewer also marks each copper `PAD` path with a thin
+light inner outline so its soldering area stays identifiable where it joins a
+same-colored track or fill. The outline is clipped to the original path, keeping
+clearances and holes empty. It uses no synthetic rectangle or insulating gap.
+
 Label pictures update with the viewport independently of the highlight picture
 and raster cache, so zooming does not reparse highlighted SVG paths. The network
 panel retains location, hover highlighting, category switches, preset colors,

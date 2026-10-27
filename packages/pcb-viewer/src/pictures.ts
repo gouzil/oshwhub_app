@@ -1,5 +1,6 @@
 import type { Scene, SceneLayer } from "@oshwhub/bridge";
 import {
+  ClipOp,
   PaintStyle,
   type SkFont,
   type SkImage,
@@ -70,7 +71,12 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
       const paints = new Map<string, SkPaint>();
       const fonts = new Map<number, SkFont>();
       const textPaint = Skia.Paint();
+      const padOutline = Skia.Paint();
       try {
+        padOutline.setAntiAlias(true);
+        padOutline.setColor(Skia.Color("#ffffff99"));
+        padOutline.setStyle(PaintStyle.Stroke);
+        padOutline.setStrokeWidth(0.5);
         for (const batch of batches) {
           const color = batch.color || layer.color;
           // Pro's copper areas are 30% transparent; pads and tracks stay opaque.
@@ -93,6 +99,13 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
           if (!path) throw new Error(`图层「${layer.name}」包含无法绘制的路径。`);
           try {
             canvas.drawPath(path, paint);
+            // Keep the pad's actual shape readable where same-layer copper joins it.
+            if (batch.kind === "PAD" && isCopperLayer(layer.id)) {
+              canvas.save();
+              canvas.clipPath(path, ClipOp.Intersect, true);
+              canvas.drawPath(path, padOutline);
+              canvas.restore();
+            }
           } finally {
             path.dispose();
           }
@@ -128,6 +141,7 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
         for (const paint of paints.values()) paint.dispose();
         for (const font of fonts.values()) font.dispose();
         textPaint.dispose();
+        padOutline.dispose();
         recorder.dispose();
       }
     }

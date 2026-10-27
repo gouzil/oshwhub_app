@@ -15,6 +15,7 @@ vi.mock("@shopify/react-native-skia", async () => {
   const { JsiSkApi } = require("@shopify/react-native-skia/lib/commonjs/skia/web/JsiSkia.js");
   return {
     Skia: JsiSkApi(kit),
+    ...require("@shopify/react-native-skia/lib/commonjs/skia/types/Canvas"),
     ...require("@shopify/react-native-skia/lib/commonjs/skia/types/Paint"),
   };
 });
@@ -305,6 +306,35 @@ describe("real CanvasKit picture recording", () => {
     expect(() =>
       buildPictures({ ...scene, batches: [{ ...scene.batches[0], path: "broken path" }] }),
     ).toThrow("无法绘制");
+  });
+  it("shows the pad boundary where a same-colored track meets it", () => {
+    const { pictures } = buildPictures({
+      ...scene,
+      batches: [
+        { ...scene.batches[0], kind: "LINE", fill: false, width: 4, path: "M2 13H14" },
+        { ...scene.batches[0], kind: "PAD", path: "M12 8H22V18H12Z M17 10V16H20V10Z" },
+      ],
+    });
+    const surface = Skia.Surface.Make(40, 30);
+    if (!surface) throw new Error("CanvasKit software surface unavailable");
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color("#000000"));
+    for (const { picture } of pictures) canvas.drawPicture(picture);
+    const image = surface.makeImageSnapshot();
+    const pixels = image.readPixels();
+    if (!pixels) throw new Error("CanvasKit pixels unavailable");
+    const pixel = (x: number, y: number) =>
+      Array.from(pixels.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4));
+    expect(pixel(12, 13)[1], "The copper connection must not hide the pad edge").toBeGreaterThan(
+      20,
+    );
+    expect(pixel(14, 13)).toEqual([255, 0, 0, 255]);
+    expect(pixel(6, 13)).toEqual([255, 0, 0, 255]);
+    expect(pixel(18, 13)).toEqual([0, 0, 0, 255]);
+    expect(pixel(23, 20)).toEqual([0, 0, 0, 255]);
+    for (const { picture } of pictures) picture.dispose();
+    image.dispose();
+    surface.dispose();
   });
   it("records visible Latin and Chinese labels with the bundled typeface", () => {
     const data = Skia.Data.fromBytes(
