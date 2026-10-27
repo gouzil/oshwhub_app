@@ -155,6 +155,14 @@ drill areas remain reserved even when via labels are disabled. Copper network
 highlighting preserves stroke width and excludes drill/mask drawings. Color
 controls affect highlighted geometry rather than ordinary text.
 
+The installed professional editor's **显示 → 透明度** panel reports 30% for
+**铺铜区域** and **填充区域**, and 0% for pads and tracks. Base pictures likewise
+draw copper-layer `POURED` and `FILL` batches at 70% opacity, with pads and tracks
+remaining opaque. This makes a pad visible against connected copper without
+inventing an insulating gap. Source paths, network bindings, drawing order and
+picking stay unchanged. CanvasKit pixel tests cover same-net pad/track contact,
+clearance holes around another network, inner copper and opaque non-copper fills.
+
 Label pictures update with the viewport independently of the highlight picture
 and raster cache, so zooming does not reparse highlighted SVG paths. The network
 panel retains location, hover highlighting, category switches, preset colors,

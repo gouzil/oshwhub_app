@@ -73,12 +73,16 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
       try {
         for (const batch of batches) {
           const color = batch.color || layer.color;
-          const key = `${color}/${batch.fill}/${batch.width}`;
+          // Pro's copper areas are 30% transparent; pads and tracks stay opaque.
+          const opacity =
+            isCopperLayer(layer.id) && (batch.kind === "POURED" || batch.kind === "FILL") ? 0.7 : 1;
+          const key = `${color}/${batch.fill}/${batch.width}/${opacity}`;
           let paint = paints.get(key);
           if (!paint) {
             paint = Skia.Paint();
             paint.setAntiAlias(true);
             paint.setColor(Skia.Color(color));
+            paint.setAlphaf(opacity);
             paint.setStyle(batch.fill ? PaintStyle.Fill : PaintStyle.Stroke);
             paint.setStrokeWidth(batch.width);
             paint.setStrokeCap(StrokeCap.Round);

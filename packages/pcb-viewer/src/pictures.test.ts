@@ -247,6 +247,60 @@ describe("real CanvasKit picture recording", () => {
     image.dispose();
     surface.dispose();
   });
+  it.each([
+    { kind: "POURED", layer: 1, planeRed: 179 },
+    { kind: "FILL", layer: 1, planeRed: 179 },
+    { kind: "FILL", layer: 15, planeRed: 179 },
+    { kind: "FILL", layer: 3, planeRed: 255 },
+  ])("renders $kind on layer $layer with opaque pads and intact clearance holes", ({
+    kind,
+    layer,
+    planeRed,
+  }) => {
+    const { pictures } = buildPictures({
+      ...scene,
+      layers: [{ ...scene.layers[0], id: layer }],
+      batches: [
+        {
+          ...scene.batches[0],
+          layer,
+          kind,
+          net: "GND",
+          path: "M2 2H34V26H2Z M20 10V18H28V10Z",
+        },
+        { ...scene.batches[0], layer, kind: "PAD", net: "GND", path: "M4 6H8V10H4Z" },
+        {
+          ...scene.batches[0],
+          layer,
+          kind: "LINE",
+          net: "GND",
+          fill: false,
+          width: 2,
+          path: "M8 8H18",
+        },
+        { ...scene.batches[0], layer, kind: "PAD", net: "VCC", path: "M22 12H26V16H22Z" },
+      ],
+    });
+    const surface = Skia.Surface.Make(40, 30);
+    if (!surface) throw new Error("CanvasKit software surface unavailable");
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color("#000000"));
+    for (const { picture } of pictures) canvas.drawPicture(picture);
+    const image = surface.makeImageSnapshot();
+    const pixels = image.readPixels();
+    if (!pixels) throw new Error("CanvasKit pixels unavailable");
+    const pixel = (x: number, y: number) =>
+      Array.from(pixels.slice((y * 40 + x) * 4, (y * 40 + x) * 4 + 4));
+    expect(pixel(12, 20)).toEqual([planeRed, 0, 0, 255]);
+    expect(pixel(6, 8)).toEqual([255, 0, 0, 255]);
+    expect(pixel(12, 8)).toEqual([255, 0, 0, 255]);
+    expect(pixel(24, 14)).toEqual([255, 0, 0, 255]);
+    expect(pixel(21, 14)).toEqual([0, 0, 0, 255]);
+    expect(pixel(24, 11)).toEqual([0, 0, 0, 255]);
+    for (const { picture } of pictures) picture.dispose();
+    image.dispose();
+    surface.dispose();
+  });
   it("reports corrupt SVG instead of drawing a partial board", () => {
     expect(() =>
       buildPictures({ ...scene, batches: [{ ...scene.batches[0], path: "broken path" }] }),
