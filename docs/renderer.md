@@ -134,6 +134,114 @@ errors remain directly visible. The dark canvas stays synchronized with the
 drill-mask color above; this UI change adds no grid, rendering passes, or blur to
 the drawing surface.
 
+## Networks and pad labels
+
+The reference is the PCB editing canvas in the installed 嘉立创EDA(专业版)
+V4.1.60: small white pad numbers and network names sit inside individual pads.
+This differs from its material-oriented “2D预览” window. See the professional
+[network display settings](https://prodocs.easyeda.com/en/pcb/settings-pcb/)
+and [network highlighting](https://prodocs.lceda.cn/cn/pcb/view-highlight/).
+
+Batches retain network and primitive kind when merging. Separate `netLabels`
+retain each pad's number, position, dimensions and rotation before batching loses
+individual object boundaries. Footprint labels use the same component transform
+and `PAD_NET` binding as copper. Schematic scenes emit an empty label list.
+
+Normal labels are white, fit their pad or straight track segment, and use 8–12
+logical-pixel fonts. Pad numbers and network names occupy separate rows. Labels
+below readable size, outside the viewport, on hidden layers, or colliding with
+other labels are omitted. Drilled pads and vias place text beside their copper;
+drill areas remain reserved even when via labels are disabled. Copper network
+highlighting preserves stroke width and excludes drill/mask drawings. Color
+controls affect highlighted geometry rather than ordinary text.
+
+The installed professional editor's **显示 → 透明度** panel reports 30% for
+**铺铜区域** and **填充区域**, and 0% for pads and tracks. Base pictures likewise
+draw copper-layer `POURED` and `FILL` batches at 70% opacity, with pads and tracks
+remaining opaque. This makes a pad visible against connected copper without
+inventing an insulating gap. Source paths, network bindings and clearances stay
+unchanged. CanvasKit pixel tests cover same-net pad/track contact,
+clearance holes around another network, inner copper and opaque non-copper fills.
+
+Selecting the red R21 pad in the professional editor confirms **焊盘**, top
+layer, number 2, network `VCC+3.3V`, with a rectangular shape. Red is that
+editor's top-layer display color; imported boards can supply another copper
+color and pad shape. The PCB display palette below standardizes the face colors.
+The viewer also marks each copper `PAD` path with a thin
+light inner outline so its soldering area stays identifiable where it joins a
+same-colored track or fill. The outline is clipped to the original path, keeping
+clearances and holes empty. It uses no synthetic rectangle or insulating gap.
+
+## Front and back layers
+
+Switching the active copper layer in the installed professional editor changes
+both brightness and drawing order. In the saved top/bottom screenshots, the same
+top pad is `#ff0000` when active and `#660000` when inactive; the bottom pad changes
+from `#000066` to `#0000ff`. The editor's non-active-layer setting is 60, matching
+a 60% brightness reduction. Its corresponding silkscreen and labels change with
+the selected face. Both faces remain visible and keep their top-view coordinates.
+
+The PCB viewer uses consistent red top copper and blue bottom copper, including
+the layer legend and selection swatch. Source geometry and saved layer metadata
+remain intact; only this PCB display palette overrides their copper colors.
+Schematic scenes keep their original palette and order. Top/bottom controls choose
+the foreground face without changing zoom, pan or the opposite layer's visibility.
+Choosing a hidden copper layer shows it; hiding the active copper layer chooses
+the other visible face when available.
+
+The active face and its silk/mask/paste/assembly layers render above the other
+face. Inactive layers use 40% RGB brightness rather than reduced opacity, so an
+opaque rear pad stays opaque. Copper-area transparency is applied separately.
+Board edges and drill masks remain above both faces at normal brightness.
+Both overview and detail rasters use the same composition; switching faces reuses
+recorded vector pictures instead of reparsing SVG paths.
+
+Foreground labels get collision space first. Rear labels are dimmed and avoid
+foreground pad/straight-track extents even when that foreground label category
+is disabled. This uses conservative rotated bounding boxes; it can omit a rear
+label near a rounded corner. Arbitrary polygon interiors and curved-track text
+placement retain the limits described below. Network highlights also follow the
+selected face's order and brightness. Picking receives optional `activeLayer`
+and prefers it when primitive/precision priorities tie, while still respecting
+visible layers and the existing primitive-over-component priority.
+
+These screenshots show the same original offline fixture and 125% view in the
+actual browser app. The blue strip extends across the red copper; switching faces
+changes which one covers the overlap. They contain no third-party board data.
+
+Top active:
+
+![Red top copper in front](evidence/pcb2d-top-active.png)
+
+Bottom active:
+
+![Blue bottom copper in front](evidence/pcb2d-bottom-active.png)
+
+## Label validation
+
+Label pictures update with the viewport independently of the highlight picture
+and raster cache, so zooming does not reparse highlighted SVG paths. The network
+panel retains location, hover highlighting, category switches, preset colors,
+and H / Shift+H controls. Its counts represent copper draw batches.
+
+The following original two-resistor fixture is rendered with the actual CanvasKit
+backend at the same 8× scale. The upper copper batch deliberately contains two
+pads sharing `VCC+3.3V`. Tests check all four pad regions, screen font limits,
+rotation, collision avoidance, drill clearance, layer visibility and switches.
+
+Before:
+
+![Previous network labels](evidence/pcb2d-labels-before.png)
+
+After:
+
+![Individual pad numbers and fitted network names](evidence/pcb2d-labels-after.png)
+
+Custom polygon-pad interiors do not yet provide a safe text box, so their labels
+remain available through picking rather than being overlaid. Curved tracks only
+offer their longest flattened straight segment for labels. Native-device visual
+validation remains separate from CanvasKit and browser checks.
+
 ## Interaction raster cache
 
 Layer pictures retain the complete vector geometry. Replaying them on every
@@ -197,7 +305,7 @@ an immediate reduction in process RSS/PSS.
 
 ## Picking and retained state
 
-`pcb::pick(scene_id, x, y, tolerance, layers)` first queries a 100-unit spatial
+`pcb::pick(scene_id, x, y, tolerance, layers, active_layer)` first queries a 100-unit spatial
 grid, then tests actual strokes/filled contours. The optional layer filter must
 match the UI's current visible layers. Actual primitive geometry takes priority
 over component bounding boxes across all layers. Component candidates use only

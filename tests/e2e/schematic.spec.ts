@@ -19,6 +19,7 @@ test("opens the native schematic viewer and switches back to PCB", async ({ page
   const surface = page.getByRole("img", { name: /原理图 画布/ });
   await expect(surface).toBeVisible();
   await expect(page.locator("canvas")).toBeVisible();
+  await expect(page.getByRole("radio", { name: "查看顶层", exact: true })).toHaveCount(0);
   await expect(page.getByText("离线原理图夹具", { exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "图层", exact: true }).click();

@@ -962,6 +962,8 @@ impl<'a> Builder<'a> {
                         width: paint.width,
                         bounds: paint.result.bounds,
                         color: paint.color.clone(),
+                        net: None,
+                        kind: String::new(),
                     });
                 }
             }
@@ -1009,6 +1011,7 @@ impl<'a> Builder<'a> {
             layers: layers.clone(),
             batches,
             texts: self.texts,
+            net_labels: Vec::new(),
             object_count: objects.len(),
             warnings,
             metrics,

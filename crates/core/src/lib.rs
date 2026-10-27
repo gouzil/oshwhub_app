@@ -67,6 +67,8 @@ enum Command {
         tolerance: f64,
         #[serde(default)]
         layers: Option<Vec<i32>>,
+        #[serde(default, rename = "activeLayer")]
+        active_layer: Option<i32>,
     },
 }
 
@@ -148,6 +150,7 @@ async fn execute(command: Command) -> Result<Value> {
             y,
             tolerance,
             layers,
+            active_layer,
         } => {
             if !x.is_finite()
                 || !y.is_finite()
@@ -157,13 +160,14 @@ async fn execute(command: Command) -> Result<Value> {
             {
                 return Err(AppError::new("invalid_request", "拾取坐标或范围无效"));
             }
-            let picked = match pcb::pick(&scene_id, x, y, tolerance, layers.as_deref()) {
-                Ok(result) => Ok(result),
-                Err(error) if error.code == "scene_expired" => {
-                    schematic::pick(&scene_id, x, y, tolerance, layers.as_deref())
-                }
-                Err(error) => Err(error),
-            }?;
+            let picked =
+                match pcb::pick(&scene_id, x, y, tolerance, layers.as_deref(), active_layer) {
+                    Ok(result) => Ok(result),
+                    Err(error) if error.code == "scene_expired" => {
+                        schematic::pick(&scene_id, x, y, tolerance, layers.as_deref())
+                    }
+                    Err(error) => Err(error),
+                }?;
             serde_json::to_value(picked).map_err(serialization_error)
         }
     }

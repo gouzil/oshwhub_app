@@ -69,6 +69,8 @@ export interface DrawBatch {
   width: number;
   bounds: Bounds;
   color?: string | null;
+  net?: string | null;
+  kind?: string | null;
 }
 export interface TextLabel {
   layer: number;
@@ -79,6 +81,18 @@ export interface TextLabel {
   rotation: number;
   align?: "left" | "center" | "right";
 }
+export interface NetLabel {
+  layer: number;
+  kind: string;
+  net: string | null;
+  padNumber: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  hole: boolean;
+}
 export interface Scene {
   id: string;
   name: string;
@@ -87,6 +101,7 @@ export interface Scene {
   layers: SceneLayer[];
   batches: DrawBatch[];
   texts: TextLabel[];
+  netLabels?: NetLabel[];
   objectCount: number;
   warnings: string[];
   metrics: {
@@ -148,6 +163,7 @@ export type Command =
       y: number;
       tolerance: number;
       layers?: number[];
+      activeLayer?: number;
     };
 export interface CoreError {
   code: string;

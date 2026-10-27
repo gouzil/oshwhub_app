@@ -165,6 +165,7 @@ struct Builder<'a> {
     tf: Transform,
     paints: Vec<Paint>,
     texts: Vec<TextLabel>,
+    net_labels: Vec<NetLabel>,
     layers: BTreeMap<i32, SceneLayer>,
     warnings: BTreeMap<String, usize>,
     attrs: HashMap<String, BTreeMap<String, Value>>,
@@ -281,6 +282,7 @@ impl<'a> Builder<'a> {
             tf: Transform::board(n(canvas, "originX", 0.), n(canvas, "originY", 0.)),
             paints: Vec::new(),
             texts: Vec::new(),
+            net_labels: Vec::new(),
             layers,
             warnings: BTreeMap::new(),
             attrs,
@@ -419,18 +421,46 @@ impl<'a> Builder<'a> {
                 } else {
                     json!([a.0, a.1, "ARC", required(d, "angle")?, b.0, b.1])
                 };
+                let geometry = g::path(&v, tf, 1., false)?;
+                let segment = geometry
+                    .contours
+                    .iter()
+                    .flat_map(|c| c.windows(2))
+                    .max_by(|a, b| {
+                        (a[1].0 - a[0].0)
+                            .hypot(a[1].1 - a[0].1)
+                            .total_cmp(&(b[1].0 - b[0].0).hypot(b[1].1 - b[0].1))
+                    })
+                    .map(|s| (s[0], s[1]));
                 self.paint(
                     r,
-                    g::path(&v, tf, 1., false)?,
+                    geometry,
                     lid,
                     false,
                     width,
                     2,
                     component,
-                    net,
+                    net.clone(),
                     true,
                     color,
                 )?;
+                if matches!(lid, 1 | 2 | 12 | 15..=46)
+                    && net.is_some()
+                    && let Some((a, b)) = segment
+                {
+                    self.net_labels.push(NetLabel {
+                        layer: lid,
+                        kind: r.kind.clone(),
+                        net,
+                        pad_number: String::new(),
+                        x: (a.0 + b.0) / 2.,
+                        y: (a.1 + b.1) / 2.,
+                        width: (b.0 - a.0).hypot(b.1 - a.1),
+                        height: width,
+                        rotation: (b.1 - a.1).atan2(b.0 - a.0).to_degrees(),
+                        hole: false,
+                    });
+                }
             }
             "POLY" | "FILL" | "REGION" | "POUR" | "TEARDROP" | "FPC_FILL" => {
                 let fill = matches!(r.kind.as_str(), "FILL" | "TEARDROP" | "FPC_FILL");
@@ -518,6 +548,19 @@ impl<'a> Builder<'a> {
                 if !d["ruleName"].as_str().unwrap_or("").is_empty() {
                     self.warn("盲埋孔按多层环显示，层跨度待校准");
                 }
+                let (x, y) = tf.point((x, y));
+                self.net_labels.push(NetLabel {
+                    layer: 12,
+                    kind: r.kind.clone(),
+                    net,
+                    pad_number: String::new(),
+                    x,
+                    y,
+                    width: dia,
+                    height: dia,
+                    rotation: 0.,
+                    hole: hole > 0.,
+                });
             }
             "POURED" => {
                 let target = d["targetId"].as_str().or_else(|| {
@@ -770,6 +813,25 @@ impl<'a> Builder<'a> {
             true,
             None,
         )?;
+        // shortcut: polygon interiors need an inscribed box before placing labels inside them.
+        if !polygon
+            && matches!(lid, 1 | 2 | 12 | 15..=46)
+            && (through || !num.is_empty() || net.is_some())
+        {
+            let local = tf.component(cx, cy, angle, false);
+            self.net_labels.push(NetLabel {
+                layer: lid,
+                kind: r.kind.clone(),
+                net: net.clone(),
+                pad_number: num.to_owned(),
+                x: local.tx,
+                y: local.ty,
+                width,
+                height,
+                rotation: local.b.atan2(local.a).to_degrees(),
+                hole: through,
+            });
+        }
         if d["specialPad"].as_array().is_some_and(|s| !s.is_empty()) {
             self.warn("PAD specialPad 使用默认焊盘预览，特殊层形状待支持");
         }
@@ -1150,6 +1212,8 @@ pub fn compile(
                     && last.width == paint.width
                     && last.fill == paint.fill
                     && last.color == paint.color
+                    && last.net == paint.result.net
+                    && last.kind == paint.result.kind
                     && last.path.len() + paint.geometry.path.len() < 512 * 1024
             });
             if let Some(batch) = append {
@@ -1163,6 +1227,8 @@ pub fn compile(
                     width: paint.width,
                     bounds: paint.result.bounds,
                     color: paint.color,
+                    net: paint.result.net.clone(),
+                    kind: paint.result.kind.clone(),
                 });
             }
         }
@@ -1197,6 +1263,16 @@ pub fn compile(
         .into_iter()
         .map(|(s, n)| format!("{s} ({n})"))
         .collect();
+    b.net_labels.sort_by_key(|label| {
+        (
+            match label.kind.as_str() {
+                "PAD" => 0,
+                "VIA" => 1,
+                _ => 2,
+            },
+            std::cmp::Reverse(order(label.layer)),
+        )
+    });
     let scene = Scene {
         id: id.clone(),
         name,
@@ -1205,6 +1281,7 @@ pub fn compile(
         layers: layers.clone(),
         batches,
         texts: b.texts,
+        net_labels: b.net_labels,
         object_count: objects.len(),
         warnings,
         metrics,
@@ -1296,6 +1373,7 @@ pub fn pick(
     y: f64,
     tolerance: f64,
     layers: Option<&[i32]>,
+    active_layer: Option<i32>,
 ) -> Result<Option<PickResult>> {
     if ![x, y, tolerance].iter().all(|v| v.is_finite()) || tolerance < 0. || tolerance > 1e6 {
         return Err(AppError::new("invalid_request", "拾取参数无效"));
@@ -1316,6 +1394,7 @@ pub fn pick(
                 .map(|l| l.id)
                 .collect()
         });
+    let active_layer = active_layer.filter(|layer| allowed.contains(layer));
     let p = (x, y);
     let x0 = ((x - tolerance) / CELL).floor() as i32;
     let x1 = ((x + tolerance) / CELL).floor() as i32;
@@ -1345,6 +1424,7 @@ pub fn pick(
             (
                 o.priority.0,
                 o.priority.1,
+                active_layer.is_some_and(|layer| o.layers.contains(&layer)),
                 o.layers
                     .iter()
                     .filter(|l| allowed.contains(l))
@@ -1361,7 +1441,7 @@ pub fn pick(
             .layers
             .iter()
             .filter(|l| allowed.contains(l))
-            .max_by_key(|l| order(**l))
+            .max_by_key(|l| (Some(**l) == active_layer, order(**l)))
             .expect("filtered visible candidate");
         result
     }))
@@ -1432,19 +1512,38 @@ mod tests {
         compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
     }
     #[test]
+    fn picking_overlapping_pads_prefers_the_visible_active_layer() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(&mut project, r#"{"type":"DOCHEAD"}||{"docType":"PCB","uuid":"sides"}|
+{"type":"PAD","id":"top","ticket":1}||{"layerId":1,"centerX":10,"centerY":10,"netName":"TOP","defaultPad":{"padType":"RECT","width":10,"height":10}}|
+{"type":"PAD","id":"bottom","ticket":1}||{"layerId":2,"centerX":10,"centerY":10,"netName":"BOTTOM","defaultPad":{"padType":"RECT","width":10,"height":10}}|"#).unwrap();
+        let scene = compile(project, "sides", "fixture".into(), Metrics::default()).unwrap();
+        for (active, layers, expected) in [
+            (2, vec![1, 2], "BOTTOM"),
+            (1, vec![1, 2], "TOP"),
+            (2, vec![1], "TOP"),
+        ] {
+            let result = pick(&scene.id, 10., -10., 0.1, Some(&layers), Some(active))
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.net.as_deref(), Some(expected));
+        }
+    }
+    #[test]
     fn scene_cache_expires_only_the_oldest_of_three_scenes() {
         let _guard = scene_test_guard();
         let first = fixture_scene();
         let second = fixture_scene();
         let third = fixture_scene();
         assert_eq!(
-            pick(&first.id, 100., -111.5, 0.1, Some(&[1, 12]))
+            pick(&first.id, 100., -111.5, 0.1, Some(&[1, 12]), None)
                 .unwrap_err()
                 .code,
             "scene_expired"
         );
         for scene in [second, third] {
-            let found = pick(&scene.id, 100., -111.5, 0.1, Some(&[1, 12]))
+            let found = pick(&scene.id, 100., -111.5, 0.1, Some(&[1, 12]), None)
                 .unwrap()
                 .unwrap();
             assert_eq!(found.kind, "PAD");
@@ -1546,6 +1645,12 @@ mod tests {
         let _guard = scene_test_guard();
         let s = fixture_scene();
         assert!(s.object_count >= 7);
+        assert!(s.batches.iter().any(|b| b.net.as_deref() == Some("GND")));
+        assert!(
+            s.batches
+                .iter()
+                .any(|b| b.net.as_deref() == Some("GND") && b.kind == "LINE")
+        );
         assert!(
             s.batches
                 .iter()
@@ -1556,47 +1661,131 @@ mod tests {
             && t.x == 120.
             && t.y == -180.
             && (t.rotation + 30.).abs() < 1e-8));
-        let found = pick(&s.id, 100., -111.5, 0.1, Some(&[1, 12]))
+        let found = pick(&s.id, 100., -111.5, 0.1, Some(&[1, 12]), None)
             .unwrap()
             .unwrap();
         assert_eq!(found.kind, "PAD");
         assert_eq!(found.net.as_deref(), Some("GND"));
         assert!(found.id.contains("c1"));
         assert!(
-            pick(&s.id, 175., -125., 0.01, Some(&[1]))
+            pick(&s.id, 175., -125., 0.01, Some(&[1]), None)
                 .unwrap()
                 .is_none()
         );
         assert!(
-            pick(&s.id, 154., -104., 0.01, Some(&[1]))
+            pick(&s.id, 154., -104., 0.01, Some(&[1]), None)
                 .unwrap()
                 .is_some()
         );
-        assert!(pick(&s.id, 310., -100., 0.1, None).unwrap().is_none());
+        assert!(pick(&s.id, 310., -100., 0.1, None, None).unwrap().is_none());
         assert_eq!(
-            pick(&s.id, 310., -100., 0.1, Some(&[15]))
+            pick(&s.id, 310., -100., 0.1, Some(&[15]), None)
                 .unwrap()
                 .unwrap()
                 .id,
             "hidden"
         );
         assert!(
-            pick(&s.id, 154., -104., 0.01, Some(&[2]))
+            pick(&s.id, 154., -104., 0.01, Some(&[2]), None)
                 .unwrap()
                 .is_none()
         );
         assert!(
-            pick(&s.id, 133., -120., 0.01, Some(&[1]))
+            pick(&s.id, 133., -120., 0.01, Some(&[1]), None)
                 .unwrap()
                 .is_none()
         );
         assert_eq!(
-            pick(&s.id, 133., -120., 0.01, Some(&[12]))
+            pick(&s.id, 133., -120., 0.01, Some(&[12]), None)
                 .unwrap()
                 .unwrap()
                 .id,
             "via"
         );
+    }
+
+    #[test]
+    fn drills_without_networks_still_reserve_space_for_label_layout() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(&mut project, r#"{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"VIA","id":"via"}||{"centerX":0,"centerY":0,"viaDiameter":8,"holeDiameter":3}|
+{"type":"PAD","id":"pad"}||{"layerId":1,"centerX":20,"centerY":0,"defaultPad":{"padType":"ROUND","width":8,"height":8},"hole":{"width":3}}|"#).unwrap();
+        let scene = compile(project, "board", "drill-labels".into(), Metrics::default()).unwrap();
+        assert_eq!(scene.net_labels.len(), 2);
+        assert!(scene.net_labels.iter().all(|l| l.net.is_none() && l.hole));
+    }
+
+    #[test]
+    fn net_labels_include_only_individual_copper_objects_and_keep_drills_clear() {
+        let _guard = scene_test_guard();
+        let scene = fixture_scene();
+        assert_eq!(scene.net_labels.len(), 3);
+        let pad = scene.net_labels.iter().find(|l| l.kind == "PAD").unwrap();
+        assert_eq!(pad.pad_number, "1");
+        assert_eq!(pad.net.as_deref(), Some("GND"));
+        assert_eq!(
+            (pad.x, pad.y, pad.width, pad.height, pad.rotation),
+            (100., -110., 8., 6., -90.)
+        );
+        assert!(pad.hole);
+        let track = scene.net_labels.iter().find(|l| l.kind == "LINE").unwrap();
+        assert_eq!(
+            (track.x, track.y, track.width, track.height),
+            (100., -130., 40., 3.)
+        );
+        assert!(scene.net_labels.iter().all(|l| matches!(l.layer, 1 | 12)));
+        assert!(scene.net_labels.iter().any(|l| l.kind == "VIA" && l.hole));
+    }
+
+    #[test]
+    fn pad_labels_survive_batching_and_follow_component_transforms() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(&mut project, r#"{"type":"DOCHEAD"}||{"uuid":"fp","docType":"FOOTPRINT"}|
+{"type":"PAD","id":"p1"}||{"num":"1","layerId":1,"centerX":-10,"centerY":0,"padAngle":0,"defaultPad":{"padType":"RECT","width":8,"height":6}}|
+{"type":"PAD","id":"p2"}||{"num":"2","layerId":1,"centerX":10,"centerY":0,"padAngle":0,"defaultPad":{"padType":"RECT","width":8,"height":6}}|
+{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"COMPONENT","id":"c1"}||{"x":100,"y":100,"angle":90,"layerId":1,"attrs":{"Footprint":"fp"}}|
+{"type":"PAD_NET","id":"[\"PAD_NET\",\"c1\",\"1\",\"p1\"]"}||{"padNet":"GND"}|
+{"type":"PAD_NET","id":"[\"PAD_NET\",\"c1\",\"2\",\"p2\"]"}||{"padNet":"GND"}|"#).unwrap();
+        let scene = compile(project, "board", "pad-labels".into(), Metrics::default()).unwrap();
+        assert_eq!(
+            scene
+                .batches
+                .iter()
+                .filter(|batch| batch.kind == "PAD")
+                .count(),
+            1
+        );
+        let value = serde_json::to_value(scene).unwrap();
+        assert_eq!(
+            value["netLabels"],
+            json!([
+                {"layer":1,"kind":"PAD","net":"GND","padNumber":"1","x":100.,"y":-90.,"width":8.,"height":6.,"rotation":-90.,"hole":false},
+                {"layer":1,"kind":"PAD","net":"GND","padNumber":"2","x":100.,"y":-110.,"width":8.,"height":6.,"rotation":-90.,"hole":false},
+            ])
+        );
+    }
+
+    #[test]
+    fn batches_keep_same_style_paths_separate_when_networks_differ() {
+        let _guard = scene_test_guard();
+        let mut project = Project::default();
+        history::replay(
+            &mut project,
+            r#"{"type":"DOCHEAD"}||{"uuid":"board","docType":"PCB"}|
+{"type":"LINE","id":"gnd"}||{"layerId":1,"startX":0,"startY":0,"endX":10,"endY":0,"width":2,"netName":"GND"}|
+{"type":"LINE","id":"vcc"}||{"layerId":1,"startX":20,"startY":0,"endX":30,"endY":0,"width":2,"netName":"VCC"}|"#,
+        )
+        .unwrap();
+        let scene = compile(project, "board", "net-batches".into(), Metrics::default()).unwrap();
+        let nets: Vec<_> = scene
+            .batches
+            .iter()
+            .filter_map(|batch| batch.net.as_deref())
+            .collect();
+        assert_eq!(nets, ["GND", "VCC"]);
     }
 
     #[test]
@@ -1623,14 +1812,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            pick(&scene.id, 100., -100., 0.01, Some(&[1]))
+            pick(&scene.id, 100., -100., 0.01, Some(&[1]), None)
                 .unwrap()
                 .unwrap()
                 .kind,
             "COMPONENT"
         );
         assert_eq!(
-            pick(&scene.id, 90., -100., 0.01, Some(&[1]))
+            pick(&scene.id, 90., -100., 0.01, Some(&[1]), None)
                 .unwrap()
                 .unwrap()
                 .kind,
@@ -1642,9 +1831,15 @@ mod tests {
     fn component_bbox_is_not_pickable_when_all_its_actual_layers_are_hidden() {
         let _guard = scene_test_guard();
         let s = fixture_scene();
-        assert!(pick(&s.id, 400., 0., 0.01, Some(&[1])).unwrap().is_none());
+        assert!(
+            pick(&s.id, 400., 0., 0.01, Some(&[1]), None)
+                .unwrap()
+                .is_none()
+        );
         // The component's empty space is selectable on its actual silkscreen layer.
-        let found = pick(&s.id, 400., 0.54, 0.01, Some(&[3])).unwrap().unwrap();
+        let found = pick(&s.id, 400., 0.54, 0.01, Some(&[3]), None)
+            .unwrap()
+            .unwrap();
         assert_eq!(found.layer, 3);
     }
 
@@ -1652,13 +1847,15 @@ mod tests {
     fn actual_bottom_track_has_priority_over_empty_top_component_bbox() {
         let _guard = scene_test_guard();
         let s = fixture_scene();
-        let found = pick(&s.id, 500., 0., 0.01, Some(&[1, 2])).unwrap().unwrap();
+        let found = pick(&s.id, 500., 0., 0.01, Some(&[1, 2]), None)
+            .unwrap()
+            .unwrap();
         assert_eq!(
             (found.kind.as_str(), found.id.as_str()),
             ("LINE", "bottom-track")
         );
         assert_eq!(
-            pick(&s.id, 500., 0., 0.01, Some(&[1]))
+            pick(&s.id, 500., 0., 0.01, Some(&[1]), None)
                 .unwrap()
                 .unwrap()
                 .kind,

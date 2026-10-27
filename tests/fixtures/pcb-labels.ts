@@ -1,0 +1,78 @@
+import type { Scene } from "../../packages/bridge/src/types";
+
+// Two resistors sharing a supply: the copper batch deliberately contains two pads.
+export const labelScene: Scene = {
+  id: "pad-labels",
+  name: "焊盘标注对照",
+  revision: "1",
+  bounds: { minX: 0, minY: 0, maxX: 1000, maxY: 600 },
+  layers: [
+    { id: 1, name: "顶层铜", color: "#f00000", visible: true, order: 1 },
+    { id: 3, name: "顶层丝印", color: "#ffd500", visible: true, order: 3 },
+  ],
+  batches: [
+    {
+      layer: 1,
+      path: "M18 15H30V25H18Z M42 15H54V25H42Z",
+      fill: true,
+      width: 0,
+      bounds: { minX: 18, minY: 15, maxX: 54, maxY: 25 },
+      net: "VCC+3.3V",
+      kind: "PAD",
+    },
+    ...["PC10", "PC11"].map((net, i) => ({
+      layer: 1,
+      path: `M${18 + i * 24} 39H${30 + i * 24}V49H${18 + i * 24}Z`,
+      fill: true,
+      width: 0,
+      bounds: { minX: 18 + i * 24, minY: 39, maxX: 30 + i * 24, maxY: 49 },
+      net,
+      kind: "PAD",
+    })),
+    {
+      layer: 3,
+      path: "M15 25V12H33V25 M15 39V52H33V39 M39 25V12H57V25 M39 39V52H57V39",
+      fill: false,
+      width: 1.5,
+      bounds: { minX: 15, minY: 12, maxX: 57, maxY: 52 },
+    },
+  ],
+  netLabels: [24, 48].flatMap((x, i) => [
+    {
+      layer: 1,
+      kind: "PAD",
+      net: "VCC+3.3V",
+      padNumber: "2",
+      x,
+      y: 20,
+      width: 12,
+      height: 10,
+      rotation: 0,
+      hole: false,
+    },
+    {
+      layer: 1,
+      kind: "PAD",
+      net: i ? "PC11" : "PC10",
+      padNumber: "1",
+      x,
+      y: 44,
+      width: 12,
+      height: 10,
+      rotation: 0,
+      hole: false,
+    },
+  ]),
+  texts: [24, 48].map((x, i) => ({
+    layer: 3,
+    x,
+    y: 8,
+    text: `R${21 + i}`,
+    size: 8,
+    rotation: 0,
+    align: "center" as const,
+  })),
+  objectCount: 6,
+  warnings: [],
+  metrics: { loadMs: 0, parseMs: 0, sceneMs: 0, recordCount: 6, historyCount: 1, downloadBytes: 0 },
+};

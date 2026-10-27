@@ -218,7 +218,7 @@ test("search, sort, paging, safe detail, BOM, canvas controls, pick, and return"
   const viewport = page.viewportSize();
   if (!bounds || !viewport) throw new Error("Missing canvas dimensions");
   await expect(
-    page.getByText("拖动平移 · 双指 / 滚轮缩放 · 点选图元", { exact: true }),
+    page.getByText("拖动平移 · 双指 / 滚轮缩放 · 悬停高亮网络 · H / Shift+H", { exact: true }),
   ).toHaveCount(viewport.height < 500 ? 0 : 1);
   expect(bounds.width).toBeGreaterThan(
     viewport.width >= 1024 ? viewport.width - 260 : viewport.width - 8,

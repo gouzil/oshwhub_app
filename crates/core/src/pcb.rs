@@ -53,6 +53,8 @@ pub struct DrawBatch {
     pub width: f64,
     pub bounds: Bounds,
     pub color: Option<String>,
+    pub net: Option<String>,
+    pub kind: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +66,20 @@ pub struct TextLabel {
     pub size: f64,
     pub rotation: f64,
     pub align: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetLabel {
+    pub layer: i32,
+    pub kind: String,
+    pub net: Option<String>,
+    pub pad_number: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub rotation: f64,
+    pub hole: bool,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +101,8 @@ pub struct Scene {
     pub layers: Vec<SceneLayer>,
     pub batches: Vec<DrawBatch>,
     pub texts: Vec<TextLabel>,
+    #[serde(default)]
+    pub net_labels: Vec<NetLabel>,
     pub object_count: usize,
     pub warnings: Vec<String>,
     pub metrics: Metrics,
@@ -252,6 +270,7 @@ pub fn pick(
     y: f64,
     tolerance: f64,
     layers: Option<&[i32]>,
+    active_layer: Option<i32>,
 ) -> Result<Option<PickResult>> {
-    scene::pick(scene_id, x, y, tolerance, layers)
+    scene::pick(scene_id, x, y, tolerance, layers, active_layer)
 }
