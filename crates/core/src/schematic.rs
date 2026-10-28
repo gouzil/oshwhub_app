@@ -251,6 +251,7 @@ struct Builder<'a> {
     project: &'a history::Project,
     page: &'a history::Document,
     page_attrs: HashMap<String, BTreeMap<String, Value>>,
+    components: HashMap<String, &'a history::Record>,
     wire_groups: HashMap<String, &'a history::Record>,
     paints: Vec<Paint>,
     texts: Vec<TextLabel>,
@@ -268,6 +269,11 @@ impl<'a> Builder<'a> {
             project,
             page,
             page_attrs,
+            components: page
+                .active()
+                .filter(|r| r.kind == "COMPONENT")
+                .map(|r| (record_id(r), r))
+                .collect(),
             wire_groups: page
                 .active()
                 .filter(|record| matches!(record.kind.as_str(), "WIRE" | "BUS"))
@@ -611,27 +617,41 @@ impl<'a> Builder<'a> {
             "OBJ" => self.image(record, data, geometry::Transform::identity(), None)?,
             "TEXT" => self.add_text(record, data, geometry::Transform::identity(), None)?,
             "ATTR" => {
+                // Inherited coordinates are rendered with the component's transform instead.
+                if position(data).is_err() {
+                    return Ok(());
+                }
                 let parent = data["parentId"].as_str().unwrap_or("");
                 let values = self.component_values(parent);
-                let mut label = data.clone();
-                let key = data["key"].as_str().unwrap_or("");
-                if key == "Device" {
-                    label["value"] = json!(resolve_template(
-                        values.get("Name").and_then(Value::as_str).unwrap_or(""),
-                        &values
-                    ));
-                } else if let Some(value) = values.get(key) {
-                    label["value"] = json!(resolve_template(value.as_str().unwrap_or(""), &values));
-                }
-                // Null coordinates are inherited metadata, not page labels.
-                if position(&label).is_ok() {
-                    self.symbol_attr(
-                        record,
-                        &label,
-                        geometry::Transform::identity(),
-                        Some(parent),
-                    )?;
-                }
+                let defaults = self.component_symbol(parent, &values).and_then(|symbol| {
+                    let component = self.components.get(parent)?.data.as_ref()?;
+                    let part_id = component["partId"].as_str().or_else(|| {
+                        Self::attr_value(self.page_attrs.get(parent), "Part")
+                            .and_then(Value::as_str)
+                    });
+                    let part = symbol
+                        .active()
+                        .find(|r| r.kind == "PART" && r.id.as_str() == part_id)
+                        .or_else(|| symbol.active().find(|r| r.kind == "PART"))?;
+                    symbol
+                        .active()
+                        .filter(|r| r.kind == "ATTR")
+                        .filter_map(|r| r.data.as_ref())
+                        .find(|attr| {
+                            attr["parentId"].as_str() == Some("")
+                                && attr["key"] == data["key"]
+                                && attr["partId"]
+                                    .as_str()
+                                    .is_none_or(|id| part.id.as_str() == Some(id))
+                        })
+                });
+                let label = self.attribute_label(data, defaults, &values);
+                self.symbol_attr(
+                    record,
+                    &label,
+                    geometry::Transform::identity(),
+                    Some(parent),
+                )?;
             }
             "CIRCLE" => {
                 let center = if data.get("centerX").is_some() {
@@ -1095,21 +1115,65 @@ impl<'a> Builder<'a> {
         values
     }
 
+    fn component_symbol(
+        &self,
+        id: &str,
+        values: &BTreeMap<String, Value>,
+    ) -> Option<&history::Document> {
+        let data = self.components.get(id)?.data.as_ref()?;
+        values
+            .get("Symbol")
+            .and_then(Value::as_str)
+            .or_else(|| data["symbolId"].as_str())
+            .or_else(|| data["symbol"].as_str())
+            .and_then(|id| self.project.docs.get(id))
+            .filter(|doc| doc.head["docType"] == "SYMBOL" && !doc.deleted())
+    }
+
+    fn attribute_label(
+        &self,
+        data: &Value,
+        defaults: Option<&Value>,
+        values: &BTreeMap<String, Value>,
+    ) -> Value {
+        let mut label = defaults.unwrap_or(data).clone();
+        if let Some(fields) = data.as_object() {
+            // Null instance fields inherit the library; false and empty strings are explicit overrides.
+            for (key, value) in fields.iter().filter(|(_, value)| !value.is_null()) {
+                label[key] = value.clone();
+            }
+        }
+        if let Ok((x, y)) = position(data) {
+            label["x"] = json!(x);
+            label["y"] = json!(y);
+        }
+        let key = label["key"].as_str().unwrap_or("");
+        let value = if key == "Device" {
+            values.get("Name")
+        } else {
+            values.get(key).or_else(|| label.get("value"))
+        };
+        let value = value.and_then(Value::as_str).unwrap_or("");
+        let value = if key == "Footprint" {
+            self.project
+                .docs
+                .get(value)
+                .and_then(|doc| doc.first("META"))
+                .and_then(|meta| meta["title"].as_str())
+                .unwrap_or(value)
+        } else {
+            value
+        };
+        label["value"] = json!(resolve_template(value, values));
+        label
+    }
+
     fn component(&mut self, record: &history::Record) -> Result<()> {
         let data = record.data.as_ref().ok_or_else(invalid)?;
         let id = record_id(record);
         let attrs = self.page_attrs.get(&id).cloned();
         let values = self.component_values(&id);
-        let symbol_ref = values
-            .get("Symbol")
-            .and_then(Value::as_str)
-            .or_else(|| data["symbolId"].as_str())
-            .or_else(|| data["symbol"].as_str());
-        let Some(symbol) = symbol_ref
-            .and_then(|id| self.project.docs.get(id))
-            .filter(|doc| doc.head["docType"] == "SYMBOL" && !doc.deleted())
-            .cloned()
-        else {
+        let Some(symbol) = self.component_symbol(&id, &values).cloned() else {
             self.warn(format!("器件 {} 缺少符号，已保留属性", id));
             return self.fallback_component(record, data);
         };
@@ -1167,11 +1231,13 @@ impl<'a> Builder<'a> {
                     let mut label = child.data.clone().ok_or_else(invalid)?;
                     let key = label["key"].as_str().unwrap_or("").to_owned();
                     if label["parentId"].as_str() == Some("") {
-                        if attrs.as_ref().is_some_and(|attrs| attrs.contains_key(&key)) {
-                            continue;
-                        }
-                        if let Some(value) = values.get(&key) {
-                            label["value"] = value.clone();
+                        if let Some(instance) = attrs.as_ref().and_then(|attrs| attrs.get(&key)) {
+                            if position(instance).is_ok() {
+                                continue;
+                            }
+                            label = self.attribute_label(instance, Some(&label), &values);
+                        } else {
+                            label = self.attribute_label(&label, None, &values);
                         }
                     }
                     self.symbol_attr(child, &label, tf, Some(&id))
@@ -1406,6 +1472,73 @@ impl<'a> Builder<'a> {
         self.add_text(record, &label, tf, parent)
     }
 
+    fn connection_markers(&mut self) -> Result<()> {
+        // Rotation introduces tiny rounding errors at otherwise identical electrical endpoints.
+        let key = |p: geometry::Point| ((p.0 * 1e6).round() as i64, (p.1 * 1e6).round() as i64);
+        let mut points: BTreeMap<_, (geometry::Point, usize, Option<String>)> = BTreeMap::new();
+        let mut explicit = HashSet::new();
+        for paint in &self.paints {
+            if paint.result.kind == "JUNCTION" {
+                let b = paint.geometry.bounds;
+                explicit.insert(key(((b.min_x + b.max_x) / 2., (b.min_y + b.max_y) / 2.)));
+            }
+            let wire = paint.result.kind == "WIRE" && paint.result.layer == 1;
+            let pin = paint.result.kind == "PIN" && paint.result.layer == 4;
+            if !wire && !pin {
+                continue;
+            }
+            let mut add = |p| {
+                let entry = points.entry(key(p)).or_insert((p, 0, None));
+                entry.1 += 1;
+                if wire {
+                    entry.2 = Some(paint.result.id.clone());
+                }
+            };
+            if wire {
+                for contour in &paint.geometry.contours {
+                    for segment in contour.windows(2).filter(|s| s[0] != s[1]) {
+                        add(segment[0]);
+                        add(segment[1]);
+                    }
+                }
+            } else if let Some(point) = paint.geometry.contours.first().and_then(|c| c.first()) {
+                add(*point);
+            }
+        }
+        for (key, (point, count, wire)) in points {
+            if count == 2 || explicit.contains(&key) {
+                continue;
+            }
+            let Some(record) = wire
+                .as_ref()
+                .and_then(|id| self.wire_groups.get(id))
+                .copied()
+            else {
+                continue;
+            };
+            self.add_paint(
+                record,
+                geometry::circle(
+                    point.0,
+                    point.1,
+                    if count == 1 { 1.25 } else { 2.5 },
+                    geometry::Transform::identity(),
+                )?,
+                7,
+                true,
+                0.,
+                3,
+                None,
+                self.net(wire.as_deref().unwrap_or("")),
+                Some(if count == 1 { "#8c9b99" } else { "#e38c8c" }.into()),
+            )?;
+            if let Some(marker) = self.paints.last_mut() {
+                marker.selectable = false;
+            }
+        }
+        Ok(())
+    }
+
     fn finish(self, revision: String, mut metrics: Metrics) -> Result<Scene> {
         let start = Instant::now();
         let mut paints = self.paints;
@@ -1544,6 +1677,7 @@ fn compile(
             builder.warn(format!("{} 图元无法解析，部分场景缺失", record.kind));
         }
     }
+    builder.connection_markers()?;
     builder.finish(revision, metrics)
 }
 
@@ -1707,6 +1841,58 @@ mod tests {
     }
 
     #[test]
+    fn derives_connection_dots_without_joining_crossings_or_duplicating_explicit_junctions() {
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"WIRE","id":"left","ticket":1}||{"dots":[-10,0,0,0]}|
+{"type":"WIRE","id":"right","ticket":1}||{"dots":[0,0,10,0]}|
+{"type":"WIRE","id":"branch","ticket":1}||{"dots":[0,0,0,10]}|
+{"type":"WIRE","id":"cross-a","ticket":1}||{"dots":[20,0,40,0]}|
+{"type":"WIRE","id":"cross-b","ticket":1}||{"dots":[30,-10,30,10]}|
+{"type":"WIRE","id":"bend","ticket":1}||{"dots":[50,0,60,0,60,10]}|
+{"type":"WIRE","id":"pin-wire","ticket":1}||{"dots":[100,0,110,0]}|
+{"type":"COMPONENT","id":"pin-a","ticket":1}||{"partId":"part","symbolId":"symbol","x":100,"y":0}|
+{"type":"COMPONENT","id":"pin-b","ticket":1}||{"partId":"part","symbolId":"symbol","x":100,"y":0,"rotation":90}|
+{"type":"JUNCTION","id":"explicit","ticket":1}||{"x":0,"y":0}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"symbol","client":"a"}|
+{"type":"PART","id":"part","ticket":1}||{}|
+{"type":"PIN","id":"pin","ticket":1}||{"partId":"part","x":0,"y":0,"length":10}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let page = &project.docs["page"];
+        let mut builder = Builder::new(&project, page);
+        for record in page.active() {
+            builder.page_primitive(record).unwrap();
+        }
+        builder.connection_markers().unwrap();
+        let dots: Vec<_> = builder
+            .paints
+            .iter()
+            .filter(|p| p.result.layer == 7)
+            .collect();
+        let at = |x, y| {
+            dots.iter()
+                .filter(|p| p.result.bounds.contains((x, y), 0.))
+                .count()
+        };
+        assert_eq!(at(0., 0.), 1);
+        assert_eq!(at(100., 0.), 1);
+        assert_eq!(at(30., 0.), 0);
+        assert_eq!(at(60., 0.), 0);
+        assert_eq!(at(110., 0.), 1);
+        assert_eq!(dots.len(), 12);
+        assert!(
+            dots.iter()
+                .any(|p| !p.selectable && p.color.as_deref() == Some("#e38c8c"))
+        );
+        assert!(
+            dots.iter()
+                .any(|p| !p.selectable && p.color.as_deref() == Some("#8c9b99"))
+        );
+    }
+
+    #[test]
     fn renders_three_point_arcs_and_signed_radius_ellipses() {
         let _guard = scene_test_guard();
         let log = r#"
@@ -1821,6 +2007,60 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("missing") && w.contains("符号"))
         );
+    }
+
+    #[test]
+    fn component_attributes_inherit_layout_visibility_and_readable_references() {
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"COMPONENT","id":"c","ticket":1}||{"partId":"part","symbolId":"symbol","x":100,"y":50,"rotation":180}|
+{"type":"ATTR","id":"device","ticket":1}||{"parentId":"c","key":"Device","value":"device","valueVisible":false}|
+{"type":"ATTR","id":"net","ticket":1}||{"parentId":"c","key":"Global Net Name","value":null,"valueVisible":true,"x":null,"y":null,"rotation":null,"fontSize":10}|
+{"type":"ATTR","id":"power","ticket":1}||{"parentId":"c","key":"Power","value":"VBUS","valueVisible":null,"x":null,"y":null,"fontSize":null}|
+{"type":"ATTR","id":"hidden","ticket":1}||{"parentId":"c","key":"Hidden","value":"HIDDEN","valueVisible":false,"x":null,"y":null}|
+{"type":"ATTR","id":"moved","ticket":1}||{"parentId":"c","key":"Moved","value":"MOVED","valueVisible":null,"x":130,"y":80,"fontSize":null,"rotation":null,"align":null}|
+{"type":"ATTR","id":"footprint","ticket":1}||{"parentId":"c","key":"Footprint","value":null,"valueVisible":true,"x":90,"y":30}|
+{"type":"ATTR","id":"name","ticket":1}||{"parentId":"c","key":"Name","value":"={Global Net Name}","valueVisible":true,"x":90,"y":40}|
+{"type":"DOCHEAD"}||{"docType":"DEVICE","uuid":"device","client":"a"}|
+{"type":"META","id":"meta","ticket":1}||{"attributes":{"Global Net Name":"GND","Footprint":"footprint"}}|
+{"type":"DOCHEAD"}||{"docType":"FOOTPRINT","uuid":"footprint","client":"a"}|
+{"type":"META","id":"meta","ticket":1}||{"title":"USB-SMD_TYPEC-304A-ACP16O"}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"symbol","client":"a"}|
+{"type":"PART","id":"part","ticket":1}||{}|
+{"type":"ATTR","id":"net","ticket":1}||{"partId":"part","parentId":"","key":"Global Net Name","value":"","valueVisible":false,"x":0,"y":25,"rotation":0,"fontSize":6,"align":"CENTER_MIDDLE"}|
+{"type":"ATTR","id":"power","ticket":1}||{"partId":"part","parentId":"","key":"Power","value":"VCC","valueVisible":true,"x":0,"y":-10,"fontSize":6,"align":"CENTER_BOTTOM"}|
+{"type":"ATTR","id":"hidden","ticket":1}||{"partId":"part","parentId":"","key":"Hidden","value":"DEFAULT","valueVisible":true,"x":0,"y":15}|
+{"type":"ATTR","id":"moved","ticket":1}||{"partId":"part","parentId":"","key":"Moved","value":"DEFAULT","valueVisible":true,"x":0,"y":20,"fontSize":8,"rotation":0,"align":"CENTER_MIDDLE"}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let page = &project.docs["page"];
+        let mut builder = Builder::new(&project, page);
+        for record in page.active() {
+            builder.page_primitive(record).unwrap();
+        }
+        let labels = &builder.texts;
+        assert_eq!(labels.iter().filter(|t| t.text == "GND").count(), 2);
+        let ground = labels
+            .iter()
+            .find(|t| t.text == "GND" && t.size == 10.)
+            .unwrap();
+        assert_eq!((ground.x, ground.y), (100., 25.));
+        assert_eq!(ground.align, "center");
+        assert_eq!(ground.vertical_align, "middle");
+        let power = labels.iter().find(|t| t.text == "VBUS").unwrap();
+        assert_eq!((power.x, power.y), (100., 60.));
+        let moved = labels.iter().find(|t| t.text == "MOVED").unwrap();
+        assert_eq!((moved.x, moved.y, moved.size), (130., 80., 8.));
+        assert_eq!(moved.vertical_align, "middle");
+        assert_eq!(labels.iter().filter(|t| t.text == "MOVED").count(), 1);
+        assert!(
+            !labels
+                .iter()
+                .any(|t| t.text == "HIDDEN" || t.text == "DEFAULT")
+        );
+        assert!(labels.iter().any(|t| t.text == "USB-SMD_TYPEC-304A-ACP16O"));
+        assert!(!labels.iter().any(|t| t.text == "footprint"));
     }
 
     #[test]

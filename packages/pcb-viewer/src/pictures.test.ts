@@ -93,6 +93,61 @@ describe("real CanvasKit picture recording", () => {
       buildPictures({ ...scene, batches: [{ ...scene.batches[0], path: "broken path" }] }),
     ).rejects.toThrow("无法绘制");
   });
+  it("keeps label spacing proportional when the camera enlarges small text", async () => {
+    const data = Skia.Data.fromBytes(
+      readFileSync(new URL("./assets/NotoSansSC-Regular.ttf", import.meta.url)),
+    );
+    const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
+    if (!typeface) throw new Error("Bundled font unavailable");
+    const render = async (scale: number) => {
+      const { pictures } = await buildPictures(
+        {
+          ...scene,
+          bounds: { minX: 0, minY: 0, maxX: 400, maxY: 80 },
+          batches: [],
+          texts: [
+            {
+              layer: 1,
+              x: 8 / scale,
+              y: 60 / scale,
+              text: "USB1 USB_N SBU2",
+              size: 24 / scale,
+              rotation: 0,
+              align: "left",
+            },
+          ],
+        },
+        typeface,
+      );
+      const surface = Skia.Surface.Make(400, 80);
+      if (!surface) throw new Error("CanvasKit software surface unavailable");
+      const canvas = surface.getCanvas();
+      canvas.clear(Skia.Color("#000000"));
+      canvas.scale(scale, scale);
+      for (const { picture } of pictures) canvas.drawPicture(picture);
+      const image = surface.makeImageSnapshot();
+      const pixels = image.readPixels();
+      if (!pixels) throw new Error("CanvasKit pixels unavailable");
+      const ink = new Set(
+        Array.from(pixels).flatMap((value, i) => (i % 4 === 0 && value > 127 ? [i / 4] : [])),
+      );
+      for (const { picture } of pictures) picture.dispose();
+      image.dispose();
+      surface.dispose();
+      return ink;
+    };
+    try {
+      const enlarged = await render(4);
+      const nativeSize = await render(1);
+      const different =
+        [...enlarged].filter((p) => !nativeSize.has(p)).length +
+        [...nativeSize].filter((p) => !enlarged.has(p)).length;
+      expect(different / nativeSize.size).toBeLessThan(0.02);
+    } finally {
+      typeface.dispose();
+      data.dispose();
+    }
+  });
   it("records visible Latin and Chinese labels with the bundled typeface", async () => {
     const data = Skia.Data.fromBytes(
       readFileSync(new URL("./assets/NotoSansSC-Regular.ttf", import.meta.url)),

@@ -692,7 +692,7 @@ export function PcbViewer({
               selection &&
               selected && (
                 <>
-                  <Text style={styles.propertySection}>常用属性</Text>
+                  {!compact && <Text style={styles.propertySection}>常用属性</Text>}
                   {selected.fields.map(([label, value], index) => (
                     <Property
                       key={`${index}-${label}`}

@@ -123,6 +123,9 @@ export async function buildPictures(scene: Scene, typeface?: SkTypeface) {
           let font = fonts.get(text.size);
           if (!font) {
             font = Skia.Font(typeface, text.size);
+            // Camera zoom must preserve fractional glyph advances in small schematic labels.
+            font.setLinearMetrics(true);
+            font.setSubpixel(true);
             fonts.set(text.size, font);
           }
           font.setEmbolden(text.bold ?? false);
