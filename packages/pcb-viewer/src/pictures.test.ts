@@ -148,6 +148,67 @@ describe("real CanvasKit picture recording", () => {
       data.dispose();
     }
   });
+  it.each([
+    "top",
+    "middle",
+    "bottom",
+  ] as const)("keeps %s-aligned label baselines independent of glyph contents", async (verticalAlign) => {
+    const data = Skia.Data.fromBytes(
+      readFileSync(new URL("./assets/NotoSansSC-Regular.ttf", import.meta.url)),
+    );
+    const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
+    if (!typeface) throw new Error("Bundled font unavailable");
+    const renderPrefix = async (text: string, rotation: number) => {
+      const { pictures } = await buildPictures(
+        {
+          ...scene,
+          bounds: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+          batches: [],
+          texts: [
+            { layer: 1, x: 32, y: 32, text, size: 6, rotation, align: "left", verticalAlign },
+          ],
+        },
+        typeface,
+      );
+      const surface = Skia.Surface.Make(400, 400);
+      if (!surface) throw new Error("CanvasKit software surface unavailable");
+      const canvas = surface.getCanvas();
+      canvas.clear(Skia.Color("#000000"));
+      canvas.scale(4, 4);
+      for (const { picture } of pictures) canvas.drawPicture(picture);
+      const image = surface.makeImageSnapshot();
+      try {
+        const pixels = image.readPixels();
+        if (!pixels) throw new Error("CanvasKit pixels unavailable");
+        const prefix: number[] = [];
+        // Compare only the shared first glyph, excluding the varying suffix.
+        for (let along = 0; along < 10; along++) {
+          for (let across = -64; across < 64; across++) {
+            const x = rotation === 0 ? 128 + along : 128 - across;
+            const y = rotation === 0 ? 128 + across : 128 + along;
+            prefix.push(pixels[(y * 400 + x) * 4]);
+          }
+        }
+        return prefix;
+      } finally {
+        for (const { picture } of pictures) picture.dispose();
+        image.dispose();
+        surface.dispose();
+      }
+    };
+    try {
+      for (const rotation of [0, 90]) {
+        const plain = await renderPrefix("CLK", rotation);
+        expect(plain.some((pixel) => pixel > 0)).toBe(true);
+        for (const text of ["CLK/DMIC_SCL", "CLKgj", "CLK中文"]) {
+          expect(await renderPrefix(text, rotation)).toEqual(plain);
+        }
+      }
+    } finally {
+      typeface.dispose();
+      data.dispose();
+    }
+  });
   it("records visible Latin and Chinese labels with the bundled typeface", async () => {
     const data = Skia.Data.fromBytes(
       readFileSync(new URL("./assets/NotoSansSC-Regular.ttf", import.meta.url)),

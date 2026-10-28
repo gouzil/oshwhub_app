@@ -152,13 +152,15 @@ export async function buildPictures(scene: Scene, typeface?: SkTypeface) {
           canvas.save();
           canvas.translate(text.x, text.y);
           canvas.rotate(text.rotation, 0, 0);
+          // Align the font's line box so underscores and descenders cannot shift a label's baseline.
+          const metrics = font.getMetrics();
           const y =
             text.verticalAlign === "middle"
-              ? -measure.y - measure.height / 2
+              ? -(metrics.ascent + metrics.descent) / 2
               : text.verticalAlign === "top"
-                ? -measure.y
+                ? -metrics.ascent
                 : text.verticalAlign === "bottom"
-                  ? -measure.y - measure.height
+                  ? -metrics.descent
                   : 0;
           canvas.drawText(renderedText, x, y, textPaint, font);
           canvas.restore();
