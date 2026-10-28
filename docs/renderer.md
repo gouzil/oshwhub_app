@@ -40,6 +40,26 @@ component transform, and emits the existing `Scene`/`DrawBatch`/`TextLabel`
 protocol. Logical layers separate wires, buses, symbols, pins, text, shapes,
 and junctions. Visible attributes and symbol metadata remain available in
 `PickResult.properties`; net attributes become `PickResult.net`.
+Schematic picking resolves device defaults, instance overrides and name templates
+through the same values used for drawing, including null values that inherit from
+the device. Device and footprint titles accompany their opaque references. The
+inspector prioritizes readable attributes, translates built-in property names,
+omits empty values, and separates additional attributes and source IDs into
+collapsed sections. Custom attribute names retain the author's spelling.
+Current histories split wires and buses into group records and `LINE` segments
+linked by `lineGroup`; segment rendering and picking retain the group's type,
+ID, layer and net. Symbol polylines accept `{x,y}` point lists and preserve the
+`closed` flag. Three-point arcs and signed ellipse radii use the same geometry
+and picking paths as other shapes. Device metadata supplies inherited symbol references,
+values and name expressions; symbol pin attributes are scoped per document. EDA
+rotation is counterclockwise in the page's downward-Y coordinates. Text preserves
+horizontal/vertical anchoring, color and weight, and remains upright when mirrored.
+Merged TABLE cells resolve instance templates; drawing-sheet metadata generates
+the border and region marks. Embedded OBJ images use optional `Scene.images`
+with a six-value affine transform and bounded data URLs (no external image fetch).
+Web SVG objects use a 4× raster cache capped at 4096 pixels; native uses Skia SVG.
+Missing mathematical alphabet glyphs use readable compatibility letters; other
+missing glyphs still produce a warning.
 
 Schematic scenes use their own bounded two-entry picking cache. The `pick`
 command first checks the PCB cache and then the schematic cache, so scene IDs

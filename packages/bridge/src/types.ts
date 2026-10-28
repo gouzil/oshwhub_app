@@ -78,6 +78,16 @@ export interface TextLabel {
   size: number;
   rotation: number;
   align?: "left" | "center" | "right";
+  verticalAlign?: "" | "bottom" | "middle" | "top";
+  color?: string | null;
+  bold?: boolean;
+}
+export interface SceneImage {
+  layer: number;
+  content: string;
+  width: number;
+  height: number;
+  transform: [number, number, number, number, number, number];
 }
 export interface Scene {
   id: string;
@@ -87,6 +97,7 @@ export interface Scene {
   layers: SceneLayer[];
   batches: DrawBatch[];
   texts: TextLabel[];
+  images?: SceneImage[];
   objectCount: number;
   warnings: string[];
   metrics: {

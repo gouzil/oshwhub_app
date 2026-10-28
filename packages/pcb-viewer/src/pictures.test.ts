@@ -39,8 +39,8 @@ const scene: Scene = {
 };
 
 describe("real CanvasKit picture recording", () => {
-  it("keeps overlapping copper solid and reverse-winding holes empty", () => {
-    const { pictures } = buildPictures(scene);
+  it("keeps overlapping copper solid and reverse-winding holes empty", async () => {
+    const { pictures } = await buildPictures(scene);
     const surface = Skia.Surface.Make(40, 30);
     if (!surface) throw new Error("CanvasKit software surface unavailable");
     const canvas = surface.getCanvas();
@@ -57,22 +57,53 @@ describe("real CanvasKit picture recording", () => {
     image.dispose();
     surface.dispose();
   });
-  it("reports corrupt SVG instead of drawing a partial board", () => {
-    expect(() =>
-      buildPictures({ ...scene, batches: [{ ...scene.batches[0], path: "broken path" }] }),
-    ).toThrow("无法绘制");
+  it("records embedded images at their transformed sheet position", async () => {
+    const source = Skia.Surface.Make(10, 10);
+    if (!source) throw new Error("CanvasKit software surface unavailable");
+    source.getCanvas().clear(Skia.Color("#0000ff"));
+    const bitmap = source.makeImageSnapshot();
+    const content = `data:image/png;base64,${bitmap.encodeToBase64()}`;
+    const { pictures } = await buildPictures({
+      ...scene,
+      batches: [],
+      images: [{ layer: 1, content, width: 10, height: 10, transform: [1, 0, 0, 1, 5, 7] }],
+    });
+    bitmap.dispose();
+    source.dispose();
+    const surface = Skia.Surface.Make(40, 30);
+    if (!surface) throw new Error("CanvasKit software surface unavailable");
+    const canvas = surface.getCanvas();
+    canvas.clear(Skia.Color("#000000"));
+    for (const { picture } of pictures) canvas.drawPicture(picture);
+    const image = surface.makeImageSnapshot();
+    const pixels = image.readPixels();
+    if (!pixels) throw new Error("CanvasKit pixels unavailable");
+    expect(Array.from(pixels.slice((10 * 40 + 8) * 4, (10 * 40 + 8) * 4 + 4))).toEqual([
+      0, 0, 255, 255,
+    ]);
+    expect(Array.from(pixels.slice((3 * 40 + 3) * 4, (3 * 40 + 3) * 4 + 4))).toEqual([
+      0, 0, 0, 255,
+    ]);
+    for (const { picture } of pictures) picture.dispose();
+    image.dispose();
+    surface.dispose();
   });
-  it("records visible Latin and Chinese labels with the bundled typeface", () => {
+  it("reports corrupt SVG instead of drawing a partial board", async () => {
+    await expect(
+      buildPictures({ ...scene, batches: [{ ...scene.batches[0], path: "broken path" }] }),
+    ).rejects.toThrow("无法绘制");
+  });
+  it("records visible Latin and Chinese labels with the bundled typeface", async () => {
     const data = Skia.Data.fromBytes(
       readFileSync(new URL("./assets/NotoSansSC-Regular.ttf", import.meta.url)),
     );
     const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
     if (!typeface) throw new Error("Bundled font unavailable");
-    const { pictures, warnings } = buildPictures(
+    const { pictures, warnings } = await buildPictures(
       {
         ...scene,
         batches: [],
-        texts: [{ layer: 1, x: 2, y: 20, text: "U1中文", size: 10, rotation: 0, align: "left" }],
+        texts: [{ layer: 1, x: 2, y: 20, text: "U1中文𝐼𝐵⁄", size: 10, rotation: 0, align: "left" }],
       },
       typeface,
     );

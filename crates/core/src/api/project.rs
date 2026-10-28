@@ -178,6 +178,15 @@ fn board(data: &Value, standalone: bool) -> Result<Board> {
     if let Some(id) = schematic_id {
         validate_id(id).map_err(|_| invalid_response())?;
     }
+    // shortcut: open the first published page until the viewer supports page switching.
+    let schematic_id = if let Some(page) = optional_array(&data["schematic"], "documents")?.first()
+    {
+        let id = required(page, "uuid")?;
+        validate_id(id).map_err(|_| invalid_response())?;
+        Some(id)
+    } else {
+        schematic_id
+    };
     let thumbnail = if standalone {
         &data["thumb"]
     } else {

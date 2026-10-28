@@ -6,10 +6,12 @@ import {
   Skia,
   type SkPaint,
   type SkPicture,
+  type SkSVG,
   type SkTypeface,
   StrokeCap,
   StrokeJoin,
 } from "@shopify/react-native-skia";
+import { decodeSvg } from "./embeddedImage";
 import { planLayers } from "./layers";
 import type { RasterPlan } from "./raster";
 
@@ -42,12 +44,12 @@ export function rasterize(pictures: LayerPicture[], plan: RasterPlan): BoardRast
   }
 }
 
-export function buildPictures(scene: Scene, typeface?: SkTypeface) {
+export async function buildPictures(scene: Scene, typeface?: SkTypeface) {
   if (scene.texts.length && !typeface) throw new Error("PCB 字体尚未加载。");
   const pictures: LayerPicture[] = [];
   const missing = new Set<string>();
   try {
-    for (const { layer, batches, texts } of planLayers(scene)) {
+    for (const { layer, batches, texts, images } of planLayers(scene)) {
       const recorder = Skia.PictureRecorder();
       const margin =
         Math.max(scene.bounds.maxX - scene.bounds.minX, scene.bounds.maxY - scene.bounds.minY, 1) *
@@ -64,6 +66,36 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
       const fonts = new Map<number, SkFont>();
       const textPaint = Skia.Paint();
       try {
+        for (const image of images) {
+          const data = Skia.Data.fromBase64(image.content.slice(image.content.indexOf(",") + 1));
+          let decoded: SkImage | SkSVG | null = null;
+          try {
+            decoded = image.content.startsWith("data:image/svg+xml;")
+              ? await decodeSvg(image.content)
+              : Skia.Image.MakeImageFromEncoded(data);
+            if (!decoded) throw new Error("原理图嵌入图片无法解码。");
+            if (decoded.__typename__ === "Image" && decoded.width() * decoded.height() > 16_777_216)
+              throw new Error("原理图图片尺寸超过限制。");
+            const [a, b, c, d, x, y] = image.transform;
+            canvas.save();
+            canvas.concat([a, c, x, b, d, y, 0, 0, 1]);
+            if (decoded.__typename__ === "SVG") {
+              canvas.scale(image.width / decoded.width(), image.height / decoded.height());
+              canvas.drawSvg(decoded);
+            } else {
+              canvas.drawImageRect(
+                decoded,
+                Skia.XYWHRect(0, 0, decoded.width(), decoded.height()),
+                Skia.XYWHRect(0, 0, image.width, image.height),
+                textPaint,
+              );
+            }
+            canvas.restore();
+          } finally {
+            decoded?.dispose();
+            data.dispose();
+          }
+        }
         for (const batch of batches) {
           const color = batch.color || layer.color;
           const key = `${color}/${batch.fill}/${batch.width}`;
@@ -87,19 +119,27 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
           }
         }
         textPaint.setAntiAlias(true);
-        textPaint.setColor(Skia.Color(layer.color));
         for (const text of texts) {
           let font = fonts.get(text.size);
           if (!font) {
             font = Skia.Font(typeface, text.size);
             fonts.set(text.size, font);
           }
+          font.setEmbolden(text.bold ?? false);
+          textPaint.setColor(Skia.Color(text.color || layer.color));
           const characters = Array.from(text.text);
           const glyphs = font.getGlyphIDs(text.text, characters.length);
-          characters.forEach((character, i) => {
-            if (glyphs[i] === 0) missing.add(character);
-          });
-          const measure = font.measureText(text.text);
+          const renderedText = characters
+            .map((character, i) => {
+              if (glyphs[i] !== 0) return character;
+              // shortcut: use compatible math glyphs; add a fallback typeface for exact styling.
+              const plain = character === "⁄" ? "/" : character.normalize("NFKC");
+              if (/^[A-Za-z0-9/]$/.test(plain) && font.getGlyphIDs(plain, 1)[0] !== 0) return plain;
+              missing.add(character);
+              return character;
+            })
+            .join("");
+          const measure = font.measureText(renderedText);
           const x =
             text.align === "center"
               ? -measure.width / 2
@@ -109,7 +149,15 @@ export function buildPictures(scene: Scene, typeface?: SkTypeface) {
           canvas.save();
           canvas.translate(text.x, text.y);
           canvas.rotate(text.rotation, 0, 0);
-          canvas.drawText(text.text, x, 0, textPaint, font);
+          const y =
+            text.verticalAlign === "middle"
+              ? -measure.y - measure.height / 2
+              : text.verticalAlign === "top"
+                ? -measure.y
+                : text.verticalAlign === "bottom"
+                  ? -measure.y - measure.height
+                  : 0;
+          canvas.drawText(renderedText, x, y, textPaint, font);
           canvas.restore();
         }
         pictures.push({ layer, picture: recorder.finishRecordingAsPicture() });

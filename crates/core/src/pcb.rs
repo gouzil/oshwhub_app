@@ -64,6 +64,21 @@ pub struct TextLabel {
     pub size: f64,
     pub rotation: f64,
     pub align: String,
+    #[serde(default)]
+    pub vertical_align: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub bold: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneImage {
+    pub layer: i32,
+    pub content: String,
+    pub width: f64,
+    pub height: f64,
+    pub transform: [f64; 6],
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +100,8 @@ pub struct Scene {
     pub layers: Vec<SceneLayer>,
     pub batches: Vec<DrawBatch>,
     pub texts: Vec<TextLabel>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<SceneImage>,
     pub object_count: usize,
     pub warnings: Vec<String>,
     pub metrics: Metrics,
@@ -207,9 +224,13 @@ pub(crate) async fn load_project(
     .try_collect()
     .await?;
     let download_bytes = downloaded_bytes.load(Ordering::Relaxed);
+    let project_metadata = metadata.clone();
     let (project, metrics) = tokio::task::spawn_blocking(move || {
         let parse_start = Instant::now();
-        let mut project = history::Project::default();
+        let mut project = history::Project {
+            metadata: project_metadata,
+            ..history::Project::default()
+        };
         let mut decoded = 0usize;
         for (key, iv, bytes) in payloads {
             let text = history::decode(

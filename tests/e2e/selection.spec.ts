@@ -31,7 +31,7 @@ test("selected components show readable properties in a compact card and keep ID
   await surface.tap();
   await expect(page.getByRole("heading", { name: "C49", exact: true })).toBeVisible();
   await expect(page.getByText("GND", { exact: true })).toBeInViewport({ ratio: 1 });
-  await expect(page.getByText("参数", { exact: true })).toBeVisible();
+  await expect(page.getByText("值", { exact: true })).toBeVisible();
   await expect(page.getByText("100 nF", { exact: true })).toBeVisible();
   await expect(page.getByText("封装", { exact: true })).toBeVisible();
   await expect(page.getByText("C0603", { exact: true })).toBeVisible();
@@ -46,6 +46,9 @@ test("selected components show readable properties in a compact card and keep ID
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
   await page.getByRole("button", { name: "技术详情", exact: true }).click();
   await expect(page.getByText("f0d8af1247985cb7/e5", { exact: true })).toBeAttached();
+  await expect(panel.getByText("通道 ID", { exact: true })).toBeAttached();
+  await expect(panel.getByText("Channel ID", { exact: true })).toHaveCount(0);
+  await expect(panel.getByText("100 nF", { exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "关闭图元属性", exact: true }).click();
   await expect(panel).toHaveCount(0);
   await surface.tap();

@@ -2,8 +2,8 @@ use crate::{
     client::HttpClient,
     error::{AppError, Result},
     pcb::{
-        self, Bounds, DrawBatch, Metrics, PickResult, Scene, SceneLayer, TextLabel, geometry,
-        history,
+        self, Bounds, DrawBatch, Metrics, PickResult, Scene, SceneImage, SceneLayer, TextLabel,
+        geometry, history,
     },
 };
 use serde_json::{Value, json};
@@ -150,6 +150,10 @@ fn points(value: &Value) -> Result<Vec<f64>> {
     }
     let mut flat = Vec::with_capacity(array.len() * 2);
     for point in array {
+        if point.is_object() {
+            flat.extend([required(point, "x")?, required(point, "y")?]);
+            continue;
+        }
         let point = point.as_array().ok_or_else(invalid)?;
         if point.len() < 2 {
             return Err(invalid());
@@ -186,6 +190,37 @@ fn path_value(value: &Value, key: &str) -> Option<Value> {
         .or_else(|| value.get("dots").cloned())
 }
 
+fn resolve_template(input: &str, values: &BTreeMap<String, Value>) -> String {
+    if !input.starts_with('=') && !input.contains("={") {
+        return input.to_owned();
+    }
+    let mut result = input.strip_prefix('=').unwrap_or(input).to_owned();
+    for _ in 0..8 {
+        let Some(start) = result.find('{') else {
+            break;
+        };
+        let Some(end) = result[start + 1..].find('}') else {
+            break;
+        };
+        let end = start + 1 + end;
+        let replacement = values
+            .get(&result[start + 1..end])
+            .filter(|value| !value.is_null())
+            .map(text)
+            .unwrap_or_default();
+        if result.len() + replacement.len() > 16_384 {
+            break;
+        }
+        let start = if start > 0 && result.as_bytes()[start - 1] == b'=' {
+            start - 1
+        } else {
+            start
+        };
+        result.replace_range(start..=end, &replacement);
+    }
+    result
+}
+
 fn text_bounds(label: &TextLabel) -> Bounds {
     let width = label.size * label.text.chars().count() as f64 * 0.6;
     let left = match label.align.as_str() {
@@ -195,11 +230,17 @@ fn text_bounds(label: &TextLabel) -> Bounds {
     };
     let tf = geometry::Transform::identity().component(label.x, label.y, label.rotation, false);
     let mut bounds = Bounds::empty();
+    let top = match label.vertical_align.as_str() {
+        "top" => 0.,
+        "middle" => -label.size / 2.,
+        "bottom" => -label.size,
+        _ => -label.size,
+    };
     for point in [
-        (left, -label.size),
-        (left + width, -label.size),
-        (left + width, label.size * 0.3),
-        (left, label.size * 0.3),
+        (left, top),
+        (left + width, top),
+        (left + width, top + label.size),
+        (left, top + label.size),
     ] {
         bounds.include(tf.point(point));
     }
@@ -210,9 +251,10 @@ struct Builder<'a> {
     project: &'a history::Project,
     page: &'a history::Document,
     page_attrs: HashMap<String, BTreeMap<String, Value>>,
-    symbol_attrs: HashMap<String, BTreeMap<String, Value>>,
+    wire_groups: HashMap<String, &'a history::Record>,
     paints: Vec<Paint>,
     texts: Vec<TextLabel>,
+    images: Vec<SceneImage>,
     layers: BTreeMap<i32, SceneLayer>,
     warnings: BTreeMap<String, usize>,
     path_bytes: usize,
@@ -222,21 +264,18 @@ impl<'a> Builder<'a> {
     fn new(project: &'a history::Project, page: &'a history::Document) -> Self {
         let mut page_attrs = HashMap::new();
         Self::index_attrs(page, &mut page_attrs);
-        let mut symbol_attrs = HashMap::new();
-        for doc in project
-            .docs
-            .values()
-            .filter(|doc| doc.head["docType"] == "SYMBOL" && !doc.deleted())
-        {
-            Self::index_attrs(doc, &mut symbol_attrs);
-        }
         Self {
             project,
             page,
             page_attrs,
-            symbol_attrs,
+            wire_groups: page
+                .active()
+                .filter(|record| matches!(record.kind.as_str(), "WIRE" | "BUS"))
+                .map(|record| (record_id(record), record))
+                .collect(),
             paints: Vec::new(),
             texts: Vec::new(),
+            images: Vec::new(),
             layers: BTreeMap::new(),
             warnings: BTreeMap::new(),
             path_bytes: 0,
@@ -301,10 +340,31 @@ impl<'a> Builder<'a> {
         if let Some(parent) = parent {
             properties.insert("componentId".into(), parent.to_owned());
         }
-        if let Some(attrs) = parent.and_then(|id| self.page_attrs.get(id)) {
-            for (key, value) in attrs.iter().take(24) {
-                if let Some(value) = value.get("value") {
-                    properties.insert(key.to_owned(), text(value).chars().take(1024).collect());
+        let id = parent
+            .map(str::to_owned)
+            .or_else(|| (record.kind == "COMPONENT").then(|| record_id(record)));
+        if let Some(id) = id {
+            let values = self.component_values(&id);
+            // shortcut: Picking keeps 64 attributes per object; add paged metadata for larger parts.
+            for (key, value) in values
+                .iter()
+                .filter(|(key, _)| !key.starts_with('@'))
+                .take(64)
+            {
+                if !value.is_null() {
+                    let value = resolve_template(&text(value), &values);
+                    properties.insert(key.clone(), value.chars().take(1024).collect());
+                }
+            }
+            for (key, name) in [("Device", "DeviceName"), ("Footprint", "FootprintName")] {
+                if let Some(title) = values
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .and_then(|id| self.project.docs.get(id))
+                    .and_then(|doc| doc.first("META"))
+                    .and_then(|meta| meta["title"].as_str())
+                {
+                    properties.insert(name.into(), title.chars().take(1024).collect());
                 }
             }
         }
@@ -340,19 +400,11 @@ impl<'a> Builder<'a> {
             5 => ("文本", "#ffffff", 500),
             6 => ("形状", "#95c77b", 600),
             7 => ("连接点", "#f2c14e", 700),
+            8 => ("图框与图片", "#aab4c0", 50),
             _ => ("原理图", "#aab4c0", 800),
         };
         self.ensure_layer(layer, name, default_color, order);
-        let mut properties = self.properties(record, parent);
-        if let Some(parent) = parent
-            && let Some(attrs) = self.page_attrs.get(parent)
-        {
-            for key in ["Device", "Symbol", "Designator", "Value"] {
-                if let Some(value) = Self::attr_value(Some(attrs), key) {
-                    properties.insert(key.into(), text(value).chars().take(1024).collect());
-                }
-            }
-        }
+        let properties = self.properties(record, parent);
         let id = parent
             .map(|parent| format!("{parent}/{}", record_id(record)))
             .unwrap_or_else(|| record_id(record));
@@ -382,9 +434,9 @@ impl<'a> Builder<'a> {
         tf: geometry::Transform,
         parent: Option<&str>,
     ) -> Result<()> {
-        let label = value["value"]
+        let label = value["text"]
             .as_str()
-            .or_else(|| value["text"].as_str())
+            .or_else(|| value["value"].as_str())
             .or_else(|| value["content"].as_str())
             .unwrap_or("");
         if label.is_empty() {
@@ -395,13 +447,51 @@ impl<'a> Builder<'a> {
         }
         let (x, y) = position(value)?;
         let size = width(value, &["fontSize", "size"], 6.).max(0.1);
-        let angle = number(value, "rotation", number(value, "angle", 0.));
+        let angle = -number(value, "rotation", number(value, "angle", 0.));
         let local = tf.component(x, y, angle, truth(&value["isMirror"]));
-        let align = match value["align"].as_str() {
-            Some("center") | Some("CENTER") => "center",
-            Some("right") | Some("RIGHT") => "right",
-            _ => "left",
+        let alignment = value["align"]
+            .as_str()
+            .unwrap_or("LEFT_BOTTOM")
+            .to_ascii_uppercase();
+        let mut align = if alignment.starts_with("CENTER") {
+            "center"
+        } else if alignment.starts_with("RIGHT") {
+            "right"
+        } else {
+            "left"
         };
+        let mut vertical_align = if alignment.ends_with("MIDDLE") {
+            "middle"
+        } else if alignment.ends_with("TOP") {
+            "top"
+        } else {
+            "bottom"
+        };
+        let mut rotation = local.b.atan2(local.a).to_degrees();
+        if tf.a * tf.d - tf.b * tf.c < 0. {
+            vertical_align = match vertical_align {
+                "top" => "bottom",
+                "bottom" => "top",
+                v => v,
+            };
+        }
+        if !(-90. ..=90.).contains(&rotation) {
+            rotation = if rotation > 90. {
+                rotation - 180.
+            } else {
+                rotation + 180.
+            };
+            align = match align {
+                "left" => "right",
+                "right" => "left",
+                v => v,
+            };
+            vertical_align = match vertical_align {
+                "top" => "bottom",
+                "bottom" => "top",
+                v => v,
+            };
+        }
         let point = local.point((0., 0.));
         self.ensure_layer(5, "文本", "#ffffff", 500);
         self.texts.push(TextLabel {
@@ -410,25 +500,23 @@ impl<'a> Builder<'a> {
             y: point.1,
             text: label.to_owned(),
             size,
-            rotation: local.b.atan2(local.a).to_degrees(),
+            rotation,
             align: align.into(),
+            vertical_align: vertical_align.into(),
+            color: valid_color(&value["color"]),
+            bold: truth(&value["fontWeight"]),
         });
-        let text_width = size * label.chars().count() as f64 * 0.6;
-        let text_geometry = geometry::rect(
-            x + if align == "right" {
-                -text_width
-            } else if align == "center" {
-                -text_width / 2.
-            } else {
-                0.
-            },
-            y,
-            text_width.max(size),
-            size,
+        let bounds = text_bounds(self.texts.last().ok_or_else(invalid)?);
+        let mut text_geometry = geometry::rect(
+            (bounds.min_x + bounds.max_x) / 2.,
+            (bounds.min_y + bounds.max_y) / 2.,
+            (bounds.max_x - bounds.min_x).max(size),
+            (bounds.max_y - bounds.min_y).max(size),
             0.,
-            angle,
-            tf,
+            0.,
+            geometry::Transform::identity(),
         )?;
+        text_geometry.path.clear();
         self.add_paint(
             record,
             text_geometry,
@@ -462,7 +550,8 @@ impl<'a> Builder<'a> {
             "WIRE" | "BUS" => {
                 let value = path_value(data, "dots").or_else(|| path_value(data, "path"));
                 let Some(value) = value else {
-                    return Err(invalid());
+                    // Current histories store geometry in LINE records linked by lineGroup.
+                    return Ok(());
                 };
                 let path = points(&value)?;
                 let width = width(
@@ -489,7 +578,7 @@ impl<'a> Builder<'a> {
             }
             "BUSENTRY" => {
                 let point = position(data)?;
-                let angle = number(data, "rotation", number(data, "angle", 0.)).to_radians();
+                let angle = -number(data, "rotation", number(data, "angle", 0.)).to_radians();
                 let length = width(data, &["length", "size"], 8.);
                 let end = (
                     point.0 + length * angle.cos(),
@@ -512,34 +601,36 @@ impl<'a> Builder<'a> {
                     valid_color(&data["color"]),
                 )?;
             }
+            "TABLE" => self.table(
+                record,
+                data,
+                geometry::Transform::identity(),
+                None,
+                &BTreeMap::new(),
+            )?,
+            "OBJ" => self.image(record, data, geometry::Transform::identity(), None)?,
             "TEXT" => self.add_text(record, data, geometry::Transform::identity(), None)?,
             "ATTR" => {
-                if truth(&data["valueVisible"]) || truth(&data["keyVisible"]) {
-                    if data.get("x").is_none()
-                        && data.get("positionX").is_none()
-                        && data.get("pointX").is_none()
-                    {
-                        return Ok(());
-                    }
-                    let mut label = data.clone();
-                    let key = data["key"].as_str().unwrap_or("");
-                    let value = data["value"].as_str().unwrap_or("");
-                    let mut parts = Vec::new();
-                    if truth(&data["keyVisible"]) && !key.is_empty() {
-                        parts.push(key.to_owned());
-                    }
-                    if truth(&data["valueVisible"]) && !value.is_empty() {
-                        parts.push(value.to_owned());
-                    }
-                    if !parts.is_empty() {
-                        label["text"] = Value::String(parts.join(": "));
-                        self.add_text(
-                            record,
-                            &label,
-                            geometry::Transform::identity(),
-                            data["parentId"].as_str(),
-                        )?;
-                    }
+                let parent = data["parentId"].as_str().unwrap_or("");
+                let values = self.component_values(parent);
+                let mut label = data.clone();
+                let key = data["key"].as_str().unwrap_or("");
+                if key == "Device" {
+                    label["value"] = json!(resolve_template(
+                        values.get("Name").and_then(Value::as_str).unwrap_or(""),
+                        &values
+                    ));
+                } else if let Some(value) = values.get(key) {
+                    label["value"] = json!(resolve_template(value.as_str().unwrap_or(""), &values));
+                }
+                // Null coordinates are inherited metadata, not page labels.
+                if position(&label).is_ok() {
+                    self.symbol_attr(
+                        record,
+                        &label,
+                        geometry::Transform::identity(),
+                        Some(parent),
+                    )?;
                 }
             }
             "CIRCLE" => {
@@ -561,11 +652,11 @@ impl<'a> Builder<'a> {
                     valid_color(&data["color"]),
                 )?;
             }
-            "POLY" | "POLYGON" | "RECT" | "ELLIPSE" | "ARC" | "BEZIER" | "JUNCTION" => {
+            "LINE" | "POLY" | "POLYGON" | "RECT" | "ELLIPSE" | "ARC" | "BEZIER" | "JUNCTION" => {
                 self.shape(record, data, geometry::Transform::identity(), None)?;
             }
             "COMPONENT" => self.component(record)?,
-            "DOCHEAD" | "META" | "PART" | "LAYER" => {}
+            "DOCHEAD" | "META" | "PART" | "LAYER" | "CANVAS" | "ELE_PLACEHOLDER" => {}
             _ => self.warn(format!("未渲染图元类型 {}，原始记录已保留", record.kind)),
         }
         Ok(())
@@ -579,6 +670,21 @@ impl<'a> Builder<'a> {
         parent: Option<&str>,
     ) -> Result<()> {
         let (geometry, fill, layer) = match record.kind.as_str() {
+            "LINE" => (
+                geometry::path(
+                    &json!([
+                        required(data, "startX")?,
+                        required(data, "startY")?,
+                        required(data, "endX")?,
+                        required(data, "endY")?
+                    ]),
+                    tf,
+                    1.,
+                    false,
+                )?,
+                false,
+                6,
+            ),
             "RECT" => {
                 let x1 = number(data, "dotX1", number(data, "x1", 0.));
                 let y1 = number(data, "dotY1", number(data, "y1", 0.));
@@ -591,7 +697,7 @@ impl<'a> Builder<'a> {
                         (x2 - x1).abs(),
                         (y2 - y1).abs(),
                         number(data, "radius", 0.),
-                        number(data, "rotation", number(data, "angle", 0.)),
+                        -number(data, "rotation", number(data, "angle", 0.)),
                         tf,
                     )?,
                     truth(&data["filled"]) || truth(&data["fill"]),
@@ -599,20 +705,45 @@ impl<'a> Builder<'a> {
                 )
             }
             "ELLIPSE" => {
-                let center = position(data)?;
-                let rx = number(data, "radiusX", number(data, "width", 1.) / 2.);
-                let ry = number(data, "radiusY", number(data, "height", 1.) / 2.);
-                let path = json!([[
-                    "R",
-                    center.0,
-                    center.1,
-                    rx * 2.,
-                    ry * 2.,
-                    number(data, "rotation", 0.),
-                    0.,
-                    0.
-                ]]);
-                (geometry::path(&path, tf, 1., true)?, false, 6)
+                let center = if data.get("centerX").is_some() {
+                    (required(data, "centerX")?, required(data, "centerY")?)
+                } else {
+                    position(data)?
+                };
+                let rx = number(data, "radiusX", number(data, "width", 1.) / 2.).abs();
+                let ry = number(data, "radiusY", number(data, "height", 1.) / 2.).abs();
+                if rx == 0. || ry == 0. {
+                    return Err(invalid());
+                }
+                let local = tf
+                    .component(center.0, center.1, -number(data, "rotation", 0.), false)
+                    .affine(rx, 0., 0., ry, 0., 0.);
+                (geometry::circle(0., 0., 1., local)?, false, 6)
+            }
+            "ARC" if data.get("startX").is_some() => {
+                let start = (required(data, "startX")?, required(data, "startY")?);
+                let end = (required(data, "endX")?, required(data, "endY")?);
+                let refer = (required(data, "referX")?, required(data, "referY")?);
+                let a = (start.0 - refer.0, start.1 - refer.1);
+                let b = (end.0 - refer.0, end.1 - refer.1);
+                let angle = (a.0 * b.1 - a.1 * b.0)
+                    .atan2(a.0 * b.0 + a.1 * b.1)
+                    .to_degrees();
+                // The reference point lies on the requested arc, opposite the inscribed angle.
+                let sweep = 2. * angle - angle.signum() * 360.;
+                if sweep.abs() < 1e-8 || sweep.abs() >= 360. {
+                    return Err(invalid());
+                }
+                (
+                    geometry::path(
+                        &json!([start.0, start.1, "ARC", sweep, end.0, end.1]),
+                        tf,
+                        1.,
+                        false,
+                    )?,
+                    false,
+                    6,
+                )
             }
             "JUNCTION" => {
                 let center = position(data)?;
@@ -627,7 +758,18 @@ impl<'a> Builder<'a> {
                     .or_else(|| path_value(data, "dots"))
                     .or_else(|| path_value(data, "path"))
                     .ok_or_else(invalid)?;
-                let closed = !matches!(record.kind.as_str(), "ARC" | "BEZIER");
+                let path = if path
+                    .as_array()
+                    .and_then(|values| values.first())
+                    .is_some_and(Value::is_object)
+                {
+                    json!(points(&path)?)
+                } else {
+                    path
+                };
+                let closed = data["closed"]
+                    .as_bool()
+                    .unwrap_or(!matches!(record.kind.as_str(), "ARC" | "BEZIER"));
                 (
                     geometry::path(&path, tf, 1., closed)?,
                     truth(&data["filled"]) || truth(&data["fill"]),
@@ -635,42 +777,341 @@ impl<'a> Builder<'a> {
                 )
             }
         };
+        let group = if parent.is_none() {
+            data["lineGroup"]
+                .as_str()
+                .and_then(|id| self.wire_groups.get(id))
+                .copied()
+        } else {
+            None
+        };
+        let layer = group.map_or(layer, |group| if group.kind == "BUS" { 2 } else { 1 });
+        if let Some(color) = valid_color(&data["fillColor"]) {
+            self.add_paint(
+                record,
+                geometry.clone(),
+                layer,
+                true,
+                0.,
+                0,
+                parent,
+                None,
+                Some(color),
+            )?;
+        }
+        if data["strokeColor"] == "none" {
+            return Ok(());
+        }
         self.add_paint(
-            record,
+            group.unwrap_or(record),
             geometry,
             layer,
             fill,
-            width(data, &["strokeWidth", "width"], 1.),
+            width(
+                data,
+                &["strokeWidth", "width"],
+                if layer == 2 { 2. } else { 1. },
+            ),
             1,
             parent,
-            None,
-            valid_color(&data["color"]),
+            group.and_then(|group| self.net(&record_id(group))),
+            valid_color(&data["strokeColor"]).or_else(|| valid_color(&data["color"])),
         )
     }
 
-    fn symbol_document(&self, symbol_ref: Option<&str>) -> Option<&history::Document> {
-        symbol_ref
+    fn table(
+        &mut self,
+        record: &history::Record,
+        data: &Value,
+        tf: geometry::Transform,
+        parent: Option<&str>,
+        values: &BTreeMap<String, Value>,
+    ) -> Result<()> {
+        let offsets = |key: &str| -> Result<Vec<f64>> {
+            let sizes = data[key]
+                .as_array()
+                .filter(|v| !v.is_empty() && v.len() <= 1000)
+                .ok_or_else(invalid)?;
+            let mut offsets = vec![0.];
+            for size in sizes {
+                let size = size
+                    .as_f64()
+                    .filter(|n| n.is_finite() && *n > 0. && *n < 1e6)
+                    .ok_or_else(invalid)?;
+                offsets.push(offsets.last().unwrap() + size);
+            }
+            Ok(offsets)
+        };
+        let cols = offsets("colSizes")?;
+        let rows = offsets("rowSizes")?;
+        let local = tf.component(
+            required(data, "startX")?,
+            required(data, "startY")?,
+            -number(data, "rotation", 0.),
+            false,
+        );
+        let cells = data["tableCell"]
+            .as_array()
+            .filter(|v| v.len() <= 100_000)
+            .ok_or_else(invalid)?;
+        let mut covered = HashSet::new();
+        for cell in cells {
+            let col = cell["columnIndex"].as_u64().ok_or_else(invalid)? as usize;
+            let row = cell["rowIndex"].as_u64().ok_or_else(invalid)? as usize;
+            if covered.contains(&(col, row)) {
+                continue;
+            }
+            let cs = cell["colSpan"].as_u64().unwrap_or(1) as usize;
+            let rs = cell["rowSpan"].as_u64().unwrap_or(1) as usize;
+            if cs == 0
+                || rs == 0
+                || cs > cols.len()
+                || rs > rows.len()
+                || col >= cols.len() - cs
+                || row >= rows.len() - rs
+            {
+                return Err(invalid());
+            }
+            if cs.saturating_mul(rs) > 100_000 || covered.len().saturating_add(cs * rs) > 100_000 {
+                return Err(invalid());
+            }
+            for c in col..col + cs {
+                for r in row..row + rs {
+                    covered.insert((c, r));
+                }
+            }
+            let (x, y, w, h) = (
+                cols[col],
+                rows[row],
+                cols[col + cs] - cols[col],
+                rows[row + rs] - rows[row],
+            );
+            for (style, points) in [
+                ("topStyle", json!([x, y, x + w, y])),
+                ("bottomStyle", json!([x, y + h, x + w, y + h])),
+                ("leftStyle", json!([x, y, x, y + h])),
+                ("rightStyle", json!([x + w, y, x + w, y + h])),
+            ] {
+                if cell[style]["strokeColor"] != "none" {
+                    self.add_paint(
+                        record,
+                        geometry::path(&points, local, 1., false)?,
+                        8,
+                        false,
+                        width(&cell[style], &["strokeWidth"], 0.5),
+                        0,
+                        parent,
+                        None,
+                        valid_color(&cell[style]["strokeColor"]),
+                    )?;
+                }
+            }
+            let style = &cell["fontStyle"];
+            let ha = style["hAlign"].as_str().unwrap_or("LEFT");
+            let va = style["vAlign"].as_str().unwrap_or("MIDDLE");
+            let value = resolve_template(cell["value"].as_str().unwrap_or(""), values);
+            let label = json!({"x":x + match ha {"CENTER"=>w/2.,"RIGHT"=>w-3.,_=>3.}, "y":y + match va {"TOP"=>2.,"BOTTOM"=>h-2.,_=>h/2.}, "value":value,"fontSize":width(style,&["fontSize"],15.),"align":format!("{ha}_{va}"),"color":style["color"],"fontWeight":style["fontWeight"]});
+            self.add_text(record, &label, local, parent)?;
+        }
+        Ok(())
+    }
+
+    fn image(
+        &mut self,
+        record: &history::Record,
+        data: &Value,
+        tf: geometry::Transform,
+        parent: Option<&str>,
+    ) -> Result<()> {
+        use base64::Engine;
+        let source = data["content"].as_str().ok_or_else(invalid)?;
+        let content = if let Some(id) = source.strip_prefix("blob:") {
+            self.project
+                .docs
+                .get("BLOB")
+                .and_then(|doc| doc.active().find(|r| r.id.as_str() == Some(id)))
+                .and_then(|r| r.data.as_ref())
+                .and_then(|d| d["content"].as_str())
+                .ok_or_else(invalid)?
+        } else {
+            source
+        };
+        let (header, encoded) = content.split_once(',').ok_or_else(invalid)?;
+        if !matches!(
+            header,
+            "data:image/svg+xml;base64"
+                | "data:image/png;base64"
+                | "data:image/jpeg;base64"
+                | "data:image/jpg;base64"
+                | "data:image/webp;base64"
+        ) || content.len() > 16 * 1024 * 1024
+        {
+            return Err(invalid());
+        }
+        base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|_| invalid())?;
+        self.path_bytes = self.path_bytes.saturating_add(content.len());
+        if self.path_bytes > MAX_PATH_BYTES {
+            return Err(AppError::new("pcb_limit", "嵌入图片超过场景大小限制"));
+        }
+        let (w, h) = (required(data, "width")?, required(data, "height")?);
+        if w <= 0. || h <= 0. {
+            return Err(invalid());
+        }
+        let local = tf.component(
+            required(data, "startX")?,
+            required(data, "startY")?,
+            -number(data, "rotation", 0.),
+            truth(&data["isMirror"]),
+        );
+        let mut geometry = geometry::rect(w / 2., h / 2., w, h, 0., 0., local)?;
+        geometry.path.clear();
+        self.add_paint(record, geometry, 8, true, 0., 0, parent, None, None)?;
+        self.images.push(SceneImage {
+            layer: 8,
+            content: content.to_owned(),
+            width: w,
+            height: h,
+            transform: [local.a, local.b, local.c, local.d, local.tx, local.ty],
+        });
+        Ok(())
+    }
+
+    fn sheet_frame(
+        &mut self,
+        record: &history::Record,
+        tf: geometry::Transform,
+        values: &BTreeMap<String, Value>,
+    ) -> Result<()> {
+        if values.get("Border").and_then(Value::as_str) != Some("1") {
+            return Ok(());
+        }
+        let value = |key: &str, fallback: f64| {
+            values
+                .get(key)
+                .and_then(Value::as_str)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite() && *v > 0. && *v < 1e6)
+                .unwrap_or(fallback)
+        };
+        let (w, h, b) = (
+            value("Width", 1170.),
+            value("Height", 825.),
+            value("Blade Width", 10.),
+        );
+        if 2. * b >= w.min(h) {
+            return Err(invalid());
+        }
+        for inset in [0., b] {
+            self.add_paint(
+                record,
+                geometry::rect(w / 2., -h / 2., w - 2. * inset, h - 2. * inset, 0., 0., tf)?,
+                8,
+                false,
+                0.5,
+                0,
+                None,
+                None,
+                None,
+            )?;
+        }
+        for (count, horizontal) in [
+            (value("X Region Count", 6.) as usize, true),
+            (value("Y Region Count", 4.) as usize, false),
+        ] {
+            if count > 1000 {
+                return Err(invalid());
+            }
+            let length = if horizontal { w } else { h };
+            for index in 0..count {
+                let p = length * (index as f64 + 0.5) / count as f64;
+                for opposite in [false, true] {
+                    let (x, y) = if horizontal {
+                        (p, if opposite { -b / 2. } else { -h + b / 2. })
+                    } else {
+                        (if opposite { w - b / 2. } else { b / 2. }, -p)
+                    };
+                    self.add_text(record,&json!({"x":x,"y":y,"value":(index+1).to_string(),"fontSize":5,"align":"CENTER_MIDDLE"}),tf,None)?;
+                    if index > 0 {
+                        let p = length * index as f64 / count as f64;
+                        let line = if horizontal {
+                            let y = if opposite { -b } else { -h };
+                            json!([p, y, p, y + b])
+                        } else {
+                            let x = if opposite { w - b } else { 0. };
+                            json!([x, -p, x + b, -p])
+                        };
+                        self.add_paint(
+                            record,
+                            geometry::path(&line, tf, 1., false)?,
+                            8,
+                            false,
+                            0.5,
+                            0,
+                            None,
+                            None,
+                            None,
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn component_values(&self, id: &str) -> BTreeMap<String, Value> {
+        let attrs = self.page_attrs.get(id);
+        let mut values: BTreeMap<String, Value> = Self::attr_value(attrs, "Device")
+            .and_then(Value::as_str)
             .and_then(|id| self.project.docs.get(id))
-            .filter(|doc| doc.head["docType"] == "SYMBOL" && !doc.deleted())
-            .or_else(|| {
-                self.project
-                    .docs
-                    .values()
-                    .find(|doc| doc.head["docType"] == "SYMBOL" && !doc.deleted())
-            })
+            .and_then(|doc| doc.first("META"))
+            .and_then(|meta| meta["attributes"].as_object())
+            .map(|attrs| attrs.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default();
+        if let Some(attrs) = attrs {
+            for (key, attr) in attrs {
+                if !attr["value"].is_null() {
+                    values.insert(key.clone(), attr["value"].clone());
+                }
+            }
+        }
+        for (key, field) in [
+            ("@Project Name", "title"),
+            ("@Create Date", "created_at"),
+            ("@Update Date", "updated_at"),
+        ] {
+            if let Some(value) = self.project.metadata[field].as_str() {
+                values.insert(
+                    key.into(),
+                    json!(if key.ends_with("Date") {
+                        value.split(['T', ' ']).next().unwrap_or(value)
+                    } else {
+                        value
+                    }),
+                );
+            }
+        }
+        values
     }
 
     fn component(&mut self, record: &history::Record) -> Result<()> {
         let data = record.data.as_ref().ok_or_else(invalid)?;
         let id = record_id(record);
         let attrs = self.page_attrs.get(&id).cloned();
-        let symbol_ref = Self::attr_value(attrs.as_ref(), "Symbol")
+        let values = self.component_values(&id);
+        let symbol_ref = values
+            .get("Symbol")
             .and_then(Value::as_str)
             .or_else(|| data["symbolId"].as_str())
             .or_else(|| data["symbol"].as_str());
-        let Some(symbol) = self.symbol_document(symbol_ref).cloned() else {
+        let Some(symbol) = symbol_ref
+            .and_then(|id| self.project.docs.get(id))
+            .filter(|doc| doc.head["docType"] == "SYMBOL" && !doc.deleted())
+            .cloned()
+        else {
             self.warn(format!("器件 {} 缺少符号，已保留属性", id));
-            return self.fallback_component(record, data, attrs.as_ref());
+            return self.fallback_component(record, data);
         };
         let part_id = data["partId"]
             .as_str()
@@ -688,17 +1129,29 @@ impl<'a> Builder<'a> {
                 "符号 {} 缺少 PART，已保留属性",
                 symbol.head["uuid"].as_str().unwrap_or("unknown")
             ));
-            return self.fallback_component(record, data, attrs.as_ref());
+            return self.fallback_component(record, data);
         };
         let (x, y) = position(data)?;
-        let tf = geometry::Transform::identity().component(
-            x,
-            y,
-            number(data, "rotation", number(data, "angle", 0.)),
-            truth(&data["isMirror"]) || truth(&data["mirror"]),
-        );
+        let mirrored = truth(&data["isMirror"]) || truth(&data["mirror"]);
+        // EDA mirrors across page X after rotating the symbol.
+        let tf = geometry::Transform::identity()
+            .affine(if mirrored { -1. } else { 1. }, 0., 0., 1., x, y)
+            .component(
+                0.,
+                0.,
+                -number(data, "rotation", number(data, "angle", 0.)),
+                false,
+            );
+        let mut symbol_attrs = HashMap::new();
+        Self::index_attrs(&symbol, &mut symbol_attrs);
         let mut bounds = Bounds::empty();
         let before = self.paints.len();
+        if symbol
+            .first("META")
+            .is_some_and(|meta| meta["docType"] == 20)
+        {
+            self.sheet_frame(record, tf, &values)?;
+        }
         let part_id = record_id(part);
         for child in symbol.active().filter(|child| {
             child.kind != "PART"
@@ -709,9 +1162,41 @@ impl<'a> Builder<'a> {
                     .is_none_or(|child_part| child_part == part_id)
         }) {
             let result = match child.kind.as_str() {
-                "PIN" => self.pin(child, tf, Some(&id)),
-                "ATTR" => self.symbol_attr(child, tf, Some(&id)),
-                "RECT" | "POLY" | "POLYGON" | "CIRCLE" | "ELLIPSE" | "ARC" | "BEZIER"
+                "PIN" => self.pin(child, tf, Some(&id), symbol_attrs.get(&record_id(child))),
+                "ATTR" => {
+                    let mut label = child.data.clone().ok_or_else(invalid)?;
+                    let key = label["key"].as_str().unwrap_or("").to_owned();
+                    if label["parentId"].as_str() == Some("") {
+                        if attrs.as_ref().is_some_and(|attrs| attrs.contains_key(&key)) {
+                            continue;
+                        }
+                        if let Some(value) = values.get(&key) {
+                            label["value"] = value.clone();
+                        }
+                    }
+                    self.symbol_attr(child, &label, tf, Some(&id))
+                }
+                "TABLE" => self.table(
+                    child,
+                    child.data.as_ref().ok_or_else(invalid)?,
+                    tf,
+                    Some(&id),
+                    &values,
+                ),
+                "OBJ" => self.image(
+                    child,
+                    child.data.as_ref().ok_or_else(invalid)?,
+                    tf,
+                    Some(&id),
+                ),
+                "TEXT" => self.add_text(
+                    child,
+                    child.data.as_ref().ok_or_else(invalid)?,
+                    tf,
+                    Some(&id),
+                ),
+                "META" | "CANVAS" | "ELE_PLACEHOLDER" => Ok(()),
+                "LINE" | "RECT" | "POLY" | "POLYGON" | "CIRCLE" | "ELLIPSE" | "ARC" | "BEZIER"
                 | "JUNCTION" => child.data.as_ref().ok_or_else(invalid).and_then(|data| {
                     if child.kind == "CIRCLE" {
                         let center = if data.get("centerX").is_some() {
@@ -769,9 +1254,9 @@ impl<'a> Builder<'a> {
             .bounds;
         }
         if !bounds.finite() {
-            return self.fallback_component(record, data, attrs.as_ref());
+            return self.fallback_component(record, data);
         }
-        let component_geometry = geometry::rect(
+        let mut component_geometry = geometry::rect(
             (bounds.min_x + bounds.max_x) / 2.,
             (bounds.min_y + bounds.max_y) / 2.,
             bounds.max_x - bounds.min_x,
@@ -780,14 +1265,8 @@ impl<'a> Builder<'a> {
             0.,
             geometry::Transform::identity(),
         )?;
-        let mut properties = self.properties(record, None);
-        if let Some(attrs) = attrs.as_ref() {
-            for key in ["Device", "Symbol", "Designator", "Value"] {
-                if let Some(value) = Self::attr_value(Some(attrs), key) {
-                    properties.insert(key.into(), text(value).chars().take(1024).collect());
-                }
-            }
-        }
+        component_geometry.path.clear();
+        let properties = self.properties(record, None);
         self.paints.push(Paint {
             result: PickResult {
                 id,
@@ -807,12 +1286,7 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    fn fallback_component(
-        &mut self,
-        record: &history::Record,
-        data: &Value,
-        attrs: Option<&BTreeMap<String, Value>>,
-    ) -> Result<()> {
+    fn fallback_component(&mut self, record: &history::Record, data: &Value) -> Result<()> {
         let (x, y) = position(data)?;
         let w = width(data, &["width", "sizeX"], 20.);
         let h = width(data, &["height", "sizeY"], 12.);
@@ -822,18 +1296,11 @@ impl<'a> Builder<'a> {
             w,
             h,
             0.,
-            number(data, "rotation", number(data, "angle", 0.)),
+            -number(data, "rotation", number(data, "angle", 0.)),
             geometry::Transform::identity(),
         )?;
         let id = record_id(record);
-        let mut properties = self.properties(record, None);
-        if let Some(attrs) = attrs {
-            for key in ["Device", "Symbol", "Designator", "Value"] {
-                if let Some(value) = Self::attr_value(Some(attrs), key) {
-                    properties.insert(key.into(), text(value).chars().take(1024).collect());
-                }
-            }
-        }
+        let properties = self.properties(record, None);
         self.paints.push(Paint {
             result: PickResult {
                 id,
@@ -858,10 +1325,11 @@ impl<'a> Builder<'a> {
         record: &history::Record,
         tf: geometry::Transform,
         parent: Option<&str>,
+        attrs: Option<&BTreeMap<String, Value>>,
     ) -> Result<()> {
         let data = record.data.as_ref().ok_or_else(invalid)?;
         let (x, y) = position(data)?;
-        let angle = number(data, "rotation", number(data, "angle", 0.));
+        let angle = -number(data, "rotation", number(data, "angle", 0.));
         let length = width(data, &["length", "pinLength"], 20.);
         let local = tf.component(
             x,
@@ -871,11 +1339,14 @@ impl<'a> Builder<'a> {
         );
         let geometry = geometry::path(&json!([0., 0., length, 0.]), local, 1., false)?;
         let mut properties = self.properties(record, parent);
-        let attrs = self.symbol_attrs.get(&record_id(record));
-        if let Some(value) = Self::attr_value(attrs, "NAME") {
+        if let Some(value) =
+            Self::attr_value(attrs, "Pin Name").or_else(|| Self::attr_value(attrs, "NAME"))
+        {
             properties.insert("PinName".into(), text(value));
         }
-        if let Some(value) = Self::attr_value(attrs, "NUMBER") {
+        if let Some(value) =
+            Self::attr_value(attrs, "Pin Number").or_else(|| Self::attr_value(attrs, "NUMBER"))
+        {
             properties.insert("PinNumber".into(), text(value));
         }
         let mut result = PickResult {
@@ -911,10 +1382,10 @@ impl<'a> Builder<'a> {
     fn symbol_attr(
         &mut self,
         record: &history::Record,
+        data: &Value,
         tf: geometry::Transform,
         parent: Option<&str>,
     ) -> Result<()> {
-        let data = record.data.as_ref().ok_or_else(invalid)?;
         if !truth(&data["valueVisible"]) && !truth(&data["keyVisible"]) {
             return Ok(());
         }
@@ -1009,6 +1480,7 @@ impl<'a> Builder<'a> {
             layers: layers.clone(),
             batches,
             texts: self.texts,
+            images: self.images,
             object_count: objects.len(),
             warnings,
             metrics,
@@ -1184,6 +1656,271 @@ mod tests {
         project
     }
 
+    // Compile/pick sequences share a two-scene cache across parallel tests.
+    fn scene_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn compiles_grouped_wire_segments_and_object_point_symbols() {
+        let _guard = scene_test_guard();
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"WIRE","id":"wire","ticket":1}||{"groupId":"","locked":false,"zIndex":1}|
+{"type":"LINE","id":"segment","ticket":1}||{"lineGroup":"wire","startX":10,"startY":20,"endX":40,"endY":20,"strokeWidth":null}|
+{"type":"ATTR","id":"net","ticket":1}||{"parentId":"wire","key":"NET","value":"+3V3","valueVisible":false}|
+{"type":"BUS","id":"bus","ticket":1}||{"groupId":"","locked":false}|
+{"type":"LINE","id":"bus-segment","ticket":1}||{"lineGroup":"bus","startX":10,"startY":30,"endX":40,"endY":30}|
+{"type":"CANVAS","id":"CANVAS","ticket":1}||{"originX":0,"originY":0}|
+{"type":"ELE_PLACEHOLDER","id":"placeholder","ticket":1}||{"dataType":"WIRE","max":1}|
+{"type":"COMPONENT","id":"component","ticket":1}||{"partId":"part","x":100,"y":50,"rotation":90}|
+{"type":"ATTR","id":"symbol-ref","ticket":1}||{"parentId":"component","key":"Symbol","value":"symbol"}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"symbol","client":"a"}|
+{"type":"PART","id":"part","ticket":1}||{"BBOX":[0,0,10,10]}|
+{"type":"META","id":"meta","ticket":1}||{"title":"symbol"}|
+{"type":"CANVAS","id":"CANVAS","ticket":1}||{"originX":0,"originY":0}|
+{"type":"ELE_PLACEHOLDER","id":"placeholder","ticket":1}||{"dataType":"POLY","max":1}|
+{"type":"POLY","id":"body","ticket":1}||{"partId":"part","points":[{"x":0,"y":0},{"x":10,"y":0},{"x":10,"y":10}],"closed":false}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let scene = compile(project, "page", "revision".into(), Metrics::default()).unwrap();
+        assert!(scene.warnings.is_empty(), "{:?}", scene.warnings);
+        let wire = pick(&scene.id, 25., 20., 0.1, None).unwrap().unwrap();
+        assert_eq!(wire.kind, "WIRE");
+        assert_eq!(wire.id, "wire");
+        assert_eq!(wire.net.as_deref(), Some("+3V3"));
+        assert_eq!(
+            pick(&scene.id, 25., 30., 0.1, None).unwrap().unwrap().kind,
+            "BUS"
+        );
+        let symbol = pick(&scene.id, 100., 45., 0.1, Some(&[6]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(symbol.kind, "POLY");
+        assert!(
+            pick(&scene.id, 105., 45., 0.1, Some(&[6]))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn renders_three_point_arcs_and_signed_radius_ellipses() {
+        let _guard = scene_test_guard();
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"ARC","id":"arc","ticket":1}||{"startX":10,"startY":0,"referX":0,"referY":10,"endX":-10,"endY":0}|
+{"type":"ARC","id":"reverse","ticket":1}||{"startX":40,"startY":0,"referX":30,"referY":-10,"endX":20,"endY":0}|
+{"type":"ELLIPSE","id":"ellipse","ticket":1}||{"centerX":60,"centerY":0,"radiusX":10,"radiusY":-5,"rotation":90}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let scene = compile(project, "page", "revision".into(), Metrics::default()).unwrap();
+        assert!(scene.warnings.is_empty(), "{:?}", scene.warnings);
+        for (x, y, id) in [
+            (0., 10., "arc"),
+            (30., -10., "reverse"),
+            (65., 0., "ellipse"),
+            (60., 10., "ellipse"),
+        ] {
+            assert_eq!(pick(&scene.id, x, y, 0.1, None).unwrap().unwrap().id, id);
+        }
+        assert!(pick(&scene.id, 65., 10., 0.1, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn picked_component_parts_share_resolved_device_properties() {
+        let mut project = fixture_project();
+        history::replay(&mut project, r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"ATTR","id":"value","ticket":2}||{"parentId":"component","key":"Value","value":null,"valueVisible":true,"positionX":50,"positionY":50,"fontSize":6}|
+{"type":"DOCHEAD"}||{"docType":"DEVICE","uuid":"device","client":"a"}|
+{"type":"META","id":"meta","ticket":1}||{"title":"RC0402FR-07100KL","attributes":{"Symbol":"symbol","Footprint":"footprint","Value":"100kΩ","Name":"={Value}","Designator":"R?","Manufacturer":"YAGEO(国巨)","Supplier Part":"C60491","Tolerance":"±1%"}}|
+{"type":"DOCHEAD"}||{"docType":"FOOTPRINT","uuid":"footprint","client":"a"}|
+{"type":"META","id":"meta","ticket":1}||{"title":"R0402"}|
+"#).unwrap();
+        let page = &project.docs["page"];
+        let mut builder = Builder::new(&project, page);
+        for record in page.active() {
+            builder.page_primitive(record).unwrap();
+        }
+        for paint in builder.paints.iter().filter(|paint| {
+            paint.result.id == "component" || paint.result.id.starts_with("component/")
+        }) {
+            let props = &paint.result.properties;
+            assert_eq!(props["Value"], "100kΩ", "{}", paint.result.id);
+            assert_eq!(props["Designator"], "R1");
+            assert_eq!(props["Name"], "100kΩ");
+            assert_eq!(props["DeviceName"], "RC0402FR-07100KL");
+            assert_eq!(props["FootprintName"], "R0402");
+            assert_eq!(props["Supplier Part"], "C60491");
+            assert_eq!(props["Tolerance"], "±1%");
+        }
+        assert!(
+            builder
+                .paints
+                .iter()
+                .any(|paint| paint.result.id == "component/body")
+        );
+        assert!(builder.texts.iter().any(|label| label.text == "100kΩ"));
+        drop(builder);
+        project.docs.remove("symbol");
+        history::replay(&mut project, r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"ATTR","id":"value","ticket":3}||{"parentId":"component","key":"Value","value":0,"valueVisible":false}|
+"#).unwrap();
+        let page = &project.docs["page"];
+        let mut builder = Builder::new(&project, page);
+        let component = page
+            .active()
+            .find(|record| record.kind == "COMPONENT")
+            .unwrap();
+        builder.component(component).unwrap();
+        let props = &builder.paints.last().unwrap().result.properties;
+        assert_eq!(props["Value"], "0");
+        assert_eq!(props["Name"], "0");
+        assert_eq!(props["DeviceName"], "RC0402FR-07100KL");
+    }
+
+    #[test]
+    fn resolves_device_symbols_values_and_scoped_pin_attributes() {
+        let _guard = scene_test_guard();
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"COMPONENT","id":"c","ticket":1}||{"partId":"part","x":100,"y":50}|
+{"type":"ATTR","id":"device","ticket":1}||{"parentId":"c","key":"Device","value":"device","valueVisible":true,"x":90,"y":30}|
+{"type":"ATTR","id":"value","ticket":1}||{"parentId":"c","key":"Value","value":null,"valueVisible":true,"x":90,"y":40}|
+{"type":"COMPONENT","id":"missing","ticket":1}||{"partId":"part","symbolId":"absent","x":200,"y":50}|
+{"type":"DOCHEAD"}||{"docType":"DEVICE","uuid":"device","client":"a"}|
+{"type":"META","id":"meta","ticket":1}||{"attributes":{"Symbol":"symbol","Value":"100nF","Name":"={Value}"}}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"symbol","client":"a"}|
+{"type":"PART","id":"part","ticket":1}||{"BBOX":[0,0,10,10]}|
+{"type":"PIN","id":"pin","ticket":1}||{"partId":"part","x":0,"y":0,"length":10}|
+{"type":"ATTR","id":"name","ticket":1}||{"parentId":"pin","partId":"part","key":"Pin Name","value":"IN","valueVisible":true,"x":12,"y":0,"align":"RIGHT_MIDDLE"}|
+{"type":"ATTR","id":"number","ticket":1}||{"parentId":"pin","partId":"part","key":"Pin Number","value":"1","valueVisible":false}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"zzz","client":"a"}|
+{"type":"ATTR","id":"name","ticket":1}||{"parentId":"pin","key":"Pin Name","value":"WRONG"}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let scene = compile(project, "page", "r".into(), Metrics::default()).unwrap();
+        assert_eq!(scene.texts.iter().filter(|t| t.text == "100nF").count(), 2);
+        assert!(!scene.texts.iter().any(|t| t.text == "device"));
+        let label = scene.texts.iter().find(|t| t.text == "IN").unwrap();
+        assert_eq!(label.align, "right");
+        let pin = pick(&scene.id, 105., 50., 0.1, Some(&[4]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(pin.properties["PinName"], "IN");
+        assert_eq!(pin.properties["PinNumber"], "1");
+        assert!(
+            scene
+                .warnings
+                .iter()
+                .any(|w| w.contains("missing") && w.contains("符号"))
+        );
+    }
+
+    #[test]
+    fn rotated_pins_end_at_their_page_wire_connection() {
+        let _guard = scene_test_guard();
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"COMPONENT","id":"screw","ticket":1}||{"partId":"part","symbolId":"symbol","x":50,"y":-320,"rotation":90}|
+{"type":"COMPONENT","id":"mirror","ticket":1}||{"partId":"part","symbolId":"symbol","x":100,"y":0,"isMirror":true}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"symbol","client":"a"}|
+{"type":"PART","id":"part","ticket":1}||{}|
+{"type":"PIN","id":"pin","ticket":1}||{"partId":"part","x":10,"y":40,"rotation":90,"length":20}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let scene = compile(project, "page", "r".into(), Metrics::default()).unwrap();
+        let pin = pick(&scene.id, 90., -330., 0.1, Some(&[4])).unwrap();
+        assert_eq!(pin.unwrap().id, "screw/pin");
+        assert_eq!(
+            pick(&scene.id, 90., 40., 0.1, Some(&[4]))
+                .unwrap()
+                .unwrap()
+                .id,
+            "mirror/pin"
+        );
+        assert!(
+            pick(&scene.id, 10., -310., 0.1, Some(&[4]))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn renders_merged_title_cells_with_instance_templates() {
+        let _guard = scene_test_guard();
+        let log = r#"
+{"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
+{"type":"COMPONENT","id":"sheet","ticket":1}||{"partId":"part","symbolId":"symbol","x":0,"y":0}|
+{"type":"ATTR","id":"title","ticket":1}||{"parentId":"sheet","key":"@Schematic Name","value":"Moji"}|
+{"type":"ATTR","id":"page-no","ticket":1}||{"parentId":"sheet","key":"@Page No","value":"1"}|
+{"type":"ATTR","id":"page-count","ticket":1}||{"parentId":"sheet","key":"@Page Count","value":"2"}|
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","uuid":"symbol","client":"a"}|
+{"type":"PART","id":"part","ticket":1}||{}|
+{"type":"TABLE","id":"table","ticket":1}||{"partId":"part","startX":10,"startY":-20,"colSizes":[40,40],"rowSizes":[10,10],"tableCell":[{"rowIndex":0,"columnIndex":0,"rowSpan":1,"colSpan":2,"value":"={@Schematic Name}","fontStyle":{"fontSize":8,"hAlign":"CENTER","vAlign":"MIDDLE"}},{"rowIndex":0,"columnIndex":1,"value":"covered"},{"rowIndex":1,"columnIndex":0,"value":"页码"},{"rowIndex":1,"columnIndex":1,"value":"=页 {@Page No} 共 {@Page Count}"}]}|
+"#;
+        let mut project = history::Project::default();
+        history::replay(&mut project, log).unwrap();
+        let scene = compile(project, "page", "r".into(), Metrics::default()).unwrap();
+        assert!(scene.warnings.is_empty(), "{:?}", scene.warnings);
+        let label = scene.texts.iter().find(|t| t.text == "Moji").unwrap();
+        assert_eq!((label.x, label.y), (50., -15.));
+        assert_eq!(label.vertical_align, "middle");
+        assert!(!scene.texts.iter().any(|t| t.text == "covered"));
+        assert!(scene.texts.iter().any(|t| t.text == "页码"));
+        assert!(scene.texts.iter().any(|t| t.text == "页 1 共 2"));
+    }
+
+    #[test]
+    fn resolves_nested_and_multi_field_expressions_without_changing_literal_braces() {
+        let values = BTreeMap::from([
+            ("Name".into(), json!("={Value}")),
+            ("Value".into(), json!("10kΩ")),
+            ("@Page No".into(), json!("1")),
+            ("@Page Count".into(), json!("2")),
+        ]);
+        assert_eq!(resolve_template("={Name}", &values), "10kΩ");
+        assert_eq!(
+            resolve_template("=页 {@Page No} 共 {@Page Count}", &values),
+            "页 1 共 2"
+        );
+        assert_eq!(resolve_template("{literal}", &values), "{literal}");
+    }
+
+    #[test]
+    fn embedded_objects_accept_only_bounded_image_data() {
+        let project = fixture_project();
+        let page = &project.docs["page"];
+        let mut builder = Builder::new(&project, page);
+        let record = page.active().find(|r| r.kind == "COMPONENT").unwrap();
+        for content in [
+            "https://example.com/image.png",
+            "data:text/html;base64,PHNjcmlwdD4=",
+            "data:image/png;base64,invalid!",
+        ] {
+            assert!(
+                builder
+                    .image(
+                        record,
+                        &json!({"content":content,"startX":0,"startY":0,"width":10,"height":10}),
+                        geometry::Transform::identity(),
+                        None
+                    )
+                    .is_err()
+            );
+        }
+        builder.image(record,&json!({"content":"data:image/png;base64,AA==","startX":5,"startY":7,"width":10,"height":20}),geometry::Transform::identity(),None).unwrap();
+        assert_eq!(builder.images[0].transform, [1., 0., 0., 1., 5., 7.]);
+        assert_eq!(builder.images[0].height, 20.);
+    }
+
     #[tokio::test]
     async fn rejects_invalid_document_ids_before_network_access() {
         let client = HttpClient::new().unwrap();
@@ -1193,6 +1930,7 @@ mod tests {
 
     #[test]
     fn compiles_common_schematic_records_and_picks_components() {
+        let _guard = scene_test_guard();
         let scene = compile(
             fixture_project(),
             "page",
@@ -1209,7 +1947,7 @@ mod tests {
         let component = pick(&scene.id, 50., 40., 2., None).unwrap().unwrap();
         assert_eq!(component.kind, "COMPONENT");
         assert_eq!(component.properties.get("Designator").unwrap(), "R1");
-        let pin = pick(&scene.id, 50., 60., 2., None).unwrap().unwrap();
+        let pin = pick(&scene.id, 50., 20., 2., None).unwrap().unwrap();
         assert_eq!(pin.kind, "PIN");
         assert_eq!(pin.properties.get("PinName").unwrap(), "IN");
         let wire = pick(&scene.id, 25., 0., 2., None).unwrap().unwrap();
@@ -1218,7 +1956,41 @@ mod tests {
     }
 
     #[test]
+    fn picking_bounds_do_not_cover_symbols_and_labels_with_filled_boxes() {
+        let _guard = scene_test_guard();
+        let scene = compile(
+            fixture_project(),
+            "page",
+            "revision".into(),
+            Metrics::default(),
+        )
+        .unwrap();
+        assert!(scene.texts.iter().any(|text| text.text == "POWER"));
+        assert!(
+            scene
+                .batches
+                .iter()
+                .all(|batch| batch.layer != 5 && batch.color.is_some())
+        );
+        assert_eq!(
+            pick(&scene.id, 50., 40., 0.1, Some(&[3]))
+                .unwrap()
+                .unwrap()
+                .kind,
+            "COMPONENT"
+        );
+        assert_eq!(
+            pick(&scene.id, 8., 22., 0.1, Some(&[5]))
+                .unwrap()
+                .unwrap()
+                .kind,
+            "TEXT"
+        );
+    }
+
+    #[test]
     fn rejects_missing_page_and_warns_on_missing_symbol() {
+        let _guard = scene_test_guard();
         let mut project = fixture_project();
         project.docs.remove("page");
         let error = compile(project, "page", "revision".into(), Metrics::default()).unwrap_err();
@@ -1258,6 +2030,7 @@ mod tests {
 
     #[test]
     fn malformed_and_unknown_records_warn_in_a_partial_scene() {
+        let _guard = scene_test_guard();
         let log = r#"
 {"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
 {"type":"WIRE","id":"good","ticket":1}||{"dots":[[0,0,20,0]]}|
@@ -1291,6 +2064,7 @@ mod tests {
 
     #[test]
     fn an_empty_page_returns_a_stable_error() {
+        let _guard = scene_test_guard();
         let log = r#"
 {"type":"DOCHEAD"}||{"docType":"SCH_PAGE","uuid":"page","client":"a"}|
 {"type":"UNKNOWN","id":"future","ticket":1}||{"visible":true}|
