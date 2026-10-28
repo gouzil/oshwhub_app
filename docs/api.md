@@ -30,10 +30,10 @@
 
 ## 原理图查看
 
-- 专业版板卡的 `boards[].sch` 或 `schematic.uuid` 归一化为 `Board.schematicId`；缺失表示没有公开原理图，非法或冲突 ID 会返回明确的响应错误。
+- 专业版板卡优先使用 `schematic.documents[0].uuid`（实际图页）作为 `Board.schematicId`；`boards[].sch` / `schematic.uuid` 是分组 ID，仅在缺少图页列表时兼容旧响应。当前入口打开首个公开图页，尚无多页切换；非法或冲突 ID 返回明确错误。
 - `{ command: "schematic", projectId, documentId }` 复用 PCB 的公开历史、AES-GCM/gzip 解码、大小上限和只读错误协议，返回同一 `Scene` 结构。统一 `{ command: "pick", sceneId, x, y, tolerance, layers }` 同时支持 PCB 与原理图场景。
 - 原理图编译器读取 `SCH_PAGE` 与 `SYMBOL/PART`，支持线、总线、总线入口、引脚、文本/属性、矩形、多边形、圆、椭圆、圆弧、贝塞尔和连接点；元件旋转、镜像、平移后写入可绘制批次和可拾取属性。
-- 未知类型、缺失符号/PART、损坏图元会聚合为 `Scene.warnings` 或稳定错误；不把空场景当成成功结果。OBJ、表格和复杂层级复用仍未实现。
+- 未知类型、缺失符号/PART、损坏图元会聚合为 `Scene.warnings` 或稳定错误；不把空场景当成成功结果。支持合并单元格 TABLE 和嵌入 SVG/PNG/JPEG/WebP 的 OBJ；复杂层级复用仍未实现。
 
 ## 数据转换
 

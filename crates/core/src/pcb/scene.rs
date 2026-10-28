@@ -935,6 +935,9 @@ impl<'a> Builder<'a> {
                     "left"
                 }
                 .into(),
+                vertical_align: String::new(),
+                color: None,
+                bold: false,
             });
             self.ensure_layer(lid);
             self.warn("部分文本缺少嵌入 FONT 轮廓，使用系统字体近似");
@@ -1205,6 +1208,7 @@ pub fn compile(
         layers: layers.clone(),
         batches,
         texts: b.texts,
+        images: Vec::new(),
         object_count: objects.len(),
         warnings,
         metrics,

@@ -6,6 +6,7 @@ use std::io::Read;
 
 #[derive(Clone, Debug, Default)]
 pub struct Project {
+    pub metadata: Value,
     pub docs: BTreeMap<String, Document>,
     pub record_count: usize,
 }

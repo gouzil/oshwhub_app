@@ -96,6 +96,7 @@ export function PcbViewer({
   );
   const [selection, setSelection] = useState<PickResult | null>(null);
   const [technical, setTechnical] = useState(false);
+  const [moreProperties, setMoreProperties] = useState(false);
   const layers = useMemo(
     () =>
       scene.layers
@@ -204,19 +205,27 @@ export function PcbViewer({
   useEffect(() => {
     setRenderError(null);
     if (scene.texts.length && !typeface) return;
-    try {
-      const result = buildPictures(scene, typeface);
-      // Canvas can retain these handles past effect cleanup; Skia releases them when unreachable.
-      setCompiled({ scene, ...result });
-    } catch (error) {
-      setRenderError(error instanceof Error ? error.message : `${viewerLabel} 绘制失败。`);
-    }
+    let cancelled = false;
+    buildPictures(scene, typeface)
+      .then((result) => {
+        if (cancelled) {
+          for (const { picture } of result.pictures) picture.dispose();
+          return;
+        }
+        // Canvas can retain these handles past effect cleanup; Skia releases them when unreachable.
+        setCompiled({ scene, ...result });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled)
+          setRenderError(error instanceof Error ? error.message : `${viewerLabel} 绘制失败。`);
+      });
     setVisible(new Set(scene.layers.filter((layer) => layer.visible).map((layer) => layer.id)));
     setSelection(null);
     setPanel(null);
     setPickError(null);
     pickVersion.current += 1;
     return () => {
+      cancelled = true;
       pickVersion.current += 1;
     };
   }, [scene, typeface, viewerLabel]);
@@ -293,6 +302,7 @@ export function PcbViewer({
         const selected = result && visibleRef.current.has(result.layer) ? result : null;
         setSelection(selected);
         setTechnical(false);
+        setMoreProperties(false);
         setPanel((previous) =>
           selected ? "selection" : previous === "selection" ? null : previous,
         );
@@ -543,7 +553,10 @@ export function PcbViewer({
             compact && styles.compactPanel,
             panel === "selection" && [
               styles.selectionPanel,
-              { maxHeight: Math.max(80, size.height - (compact ? 82 : 96)) },
+              {
+                maxWidth: Math.max(0, width - 24),
+                maxHeight: Math.max(80, size.height - (compact ? 82 : 96)),
+              },
             ],
             bottomPanel && styles.bottomPanel,
           ]}
@@ -567,7 +580,9 @@ export function PcbViewer({
                 <View style={styles.selectionContext}>
                   <View style={[styles.dot, { backgroundColor: selectionLayer?.color }]} />
                   <Text numberOfLines={1} style={styles.caption}>
-                    {selected?.kind} · {selectionLayer?.name ?? `图层 ${selection?.layer}`}
+                    {selected?.kind}
+                    {selected?.kind !== selectionLayer?.name &&
+                      ` · ${selectionLayer?.name ?? `图层 ${selection?.layer}`}`}
                   </Text>
                 </View>
               )}
@@ -587,7 +602,13 @@ export function PcbViewer({
           <ScrollView
             style={styles.panelScroll}
             contentContainerStyle={
-              panel === "layers" ? undefined : [styles.details, compact && styles.compactDetails]
+              panel === "layers"
+                ? undefined
+                : [
+                    styles.details,
+                    compact && styles.compactDetails,
+                    panel === "selection" && styles.selectionDetails,
+                  ]
             }
           >
             {panel === "layers" ? (
@@ -671,6 +692,7 @@ export function PcbViewer({
               selection &&
               selected && (
                 <>
+                  {!compact && <Text style={styles.propertySection}>常用属性</Text>}
                   {selected.fields.map(([label, value], index) => (
                     <Property
                       key={`${index}-${label}`}
@@ -682,6 +704,26 @@ export function PcbViewer({
                   {!selected.fields.length && (
                     <Text style={styles.caption}>此对象未提供名称或参数。</Text>
                   )}
+                  {selected.extraFields.length > 0 && (
+                    <>
+                      <View style={styles.technicalToggle}>
+                        <Tool
+                          label="更多属性"
+                          text={
+                            moreProperties
+                              ? "收起更多属性"
+                              : `更多属性 · ${selected.extraFields.length}`
+                          }
+                          expanded={moreProperties}
+                          onPress={() => setMoreProperties(!moreProperties)}
+                        />
+                      </View>
+                      {moreProperties &&
+                        selected.extraFields.map(([label, value]) => (
+                          <Property key={label} label={label} value={value} compact={compact} />
+                        ))}
+                    </>
+                  )}
                   <View style={styles.technicalToggle}>
                     <Tool
                       label="技术详情"
@@ -690,15 +732,16 @@ export function PcbViewer({
                       onPress={() => setTechnical(!technical)}
                     />
                   </View>
-                  {technical && (
-                    <>
-                      <Property label="对象 ID" value={selection.id} compact={compact} />
-                      <Property label="原始类型" value={selection.kind} compact={compact} />
-                      {Object.entries(selection.properties).map(([key, value]) => (
-                        <Property key={key} label={key} value={value} compact={compact} />
-                      ))}
-                    </>
-                  )}
+                  {technical &&
+                    selected.technicalFields.map(([label, value]) => (
+                      <Property
+                        key={label}
+                        label={label}
+                        value={value}
+                        compact={compact}
+                        technical
+                      />
+                    ))}
                 </>
               )
             )}
@@ -709,11 +752,21 @@ export function PcbViewer({
   );
 }
 
-function Property({ label, value, compact }: { label: string; value: string; compact: boolean }) {
+function Property({
+  label,
+  value,
+  compact,
+  technical = false,
+}: {
+  label: string;
+  value: string;
+  compact: boolean;
+  technical?: boolean;
+}) {
   return (
     <View style={[styles.propertyRow, compact && styles.compactPropertyRow]}>
       <Text style={styles.propertyLabel}>{label}</Text>
-      <Text selectable style={styles.propertyValue}>
+      <Text selectable style={[styles.propertyValue, technical && styles.technicalValue]}>
         {value}
       </Text>
     </View>
@@ -860,7 +913,7 @@ const styles = StyleSheet.create({
   },
   bottomPanel: { top: "auto", bottom: 80, left: 12, right: 12, width: "auto", maxHeight: "56%" },
   compactPanel: { top: 12, bottom: 70 },
-  selectionPanel: { bottom: "auto" },
+  selectionPanel: { bottom: "auto", width: 320 },
   panelHeader: {
     minHeight: 52,
     flexDirection: "row",
@@ -879,6 +932,14 @@ const styles = StyleSheet.create({
   panelScroll: { flexGrow: 0, flexShrink: 1 },
   details: { padding: 16, gap: 10 },
   compactDetails: { paddingVertical: 8 },
+  selectionDetails: { paddingHorizontal: 0, paddingVertical: 4, gap: 0 },
+  propertySection: {
+    color: "#a9b9ca",
+    fontSize: 11,
+    fontWeight: "600",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
   sectionLabel: { color: "#edc17d", fontSize: 12, fontWeight: "600", marginTop: 8 },
   layer: {
     minHeight: 48,
@@ -897,10 +958,19 @@ const styles = StyleSheet.create({
   visibility: { fontSize: 10, color: "#98a7b7" },
   visibilityOn: { color: "#a9d3ff" },
   selectionName: { color: "#edf2f7", fontSize: 13, fontWeight: "600", lineHeight: 20 },
-  propertyRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingVertical: 4 },
-  compactPropertyRow: { paddingVertical: 0 },
-  propertyLabel: { width: 64, color: "#9eadbd", fontSize: 11, lineHeight: 20 },
+  propertyRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ffffff08",
+  },
+  compactPropertyRow: { paddingVertical: 4 },
+  propertyLabel: { width: 84, color: "#a9b9ca", fontSize: 12, lineHeight: 20 },
   propertyValue: { flex: 1, minWidth: 0, color: "#e1e8f0", fontSize: 13, lineHeight: 20 },
+  technicalValue: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 11 },
   technicalToggle: { borderTopWidth: 1, borderTopColor: "#ffffff12", marginTop: 2 },
   infoRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
   infoValue: { color: "#d5dfe9", fontSize: 12, lineHeight: 18, fontVariant: ["tabular-nums"] },

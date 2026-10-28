@@ -254,6 +254,29 @@ fn preserves_schematic_document_ids_for_boards() {
 }
 
 #[test]
+fn opens_a_schematic_page_instead_of_its_container() {
+    let mut images = fixture("images");
+    images["result"]["boards"][0]["schematic"]["documents"] = json!([{
+        "uuid": "51742b25044d422ca1c48ba235f12738",
+        "schematic_uuid": "6e9bf6c0323c94de",
+        "display_title": "P1"
+    }]);
+    let detail = normalize_project(&fixture("detail"), Some(&images)).unwrap();
+    assert_eq!(
+        detail.boards[0].schematic_id.as_deref(),
+        Some("51742b25044d422ca1c48ba235f12738")
+    );
+
+    images["result"]["boards"][0]["schematic"]["documents"][0]["uuid"] = json!("../bad");
+    assert_eq!(
+        normalize_project(&fixture("detail"), Some(&images))
+            .unwrap_err()
+            .code,
+        "INVALID_RESPONSE"
+    );
+}
+
+#[test]
 fn converts_nested_html_once_without_scripts_or_unsafe_links() {
     let detail = normalize_project(&fixture("detail"), Some(&fixture("images"))).unwrap();
     let texts: Vec<_> = detail.content.iter().map(|b| b.text.as_str()).collect();
@@ -449,4 +472,50 @@ async fn live_public_feed_search_and_project() {
         .await
         .unwrap();
     assert!(!detail.boards.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "Public OSHWHub schematic smoke; requires internet and may be rate limited"]
+async fn live_public_schematic_opens_the_published_page_with_wires() {
+    let client = HttpClient::new().unwrap();
+    let detail = Api::new(client.clone())
+        .project("506988101bcc4bb2b7382420751a0b7b")
+        .await
+        .unwrap();
+    let page = detail.boards[0].schematic_id.as_deref().unwrap();
+    assert_eq!(page, "51742b25044d422ca1c48ba235f12738");
+    let scene = oshwhub_core::schematic::load(&client, &detail.summary.id, page)
+        .await
+        .unwrap();
+    assert_eq!(scene.name, "P1");
+    assert!(scene.batches.iter().any(|batch| batch.layer == 1));
+    assert!(scene.object_count > 2000);
+    assert_eq!(scene.images.len(), 1);
+    for expected in [
+        "M1",
+        "FPC3",
+        "Schematic_Moji2",
+        "100nF",
+        "2.2kΩ",
+        detail.summary.name.as_str(),
+    ] {
+        assert!(
+            scene.texts.iter().any(|text| text.text == expected),
+            "missing {expected}"
+        );
+    }
+    assert!(
+        scene
+            .batches
+            .iter()
+            .any(|batch| batch.fill && batch.color.as_deref() == Some("#66CCCC"))
+    );
+    assert!(
+        scene
+            .warnings
+            .iter()
+            .all(|warning| !warning.contains("无法解析") && !warning.contains("未渲染")),
+        "{:?}",
+        scene.warnings
+    );
 }
