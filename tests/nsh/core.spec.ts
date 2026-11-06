@@ -78,6 +78,35 @@ test("redirects are rejected before the destination is requested", async ({ page
   expect(destinationRequests).toBe(0);
 });
 
+test("local Rust service carries public downloads and preserves bounded typed errors", async ({
+  page,
+}) => {
+  const payloads: unknown[] = [];
+  await page.route("**/fetch", async (route) => {
+    payloads.push(route.request().postDataJSON());
+    await route.fulfill({ status: 200, contentType: "application/json", body: '{"value":9}' });
+  });
+  const success = JSON.parse(
+    await page.evaluate((url) => window.coreProbe.fetch_probe(url, 32, "local-json"), endpoint),
+  );
+  expect(success.data).toEqual({ value: 9 });
+  expect(payloads).toEqual([
+    { url: endpoint, body: null, maxBytes: 8 * 1024 * 1024, json: true, headers: [] },
+  ]);
+  await page.unroute("**/fetch");
+  await page.route("**/fetch", (route) =>
+    route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: '{"code":"BLOCKED","message":"blocked"}',
+    }),
+  );
+  const failure = JSON.parse(
+    await page.evaluate((url) => window.coreProbe.fetch_probe(url, 1, "local-bytes"), endpoint),
+  );
+  expect(failure.code).toBe("BLOCKED");
+});
+
 test("JSON POST uses the browser preflight and preserves its typed payload", async ({ page }) => {
   let payload: unknown;
   await page.route(endpoint, async (route) => {

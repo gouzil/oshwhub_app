@@ -1,6 +1,7 @@
 //! Shared typed application logic and the compatibility JSON transport.
 pub mod api;
 mod bom;
+pub use bom::search as search_bom;
 pub mod client;
 pub mod diagnostics;
 pub mod error;
@@ -17,6 +18,27 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::OnceLock;
 use web_time::Instant;
+
+#[cfg(all(target_arch = "wasm32", getrandom_backend = "custom"))]
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    fn __nsh_random_fill(ptr: *mut u8, len: usize) -> i32;
+}
+
+// NSH's web runner selects getrandom's custom backend. Keep the hook in the
+// shared core so browser linking does not depend on the optional JS host crate.
+#[cfg(all(target_arch = "wasm32", getrandom_backend = "custom"))]
+#[unsafe(no_mangle)]
+unsafe extern "Rust" fn __getrandom_v03_custom(
+    ptr: *mut u8,
+    len: usize,
+) -> std::result::Result<(), getrandom::Error> {
+    if unsafe { __nsh_random_fill(ptr, len) } == 0 {
+        Ok(())
+    } else {
+        Err(getrandom::Error::UNSUPPORTED)
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(tag = "command", rename_all = "camelCase")]

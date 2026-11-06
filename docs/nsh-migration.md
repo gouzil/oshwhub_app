@@ -1,6 +1,6 @@
 # 全量 NSH 迁移与性能验收
 
-状态：2026-11-06 用户选择并授权全 Rust NSH 页面方案；进入实施。当前对照产品版本为 `df1c0ef40cfc1743086c10a0d7ec63d3e69c006f`。
+状态：2026-11-07 用户选择并授权全 Rust NSH 页面方案；实现与跨端构建验证正在进行，最终切换仍受性能和真实设备验收门槛约束。当前对照产品版本为 `df1c0ef40cfc1743086c10a0d7ec63d3e69c006f`，最新证据见 [nsh-validation.md](nsh-validation.md)。
 
 ## 目标与范围
 
@@ -15,14 +15,14 @@
 - 已读取引用聊天 `01a182be-9756-7592-ba04-dce18e2304dc`。旧探针针对 NSH 0.3.0，只证明基础互操作，未证明完整查看器或产品性能。
 - 本次固定 NSH **v0.4.0**，revision `e626a8dd8f8d8b277b9507cfd5ac74d0e67020f3`，2026-11-04 发布。CLI、Rust crates 和平台 runtime 必须同一版本，锁定依赖与下载校验和。
 - 此版本 Canvas 支持 SVG 路径、even-odd、文字、位图和原生 animated values；每次重新录制会替换全部绘制命令，不能把手势做成每帧重新遍历整板。
-- `#[native_components(...)]` 支持在应用 crate 注册 macOS/iOS/Windows/Linux 组件并进入正式宿主。Android 注册与 Web 宿主需要单独实现和打包验证；不能将桌面成功外推为移动端成功。
+- `#[native_components(...)]` 支持在应用 crate 注册 macOS/iOS/Windows/Linux 组件并进入正式宿主。macOS/iOS 使用 Metal，Linux 通过 GTK GLArea 当前上下文复用 wgpu GLES，Android 使用自有 TextureView/JNI 宿主连接 wgpu，Web 使用 Rust WebGPU/WebGL 表面。Windows 仍使用 Rust NSH Canvas fallback，原生 GPU 接线尚未完成；各平台功能 smoke 均不能替代真实硬件性能对照。
 - 现有二维查看器使用图层矢量缓存、全板/视区两张有界光栅缓存、180ms 空闲细化、原子切层。现有三维查看器复用索引网格、实例绘制、渐进模型加载与资源释放。这些都是迁移验收条件。
 
 源码依据：NSH v0.4.0 的 `website/docs/canvas.md`、`native-components.md`、`packaging.md`、`examples/rust-exports`；本项目 `packages/ui/src/App.tsx`、`screens/ViewerPage.tsx`、`packages/pcb-viewer/src/PcbViewer.tsx`、`crates/core/src/pcb/scene.rs`。
 
 ## 方案取舍
 
-1. **已选择：全 Rust NSH 页面。** 页面、状态、导航、主题、普通控件和绘制都使用 Rust；直接复用 core 的类型与异步 API，场景和网格留在 Rust，不添加应用自己的 TSX/QuickJS 数据边界。二维优先走 Rust NSH Canvas；三维使用 NSH 注册的原生 GPU 表面及共享 Rust 渲染逻辑。相应移植现有纯 TS 业务逻辑与回归断言。
+1. **已选择：全 Rust NSH 页面。** 页面、状态、导航、主题、普通控件和绘制都使用 Rust；直接复用 core 的类型与异步 API，场景和网格留在 Rust，不添加应用自己的 TSX/QuickJS 数据边界。二维走 Rust NSH Canvas；macOS/iOS/Android/Linux/Web 三维使用已接入的 GPU 表面，Windows 三维当前使用同一 Rust 数据所有权的 Canvas fallback，仍待原生 GPU 接线与硬件对照。相应移植现有纯 TS 业务逻辑与回归断言。
 2. **未选择：NSH TSX 页面 + Rust 场景/绘制组件。** 可沿用页面语言，但仍保留 QuickJS 和跨语言边界，不采用此路线。
 3. **NSH 页面嵌入旧 RN/Skia/Expo GL。** 可作为迁移期间对照，但保留旧运行时，不满足全量切换目标，不能作为交付方案。
 
@@ -49,7 +49,7 @@
 
 用共享 Rust GPU 渲染器消费现有板体/器件顶点、索引、材质和实例变换。优先使用 NSH 已依赖生态中的 wgpu，新增直接依赖必须锁版本并证明平台兼容。每种 mesh 上传一次；相机只更新小 uniform；空闲不持续绘制，隐藏工作区暂停，销毁时释放 GPU 和监听资源。
 
-macOS/iOS、Windows、Linux 注册真实原生表面；Android 通过自有 NSH 宿主注册表面。NSH v0.4.0 的 Web `nativeComponent` 明确为空视图，`web.host` 只提供函数/事件，不能将其视为已有图形宿主。Web 必须先验证应用自己的 wasm-bindgen/web-sys GPU 表面能随 NSH 布局、焦点、裁剪和生命周期正确工作，或找到框架已有的等效表面接口；此项是全量迁移的前置门槛。正式产物必须真实接入，缺失组件必须可见报错，禁止空画布冒充支持。WebGPU 不可用时须有经过验证的兼容 GPU 路线或明确验收失败，不能退回 CPU 每帧整板投影。
+macOS/iOS 注册真实 Metal 表面；Android 通过自有 Java TextureView/JNI 宿主接入 wgpu（模拟器实测 Vulkan）；Linux 使用 GTK GLArea 外部 GLES framebuffer，保留 GPU 内绘制与 NSH 裁剪/叠层；Web 使用自有 wasm-bindgen/web-sys 表面。Windows 当前仍使用 Rust NSH Canvas fallback，明确 100,000 三角形上限，原生 wgpu 接线尚未完成。Web `nativeComponent` 仍为空视图，不能依赖它承载 GPU。每个平台必须验证首帧、布局、焦点、裁剪/叠层和重复销毁；模拟器和 Linux 软件 GLES 功能结果不能作为真实硬件性能证明。WebGPU 不可用时须有经过验证的兼容 GPU 路线或明确验收失败，不能静默退回每帧整板投影。
 
 保留孔洞、板厚、顶底铜/丝印、官方器件关联、渐进加载、失败重试、相机约束、2D/3D 切换时的二维相机/图层状态。SVG/OBJ 等不可信数据继续在已有边界校验。
 
@@ -57,7 +57,7 @@ macOS/iOS、Windows、Linux 注册真实原生表面；Android 通过自有 NSH 
 
 先实际编译定位当前失败，再做最小 target-specific 拆分：UUID 随机数、Tokio 功能/线程任务、reqwest 浏览器路径、计时、解密依赖。纯计算继续共用；Web 网络需保留域名/字节限制与错误语义，并明确浏览器 CORS 能否覆盖现有下载域。
 
-若在线 Web 必需受控代理，必须单独列出部署需求、信任边界与运行成本供用户判断；不得悄悄引入远程服务或将离线夹具通过视为在线 Web 可用。
+旧 Web 通过 `http://127.0.0.1:4318/bridge` 调用本地核心，本身不支持独立公共静态托管。NSH Web 保持本地服务范围，由同源 loopback `/fetch` 提供受白名单与字节上限约束的下载，计算仍在 Rust/WASM。若后续公共 Web 需要远程代理，须单独说明部署与信任边界；当前迁移不新增远程服务，也不能把离线夹具通过视为在线通路验收。
 
 ## 功能验收
 

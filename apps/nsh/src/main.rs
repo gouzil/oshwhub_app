@@ -13,6 +13,10 @@ use nsh_platform_windows as platform;
 fn main() -> impl std::process::Termination {
     env_logger::init();
     platform::set_ui_sets(vec![nsh_base::registry(), oshwhub_nsh::registry()]);
+    #[cfg(target_os = "macos")]
+    platform::set_components(oshwhub_nsh::__nsh_native_components_macos);
+    #[cfg(target_os = "linux")]
+    platform::set_components(oshwhub_nsh::__nsh_native_components_linux);
     platform::run_app(
         platform::AppSource::Rust(
             platform::Root::of::<oshwhub_nsh::App>()

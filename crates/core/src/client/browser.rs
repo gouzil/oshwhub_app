@@ -82,30 +82,55 @@ impl HttpClient {
         }
         let deadline = Deadline::new()?;
         let init = RequestInit::new();
-        init.set_method(if body.is_some() { "POST" } else { "GET" });
+        init.set_method(if self.local_service || body.is_some() {
+            "POST"
+        } else {
+            "GET"
+        });
         init.set_mode(RequestMode::Cors);
         init.set_credentials(RequestCredentials::Omit);
         // Manual yields an opaque redirect without fetching its destination.
         init.set_redirect(RequestRedirect::Manual);
         init.set_signal(Some(&deadline.controller.signal()));
-        if let Some(body) = body {
+        if self.local_service {
+            init.set_body(&JsValue::from_str(
+                &serde_json::to_string(&super::PublicRequest {
+                    url: url.to_string(),
+                    body: body.cloned(),
+                    max_bytes,
+                    json,
+                    headers: headers
+                        .iter()
+                        .map(|(name, value)| (name.to_string(), value.to_string()))
+                        .collect(),
+                })
+                .map_err(|_| network_error())?,
+            ));
+        } else if let Some(body) = body {
             init.set_body(&JsValue::from_str(&body.to_string()));
         }
-        let request =
-            Request::new_with_str_and_init(url.as_str(), &init).map_err(|_| network_error())?;
+        let request = Request::new_with_str_and_init(
+            if self.local_service {
+                "/fetch"
+            } else {
+                url.as_str()
+            },
+            &init,
+        )
+        .map_err(|_| network_error())?;
         if json {
             request
                 .headers()
                 .set("Accept", "application/json")
                 .map_err(|_| network_error())?;
         }
-        if body.is_some() {
+        if self.local_service || body.is_some() {
             request
                 .headers()
                 .set("Content-Type", "application/json")
                 .map_err(|_| network_error())?;
         }
-        for &(name, value) in headers {
+        for &(name, value) in headers.iter().filter(|_| !self.local_service) {
             request
                 .headers()
                 .set(name, value)
@@ -123,7 +148,14 @@ impl HttpClient {
             .headers()
             .get("Content-Type")
             .map_err(|_| network_error())?;
-        validate_response(response.status(), mime.as_deref(), json)?;
+        let max_bytes = if self.local_service && !response.ok() {
+            8192
+        } else {
+            max_bytes
+        };
+        if !self.local_service || response.ok() {
+            validate_response(response.status(), mime.as_deref(), json)?;
+        }
         if response
             .headers()
             .get("Content-Length")
@@ -160,6 +192,9 @@ impl HttpClient {
                 append_chunk(&mut bytes, &value.to_vec(), max_bytes)?;
             }
             reader.release_lock();
+        }
+        if self.local_service && !response.ok() {
+            return Err(serde_json::from_slice(&bytes).unwrap_or_else(|_| network_error()));
         }
         Ok(bytes)
     }

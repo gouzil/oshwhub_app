@@ -1263,9 +1263,13 @@ fn stored(scene_id: &str) -> Result<Arc<Stored>> {
 }
 
 pub fn prepare_3d(scene_id: &str) -> Result<solid::Scene3d> {
+    Ok(prepare_3d_raw(scene_id)?.packed())
+}
+
+pub fn prepare_3d_raw(scene_id: &str) -> Result<solid::RawScene3d> {
     let start = Instant::now();
     let s = stored(scene_id)?;
-    let result = solid::prepare(
+    let result = solid::prepare_raw(
         &s.solid,
         s.objects.iter().map(|o| {
             (
@@ -1279,9 +1283,9 @@ pub fn prepare_3d(scene_id: &str) -> Result<solid::Scene3d> {
         s.bounds,
     )?;
     tracing::info!(
-        vertices = result.board.vertex_count,
-        indices = result.board.index_count,
-        mesh_bytes = result.board.vertex_count * 36 + result.board.index_count * 4,
+        vertices = result.board.vertices.len() / 9,
+        indices = result.board.indices.len(),
+        mesh_bytes = (result.board.vertices.len() + result.board.indices.len()) * 4,
         models = result.model_keys.len(),
         elapsed_ms = start.elapsed().as_millis() as u64,
         "pcb.solid.complete"
@@ -1434,6 +1438,26 @@ mod tests {
         let mut p = Project::default();
         history::replay(&mut p, FIXTURE).unwrap();
         compile(p, "board", "fixture".into(), Metrics::default()).unwrap()
+    }
+    #[test]
+    fn raw_scene_is_caller_owned_and_keeps_the_packed_api_and_expiry_error() {
+        let _guard = scene_test_guard();
+        let scene = fixture_scene();
+        let raw = prepare_3d_raw(&scene.id).unwrap();
+        let weak = Arc::downgrade(&raw.board);
+        let packed = prepare_3d(&scene.id).unwrap();
+        assert_eq!(packed.board.data, raw.board.packed().data);
+        assert_eq!(packed.warnings, raw.warnings);
+        assert_eq!(packed.thickness, raw.thickness);
+        drop(raw);
+        assert!(
+            weak.upgrade().is_none(),
+            "scene cache must not retain the prepared board"
+        );
+        assert_eq!(
+            prepare_3d_raw("missing").err().unwrap().code,
+            "scene_expired"
+        );
     }
     #[test]
     fn scene_cache_expires_only_the_oldest_of_three_scenes() {

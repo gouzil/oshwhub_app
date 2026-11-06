@@ -13,6 +13,21 @@ mod browser;
 pub struct HttpClient {
     #[cfg(not(target_arch = "wasm32"))]
     inner: reqwest::Client,
+    #[cfg(target_arch = "wasm32")]
+    local_service: bool,
+}
+
+/// A bounded public download through the existing local Rust Web service.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublicRequest {
+    pub url: String,
+    #[serde(default)]
+    pub body: Option<Value>,
+    pub max_bytes: usize,
+    pub json: bool,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
 }
 
 const JSON_LIMIT: usize = 8 * 1024 * 1024;
@@ -39,8 +54,52 @@ impl HttpClient {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            Ok(Self {})
+            Ok(Self {
+                local_service: false,
+            })
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn via_local_service() -> Self {
+        Self {
+            local_service: true,
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn relay(&self, request: PublicRequest) -> Result<Vec<u8>> {
+        validate_url(&request.url)?;
+        let limit = if request.json {
+            JSON_LIMIT
+        } else {
+            32 * 1024 * 1024
+        };
+        if request.max_bytes == 0 || request.max_bytes > limit {
+            return Err(AppError::new("INVALID_LIMIT", "下载大小上限无效"));
+        }
+        if request.headers.len() > 2
+            || request.headers.iter().any(|(name, value)| {
+                !matches!(name.as_str(), "Content-Type" | "path")
+                    || value.len() > 4096
+                    || value.chars().any(char::is_control)
+            })
+        {
+            return Err(AppError::new("INVALID_REQUEST", "下载请求头无效"));
+        }
+        let headers: Vec<_> = request
+            .headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        self.request(
+            &request.url,
+            request.body.as_ref(),
+            request.max_bytes,
+            request.json,
+            &headers,
+        )
+        .await
     }
 
     pub async fn get_json(&self, url: &str) -> Result<Value> {
@@ -205,6 +264,36 @@ fn append_chunk(bytes: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn local_relay_keeps_public_url_header_and_size_boundaries() {
+        let client = HttpClient::new().unwrap();
+        for (url, limit, headers, code) in [
+            ("http://127.0.0.1/private", 32, vec![], "INVALID_URL"),
+            ("https://oshwhub.com/", 0, vec![], "INVALID_LIMIT"),
+            (
+                "https://oshwhub.com/",
+                32 * 1024 * 1024 + 1,
+                vec![],
+                "INVALID_LIMIT",
+            ),
+            (
+                "https://oshwhub.com/",
+                32,
+                vec![("Authorization".into(), "secret".into())],
+                "INVALID_REQUEST",
+            ),
+        ] {
+            let request = PublicRequest {
+                url: url.into(),
+                body: None,
+                max_bytes: limit,
+                json: false,
+                headers,
+            };
+            assert_eq!(client.relay(request).await.unwrap_err().code, code);
+        }
+    }
 
     #[test]
     fn blocked_rate_limited_and_redirect_responses_remain_errors() {

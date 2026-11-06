@@ -12,7 +12,9 @@ thread_local! {
 #[wasm_bindgen]
 pub async fn fetch_probe(url: &str, limit: u32, mode: &str) -> String {
     let result = async {
-        let client = HttpClient::new()?;
+        let (client, mode) = if let Some(mode) = mode.strip_prefix("local-") {
+            (HttpClient::via_local_service(), mode)
+        } else { (HttpClient::new()?, mode) };
         match mode {
             "json" => client.get_json(url).await,
             "post" => client.post_json(url, &json!({"probe": true})).await,

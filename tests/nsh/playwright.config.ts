@@ -7,6 +7,7 @@ export default defineConfig({
   workers: 1,
   timeout: 30_000,
   reporter: "list",
+  snapshotPathTemplate: "{testDir}/snapshots/{arg}{ext}",
   use: {
     browserName: "chromium",
     baseURL: "http://127.0.0.1:5374",

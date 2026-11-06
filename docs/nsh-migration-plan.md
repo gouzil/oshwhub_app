@@ -4,7 +4,7 @@
 
 **Goal:** 全部页面与 PCB/原理图/三维渲染切换到 Rust NSH，并用对应平台的 Release 对照证明性能没有下降。
 
-**Architecture:** 一个纯 Rust NSH 根组件，直接调用 `oshwhub-core` 的强类型接口。NSH owns UI/layout/accessibility；Rust owns scene/cache/GPU buffers。原生平台使用 NSH 注册的表面；Web 先验证自有 Rust/WASM GPU 表面与 NSH 生命周期的接合。
+**Architecture:** 一个纯 Rust NSH 根组件，直接调用 `oshwhub-core` 的强类型接口。NSH owns UI/layout/accessibility；Rust owns scene/cache/GPU buffers。macOS/iOS/Android/Linux/Web 使用已接入的 GPU 表面；Windows 当前使用 Rust Canvas fallback，待原生 GPU 接线和真实硬件对照通过后替换。
 
 **Tech Stack:** Rust 1.98.1、NSH =0.4.0、现有 Rust core、NSH Canvas、与 NSH 兼容的 wgpu、已有 Playwright 与原生平台测试。
 
@@ -27,6 +27,10 @@
 - 场景在切换页面/2D/3D 后异步完成，不能覆盖新页面或使用已销毁 GPU；Tasks 3/4/5 检查交错响应与释放。
 - 密集真实 PCB 的图元/实例规模不能被小夹具掩盖；Tasks 3/4/6 用真实重放与独立合成压力样本分别报告。
 - OS/GPU/浏览器兼容范围不得悄悄降低；Tasks 2/6 记录旧版与 NSH 的版本下限并实际验证，不支持时明确未通过。
+
+## Current status (2026-11-07)
+
+Rust NSH 页面、core/WASM 通路、二维/原理图 viewer、macOS/iOS/Android/Linux/Web 三维 GPU viewer、Windows Canvas fallback、业务页面与性能比较器已在工作树实现。workspace tests 最新为 230 通过/3 忽略，workspace/WASM/Linux Clippy 与 NSH check 通过；Web 最新 23/23 回归包含六视口中文与 SVG text/image 像素。Android Vulkan probe 已在手机模拟器验证缩放/旋转与 20 次销毁；Linux GTK GLES 像素/方向/叠层/resize/20 次销毁通过，Ubuntu 容器已生成真正 ELF aarch64 包并启动加载在线列表。此前 macOS 跨桌面生成的 Windows/Linux 假产物记录已撤回；新 Linux 包由 Linux 本机构建，Windows 仍需 Windows 实际构建/运行。最终迁移仍未验收：没有真实旧版 vs NSH Release 性能样本，Windows 原生 GPU 未接入，各端真实硬件/无障碍矩阵未完成。真实在线 Web 已走通发现/详情/BOM/PCB 2D/3D/原理图，并明确显示 1 项不可读取的官方模型。旧入口继续保留。
 
 ## File Structure
 

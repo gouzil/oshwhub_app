@@ -6,7 +6,7 @@ pub fn action(
     label: &'static str,
     on_press: impl Fn() + 'static,
     selected: impl Fn() -> bool + Copy + 'static,
-) -> impl IntoElement {
+) -> impl IntoElement + Styled {
     button()
         .accessibility_label(label)
         .selected(selected)
@@ -35,3 +35,4 @@ pub fn action(
             }
         }))
 }
+pub mod remote_image;

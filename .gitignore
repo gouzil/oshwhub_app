@@ -11,6 +11,7 @@ coverage/
 playwright-report/
 test-results/
 .playwright-mcp/
+.playwright-cli/
 output/
 apps/mobile/android/
 apps/mobile/ios/

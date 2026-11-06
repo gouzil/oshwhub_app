@@ -1,16 +1,41 @@
 //! OSHWHub's Rust NSH application, shared by the native and Web runners.
 
 mod components;
+pub mod model;
+pub mod pages;
+pub mod preferences;
 pub mod services;
+pub mod viewer;
 
 use nsh_base::theme;
-use nsh_core::{element::AnyElement, platform::Appearance, prelude::*};
+use nsh_core::{
+    Rgba,
+    element::{AdaptiveColor, AnyElement},
+    platform::Appearance,
+    prelude::*,
+};
+use std::rc::Rc;
 
 use components::action;
 
 #[native_module("oshwhub/native")]
 fn native(registry: &mut Registry) {
     registry.register::<App>();
+}
+
+#[native_components(macos)]
+fn components_macos(components: &nsh_platform_macos::Components) {
+    viewer::surface::register_macos(components);
+}
+
+#[native_components(ios)]
+fn components_ios(components: &nsh_platform_ios::Components) {
+    viewer::surface::register_ios(components);
+}
+
+#[native_components(linux)]
+fn components_linux(components: &nsh_platform_linux::Components) {
+    viewer::surface::register_linux(components);
 }
 
 pub fn app_theme() -> nsh_base::Theme {
@@ -36,9 +61,78 @@ const PAGES: [(Page, &str, &str); 4] = [
 /// Keep page and appearance state above responsive layouts and page disposal.
 #[component]
 pub fn App() -> impl IntoElement {
+    app_with_store(preferences::system_store())
+}
+
+pub fn app_with_store(store: impl preferences::PreferenceStore + 'static) -> AnyElement {
     let page = signal(Page::Discover);
-    let appearance = signal(Appearance::System);
-    effect(move || set_color_scheme(appearance.get()));
+    let initial = preferences::ThemePreferences::load(&store);
+    let preference_error = signal(initial.as_ref().err().map(|error| error.message.clone()));
+    let preferences = signal(initial.unwrap_or_default());
+    let store = stored(store);
+    effect(move || {
+        set_color_scheme(preferences.get().appearance);
+        let palette = preferences.get().accent.palette();
+        let primary = AdaptiveColor {
+            light: Rgba::try_from(palette.primary)
+                .expect("valid bundled accent")
+                .into(),
+            dark: Rgba::try_from(palette.dark_primary)
+                .expect("valid bundled accent")
+                .into(),
+        };
+        let secondary = AdaptiveColor {
+            light: Rgba::try_from(palette.light)
+                .expect("valid bundled accent")
+                .into(),
+            dark: Rgba::try_from(palette.dark)
+                .expect("valid bundled accent")
+                .into(),
+        };
+        let mut theme = app_theme();
+        for name in [
+            "primary",
+            "ring",
+            "secondary-foreground",
+            "accent-foreground",
+        ] {
+            theme.set_color(name, primary);
+        }
+        for name in ["secondary", "accent"] {
+            theme.set_color(name, secondary);
+        }
+        set_tokens(theme.into_tokens());
+    });
+    let on_appearance: Rc<dyn Fn(Appearance)> = Rc::new(move |mode| {
+        let mut next = preferences.get();
+        let result = store.with(|store| next.set_appearance(store, mode));
+        preferences.set(next);
+        preference_error.set(
+            result
+                .err()
+                .map(|_| "外观已应用，但无法保存；下次打开时可能恢复原来的模式。".into()),
+        );
+    });
+    let on_accent: Rc<dyn Fn(preferences::Accent)> = Rc::new(move |accent| {
+        let mut next = preferences.get();
+        let result = store.with(|store| next.set_accent(store, accent));
+        preferences.set(next);
+        preference_error.set(
+            result
+                .err()
+                .map(|_| "颜色已应用，但无法保存；下次打开时可能恢复原来的颜色。".into()),
+        );
+    });
+    let project_id = signal(None::<String>);
+    let viewer_route = signal(None::<pages::ViewerRoute>);
+    let feed_active = signal(true);
+    effect(move || {
+        feed_active.set(
+            page.get() == Page::Discover
+                && project_id.get().is_none()
+                && viewer_route.get().is_none(),
+        )
+    });
 
     view()
         .flex_1()
@@ -48,16 +142,21 @@ pub fn App() -> impl IntoElement {
         .child(
             view()
                 .flex_1()
-                .style_when(|| window().width.0 >= 700.0, |s| s.flex_row())
+                .flex_col_reverse()
+                .style_when(|| window().width.0 >= 1024.0, |s| s.flex_row())
                 .child(
                     view()
                         .p_3()
                         .gap_3()
                         .border_b_1()
                         .border_color(move || theme().border)
-                        .style_when(|| window().width.0 >= 700.0, |s| s.w(px(200.0)))
+                        .style_when(|| window().width.0 >= 1024.0, |s| s.w(px(216.0)))
                         .child(
                             text("OSHWHub")
+                                .style_when(
+                                    || window().width.0 < 1024.0,
+                                    |s| s.hidden().invisible(),
+                                )
                                 .text_size(px(24.0))
                                 .font_weight(FontWeight::BOLD),
                         )
@@ -65,33 +164,104 @@ pub fn App() -> impl IntoElement {
                             view()
                                 .flex_row()
                                 .gap_1()
-                                .style_when(|| window().width.0 >= 700.0, |s| s.flex_col())
+                                .style_when(|| window().width.0 >= 1024.0, |s| s.flex_col())
                                 .children(PAGES.map(|(destination, title, label)| {
                                     action(
                                         title,
                                         label,
-                                        move || page.set(destination),
+                                        move || {
+                                            page.set(destination);
+                                            project_id.set(None);
+                                            viewer_route.set(None);
+                                        },
                                         move || page.get() == destination,
                                     )
                                 })),
                         ),
                 )
                 .child(
-                    scroll()
+                    view()
                         .flex_1()
+                        .min_h(px(0.0))
+                        .min_w(px(0.0))
+                        .relative()
                         .child(
                             view()
-                                .p_6()
-                                .gap_4()
-                                .child(dynamic(move || match page.get() {
-                                    Page::Discover => discover(),
-                                    Page::Lab => laboratory(),
-                                    Page::Settings => settings(appearance),
-                                    Page::About => about(),
-                                })),
-                        ),
+                                .flex_1()
+                                .min_h(px(0.0))
+                                .style_when(move || !feed_active.get(), |s| s.hidden().invisible())
+                                .accessibility_elements_hidden(move || {
+                                    page.get() != Page::Discover
+                                        || project_id.get().is_some()
+                                        || viewer_route.get().is_some()
+                                })
+                                .child(pages::discover::discover(
+                                    feed_active,
+                                    Rc::new(move |id| project_id.set(Some(id))),
+                                )),
+                        )
+                        .child(
+                            scroll()
+                                .flex_1()
+                                .label("页面内容")
+                                .style_when(
+                                    move || {
+                                        page.get() == Page::Discover || viewer_route.get().is_some()
+                                    },
+                                    |s| s.hidden().invisible(),
+                                )
+                                .accessibility_elements_hidden(move || {
+                                    page.get() == Page::Discover || viewer_route.get().is_some()
+                                })
+                                .child(view().p_6().gap_4().child(dynamic(
+                                    move || match page.get() {
+                                        Page::Discover => view().into_element(),
+                                        Page::Lab => laboratory(Rc::new(move || {
+                                            viewer_route.set(Some(pages::ViewerRoute::Demo))
+                                        })),
+                                        Page::Settings => settings(
+                                            preferences,
+                                            preference_error,
+                                            Rc::clone(&on_appearance),
+                                            Rc::clone(&on_accent),
+                                        ),
+                                        Page::About => about(),
+                                    },
+                                ))),
+                        )
+                        .child(dynamic(move || match project_id.get() {
+                            Some(id) => view()
+                                .absolute()
+                                .inset_0()
+                                .bg(move || theme().background)
+                                .style_when(
+                                    move || viewer_route.get().is_some(),
+                                    |style| style.hidden().invisible(),
+                                )
+                                .accessibility_elements_hidden(move || viewer_route.get().is_some())
+                                .child(pages::project::project(
+                                    id,
+                                    Rc::new(move || project_id.set(None)),
+                                    Rc::new(move |route| viewer_route.set(Some(route))),
+                                ))
+                                .into_element(),
+                            None => view().into_element(),
+                        }))
+                        .child(dynamic(move || match viewer_route.get() {
+                            Some(route) => view()
+                                .absolute()
+                                .inset_0()
+                                .bg(move || theme().background)
+                                .child(pages::viewer::viewer(
+                                    route,
+                                    Rc::new(move || viewer_route.set(None)),
+                                ))
+                                .into_element(),
+                            None => view().into_element(),
+                        })),
                 ),
         )
+        .into_element()
 }
 
 fn heading(title: &'static str, description: &'static str) -> AnyElement {
@@ -106,15 +276,25 @@ fn heading(title: &'static str, description: &'static str) -> AnyElement {
         .into_element()
 }
 
-fn discover() -> AnyElement {
-    heading("发现下一个好想法", "随时发现开源硬件，随处探索电路设计。")
+fn laboratory(on_demo: Rc<dyn Fn()>) -> AnyElement {
+    view()
+        .gap_4()
+        .child(heading("PCB 实验室", "看清每一个连接"))
+        .child(action(
+            "打开示例查看器",
+            "打开示例查看器",
+            move || on_demo(),
+            || false,
+        ))
+        .into_element()
 }
 
-fn laboratory() -> AnyElement {
-    heading("PCB 实验室", "看清每一个连接")
-}
-
-fn settings(appearance: Signal<Appearance>) -> AnyElement {
+fn settings(
+    preferences: Signal<preferences::ThemePreferences>,
+    error: Signal<Option<String>>,
+    on_appearance: Rc<dyn Fn(Appearance)>,
+    on_accent: Rc<dyn Fn(preferences::Accent)>,
+) -> AnyElement {
     view()
         .gap_4()
         .child(heading("设置", "按你的习惯浏览开源硬件"))
@@ -126,24 +306,38 @@ fn settings(appearance: Signal<Appearance>) -> AnyElement {
                 (Appearance::Dark, "暗色模式"),
             ]
             .map(|(mode, label)| {
+                let on_appearance = Rc::clone(&on_appearance);
                 action(
                     label,
                     label,
-                    move || appearance.set(mode),
-                    move || appearance.get() == mode,
+                    move || on_appearance(mode),
+                    move || preferences.get().appearance == mode,
                 )
             }),
         )
         .child(text(move || {
             format!(
                 "当前外观：{}",
-                match appearance.get() {
+                match preferences.get().appearance {
                     Appearance::System => "跟随系统",
                     Appearance::Light => "浅色模式",
                     Appearance::Dark => "暗色模式",
                 }
             )
         }))
+        .child(text("主题颜色").text_size(px(20.0)))
+        .children(preferences::Accent::ALL.map(|accent| {
+            let on_accent = Rc::clone(&on_accent);
+            action(
+                accent.label(),
+                accent.label(),
+                move || on_accent(accent),
+                move || preferences.get().accent == accent,
+            )
+        }))
+        .child(
+            text(move || error.get().unwrap_or_default()).text_color(move || theme().destructive),
+        )
         .into_element()
 }
 

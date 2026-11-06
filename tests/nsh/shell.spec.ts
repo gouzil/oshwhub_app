@@ -33,3 +33,35 @@ test("packaged shell buttons remain keyboard operable on a short landscape viewp
   await page.keyboard.press("Space");
   await expect(page.getByText("当前外观：暗色模式", { exact: true })).toBeVisible();
 });
+
+test("Tab skips retained pages and inactive viewer modes", async ({ page }) => {
+  await page.route("**/fetch", (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        code: 0,
+        result: { lists: [], page: 1, pageSize: 20, total: 0, totalPage: 0 },
+      },
+    }),
+  );
+  await page.goto("/app/");
+  await page.getByRole("button", { name: "打开 PCB 实验室", exact: true }).click();
+  await page.getByRole("button", { name: "打开示例查看器", exact: true }).click();
+  await expect(page.getByTestId("pcb-canvas")).toBeVisible();
+  await page.getByLabel("切换到 PCB 3D", { exact: true }).click();
+  await expect(page.getByText(/个器件/)).toBeVisible();
+  for (const mode of ["切换到 PCB 2D", "切换到 PCB 3D"]) {
+    await page.getByLabel(mode, { exact: true }).click();
+    const hiddenStops: string[] = [];
+    for (let index = 0; index < 40; index++) {
+      await page.keyboard.press("Tab");
+      const hidden = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || !el.closest('[aria-hidden="true"]')) return null;
+        return el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.tagName;
+      });
+      if (hidden) hiddenStops.push(hidden);
+    }
+    expect(hiddenStops).toEqual([]);
+  }
+});

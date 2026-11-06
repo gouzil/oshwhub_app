@@ -5,6 +5,8 @@ pub(crate) mod history;
 mod models;
 mod scene;
 mod solid;
+pub use models::{Instance, RawModel3d};
+pub use solid::{Bounds3, Mesh, RawScene3d};
 
 use crate::{
     client::HttpClient,
@@ -262,6 +264,15 @@ pub async fn prepare_3d(scene_id: String) -> Result<solid::Scene3d> {
     crate::task::compute(move || scene::prepare_3d(&scene_id))
         .await
         .map_err(|_| AppError::new("internal", "三维板体处理失败"))?
+}
+pub async fn prepare_3d_raw(scene_id: String) -> Result<RawScene3d> {
+    crate::task::compute(move || scene::prepare_3d_raw(&scene_id))
+        .await
+        .map_err(|_| AppError::new("internal", "三维板体处理失败"))?
+}
+pub async fn model_3d_raw(client: &HttpClient, scene_id: &str, key: &str) -> Result<RawModel3d> {
+    let (bindings, thickness) = scene::model_bindings(scene_id)?;
+    models::load_raw(client, key, bindings, thickness).await
 }
 pub async fn model_3d(client: &HttpClient, scene_id: &str, key: &str) -> Result<models::Model3d> {
     let (bindings, thickness) = scene::model_bindings(scene_id)?;

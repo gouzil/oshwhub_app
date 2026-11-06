@@ -2,6 +2,21 @@ use std::future::Future;
 
 use oshwhub_core::error::Result;
 
+pub fn client() -> Result<oshwhub_core::client::HttpClient> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        Ok(oshwhub_core::client::HttpClient::via_local_service())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        static CLIENT: std::sync::OnceLock<Result<oshwhub_core::client::HttpClient>> =
+            std::sync::OnceLock::new();
+        CLIENT
+            .get_or_init(oshwhub_core::client::HttpClient::new)
+            .clone()
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub async fn run<T>(job: impl Future<Output = Result<T>>) -> Result<T> {
     job.await
