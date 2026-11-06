@@ -17,6 +17,8 @@ fn main() -> impl std::process::Termination {
     platform::set_components(oshwhub_nsh::__nsh_native_components_macos);
     #[cfg(target_os = "linux")]
     platform::set_components(oshwhub_nsh::__nsh_native_components_linux);
+    #[cfg(target_os = "windows")]
+    platform::set_components(oshwhub_nsh::__nsh_native_components_windows);
     platform::run_app(
         platform::AppSource::Rust(
             platform::Root::of::<oshwhub_nsh::App>()

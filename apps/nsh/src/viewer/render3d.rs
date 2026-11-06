@@ -13,9 +13,9 @@ use super::{
 };
 
 pub const MAX_GPU_BYTES: u64 = 128 * 1024 * 1024;
-const CAMERA_BYTES: u64 = 80;
-const VERTEX_STRIDE: u64 = 20;
-const IDENTITY: [f32; 16] = [
+pub(crate) const CAMERA_BYTES: u64 = 80;
+pub(crate) const VERTEX_STRIDE: u64 = 20;
+pub(crate) const IDENTITY: [f32; 16] = [
     1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
 ];
 
@@ -261,34 +261,7 @@ impl Render3d {
         camera: &Camera3d,
         aspect: f64,
     ) -> Result<(), String> {
-        if ![
-            camera.yaw,
-            camera.pitch,
-            camera.distance,
-            camera.radius,
-            aspect,
-        ]
-        .into_iter()
-        .chain(camera.target)
-        .all(f64::is_finite)
-            || camera.distance <= 0.
-            || camera.radius <= 0.
-            || aspect <= 0.
-        {
-            return Err("三维相机参数无效".into());
-        }
-        let eye = eye_position(camera).map(|value| value as f32);
-        let values = projection(camera, aspect)
-            .into_iter()
-            .chain(eye)
-            .chain([f32::from(u8::from(self.srgb))]);
-        let mut bytes = [0_u8; CAMERA_BYTES as usize];
-        for (chunk, value) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(values) {
-            if !value.is_finite() {
-                return Err("三维相机超出绘图精度范围".into());
-            }
-            chunk.copy_from_slice(&value.to_le_bytes());
-        }
+        let bytes = camera_bytes(camera, aspect, self.srgb)?;
         queue.write_buffer(&self.camera_buffer, 0, &bytes);
         self.camera_ready = true;
         self.stats.camera_writes += 1;
@@ -483,7 +456,7 @@ fn upload_instances(device: &wgpu::Device, matrices: &[[f32; 16]]) -> wgpu::Buff
     })
 }
 
-fn pack_vertices(vertices: &[f32]) -> Vec<u8> {
+pub(crate) fn pack_vertices(vertices: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(vertices.len() / 9 * VERTEX_STRIDE as usize);
     for vertex in vertices.as_chunks::<9>().0 {
         for value in &vertex[..3] {
@@ -504,7 +477,7 @@ fn pack_vertices(vertices: &[f32]) -> Vec<u8> {
     bytes
 }
 
-fn valid_transform(m: &[f32; 16]) -> bool {
+pub(crate) fn valid_transform(m: &[f32; 16]) -> bool {
     let m = m.map(f64::from);
     let determinant = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9])
         + m[8] * (m[1] * m[6] - m[2] * m[5]);
@@ -515,7 +488,7 @@ fn valid_transform(m: &[f32; 16]) -> bool {
         && [m[3], m[7], m[11], m[15]] == [0., 0., 0., 1.]
 }
 
-fn instance_bounds(bounds: &Bounds3, matrices: &[[f32; 16]]) -> Result<Bounds3, String> {
+pub(crate) fn instance_bounds(bounds: &Bounds3, matrices: &[[f32; 16]]) -> Result<Bounds3, String> {
     let mut result = Bounds3 {
         min: [f64::INFINITY; 3],
         max: [f64::NEG_INFINITY; 3],
@@ -542,12 +515,48 @@ fn instance_bounds(bounds: &Bounds3, matrices: &[[f32; 16]]) -> Result<Bounds3, 
     Ok(result)
 }
 
-fn checked_budget(current: u64, replaced: u64, additional: u64) -> Result<u64, String> {
+pub(crate) fn checked_budget(current: u64, replaced: u64, additional: u64) -> Result<u64, String> {
     current
         .checked_sub(replaced)
         .and_then(|bytes| bytes.checked_add(additional))
         .filter(|bytes| *bytes <= MAX_GPU_BYTES)
         .ok_or_else(|| "三维缓存已达到 128 MiB 上限，部分内容未加载".into())
+}
+
+pub(crate) fn camera_bytes(
+    camera: &Camera3d,
+    aspect: f64,
+    srgb: bool,
+) -> Result<[u8; CAMERA_BYTES as usize], String> {
+    if ![
+        camera.yaw,
+        camera.pitch,
+        camera.distance,
+        camera.radius,
+        aspect,
+    ]
+    .into_iter()
+    .chain(camera.target)
+    .all(f64::is_finite)
+        || camera.distance <= 0.
+        || camera.radius <= 0.
+        || aspect <= 0.
+    {
+        return Err("三维相机参数无效".into());
+    }
+    let eye = eye_position(camera).map(|value| value as f32);
+    let values = projection(camera, aspect)
+        .into_iter()
+        .chain(eye)
+        .chain([f32::from(u8::from(srgb))]);
+    let mut bytes = [0_u8; CAMERA_BYTES as usize];
+    for (chunk, value) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(values) {
+        if !value.is_finite() {
+            return Err("三维相机超出绘图精度范围".into());
+        }
+        chunk.copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(bytes)
 }
 
 async fn checked<T>(device: &wgpu::Device, build: impl FnOnce() -> T) -> Result<T, String> {

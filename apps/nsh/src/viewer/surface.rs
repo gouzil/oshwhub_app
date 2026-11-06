@@ -86,6 +86,11 @@ impl SurfaceModel {
     pub fn frame(&self) -> SurfaceFrame {
         self.state().frame
     }
+    #[cfg(target_os = "windows")]
+    pub(crate) fn frame_snapshot(&self) -> (u64, SurfaceFrame) {
+        let state = self.state();
+        (state.tick, state.frame)
+    }
     pub fn set_camera(&self, camera: Camera3d) {
         let mut state = self.state();
         if !state.disposed && state.frame.camera != camera {
@@ -202,7 +207,8 @@ mod android;
         target_os = "macos",
         target_os = "ios",
         target_os = "android",
-        target_os = "linux"
+        target_os = "linux",
+        target_os = "windows"
     ))
 ))]
 #[cfg_attr(test, allow(dead_code))]
@@ -213,6 +219,8 @@ mod linux;
 mod metal;
 #[cfg(target_arch = "wasm32")]
 mod web;
+#[cfg(target_os = "windows")]
+mod windows;
 #[cfg(target_os = "macos")]
 pub use metal::register as register_macos;
 #[cfg(target_os = "ios")]
@@ -220,6 +228,8 @@ pub use metal::register as register_ios;
 
 #[cfg(target_os = "linux")]
 pub use linux::register as register_linux;
+#[cfg(target_os = "windows")]
+pub use windows::register as register_windows;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SurfaceStatus {
@@ -259,7 +269,8 @@ fn surface_inner(
         target_os = "macos",
         target_os = "ios",
         target_os = "android",
-        target_os = "linux"
+        target_os = "linux",
+        target_os = "windows"
     ))]
     {
         let size = signal([0.0_f64; 2]);
@@ -310,7 +321,8 @@ fn surface_inner(
         target_os = "macos",
         target_os = "ios",
         target_os = "android",
-        target_os = "linux"
+        target_os = "linux",
+        target_os = "windows"
     )))]
     {
         fallback::surface(status, model)

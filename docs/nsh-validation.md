@@ -34,7 +34,7 @@ Clippy 均在审阅修复后重新通过。
 撤回此前 Windows/Linux 打包成功的记录：在 macOS 上运行 NSH 0.4.0 跨桌面目标打包，
 会成功生成扩展名正确、内部却是 macOS 启动器的包。本次复现中 `.exe` 的 `file` 结果
 为 `Mach-O 64-bit executable arm64`，其中不包含目标平台的 Rust 根组件。
-这些包不构成有效产物；Windows/Linux 必须在各自系统重新构建并运行。上面新增的有效 Linux 包是在 Linux 容器重新构建的产物；Windows 尚无对应运行证据。
+这些包不构成有效产物；Windows/Linux 必须在各自系统重新构建并运行。上面新增的有效 Linux 包是在 Linux 容器重新构建的产物；Windows 现已有真实 Windows 测试程序运行证据，但正式 NSH 包的本机打包/安装仍待完成。
 仓库根目录的 `pnpm build:nsh <target>` 已拒绝跨主机桌面/iOS 打包，并按目标分开输出目录。
 
 Android APK 已安装到 `emulator-5554` 并启动到 `com.longbridge.nsh.AppActivity`；系统无障碍树读到搜索、发现、实验室、设置、关于等中文控件。新的 APK 已实际选择暗色、force-stop 并重新启动，设置仍为暗色；测试后恢复跟随系统。该设备是 Wear OS 模拟器，仅证明启动、语义树和 NSH 私有存储持久化，不证明手机或真实设备 GPU/性能。另一模拟器 `emulator-5556` 因签名不匹配未更新，未卸载或清数据。
@@ -43,7 +43,9 @@ Android APK 已安装到 `emulator-5554` 并启动到 `com.longbridge.nsh.AppAct
 
 Linux 已接入 GTK GLArea/GLES 外部 framebuffer，复用 Rust wgpu renderer，无 CPU 整板投影或像素读回。Ubuntu 容器中 `cargo test -p oshwhub-nsh --locked`、all-target Clippy 通过；`xvfb-run -a cargo test -p oshwhub-nsh --locked --test linux_surface -- --ignored` 为 **1/1**，检查实际三角形像素、上下方向、resize、圆角裁剪、上层控件和 20 次销毁。测试先后捕获了未接 GPU 和上下倒置，再修复通过；生成的应用级注册宏也在测试中使用。随后在实际 ELF 包中发现并修复实验室示例 3D 被误禁用的旧功能回退；新增 mounted 回归与模式选择测试先失败后通过，重建的原生包已实际查看 PCB 2D/3D、缩放与拖动旋转。该环境使用软件 GLES，只证明功能与生命周期。CI 已配置匹配主机的 macOS/Windows/Linux 构建及 Linux Xvfb 回归，但尚无远端 CI 结果。
 
-Windows 当前仍走 Rust NSH Canvas 三维回放（100,000 三角形上限），原生 wgpu 接线和真实 Windows 运行尚未完成。这条 fallback 不能替代 GPU 性能证据。
+Windows 已改为 NSH 同设备 D3D11 索引/实例绘制与 D2D bitmap 合成，不再走逐三角形 Canvas 投影。最初 DX12 共享纹理原型在 Parallels 实测失败：NSH 的 D3D11 使用 Parallels Display Adapter，而 DX12 只有 Microsoft Basic Render Driver，LUID 不匹配；因此没有强行切到软件 GPU。新实现复用 NSH 的 D3D11 context，通过 context state swap 恢复全部绘图状态，无逐帧 CPU 等待/读回，沿用同一 WGSL、20-byte 顶点、相机校验和 128 MiB 预算。
+
+`cargo xwin check/clippy/test --no-run` 的 x86_64-pc-windows-msvc 目标均通过；Release 主程序也已交叉编译，`file` 确认为真正 PE32+ x86-64 GUI 可执行文件，尚不等同于 Windows 本机正式 NSH package 或安装/启动验收。两项显式 ignored 原生测试已传至 Windows 11 ARM64（26100.4652，Parallels 20.3，D3D11 feature level 11.0）实际执行为 **2/2**：三处绿色实例像素/几何共享、失败替换保留旧资源、固定尺寸 64 次相机更新与缓存重绘、隐藏暂停、clip/overlay、resize 和 20 次创建/销毁；另用真实 129.6 MB CPU 顶点/72 MB GPU buffer 复现并修复上传期间 frame/tick 竞态，以及大旧场景换小新场景且增大 target 的预算错误，均保留 RED→GREEN 日志。CI 已配置显式执行两项测试，并允许无硬件适配器的托管 runner 使用 WARP 作功能回归。这些是 x64 测试程序在 ARM64 Windows 系统兼容层的功能证据，不是 Windows 原生硬件性能对照。测试结束已恢复 VM 的 pause-idle 设置；恢复挂起曾因宿主磁盘空间不足失败，清理本任务可重建编译缓存后已成功恢复为 suspended；未改动共享目录或防火墙。
 
 ## core 的 native / Web 通路
 
@@ -62,7 +64,7 @@ Windows 当前仍走 Rust NSH Canvas 三维回放（100,000 三角形上限）�
 
 已只读取得公开项目 `2507dcb6e20646e29377e4abd4922bfa`（立创·泰山派3M RK3576 开发板）的完整 PCB/原理图场景，保存于忽略的执行目录。输入约 17.1 MB、35 段历史、281,715 条记录；PCB 场景为 6,402 批次和 946 条文字，原理图 MIPI_DSI 为 11 批次和 215 条文字。同进程还取得 757,702 顶点、1,935,429 索引的三维板体（约 645,143 三角形），938 个器件绑定；82 个模型中 81 个可读取，1 个官方未提供，失败响应单独保留。场景与模型原始 JSON 及 SHA-256 清单均已保存；网络/编译成功仅证明样本可取得，不是新旧应用性能对照。
 
-`node --test scripts/nsh-performance.test.mjs` 为 **7/7**。比较器会拒绝缺样本、元数据不一致、软件 GPU、NaN/空值、哈希错误、未覆盖交互时长的帧记录、低于 95% 置信度以及手势期间非零编译/路径解析/mesh 上传；基线或候选的正向生命周期资源趋势均失败。当前只有比较器 fixture，没有真实旧版/NSH Release 样本，不能输出性能通过结论。
+`node --test scripts/nsh-performance.test.mjs` 为 **7/7**。比较器会拒绝缺样本、元数据不一致、软件 GPU、NaN/空值、哈希错误、未覆盖交互时长的帧记录、低于 95% 置信度以及手势期间非零编译/路径解析/mesh 上传；基线或候选的正向生命周期资源趋势均失败。当前只有比较器 fixture，没有合格的真实旧版/NSH Release 样本，不能输出性能通过结论。旧版基线已在独立 detached 工作树 `/Users/gouzi/.codex/worktrees/nsh-baseline/oshwhub_app` 固定到上述 commit，frozen/offline 安装、Web production build 和 core dev-server Release build 均通过。
 
 Android 可见性回归使用保留尺寸的 `invisible()`，在旧宿主上稳定复现隐藏期间模型更新后恢复仍无三角形；TextureView 的自身/窗口可见性回调修复后，完整 smoke（含 20 次销毁、缩放/旋转、hide/update/show 的真实红色像素）通过，并人工查看恢复截图。`hidden()` 会改变尺寸并触发重画，先前用它得到的通过不计为此问题的复现。Web 实际 Tab 遍历也发现 retained 页面和旧查看模式仍能得到焦点；根容器同时隐藏布局/可见性后，新增回归从失败转为通过，页面和相机状态继续保留。
 
@@ -70,4 +72,4 @@ Android 可见性回归使用保留尺寸的 `invisible()`，在旧宿主上稳�
 
 ## 尚未验收的门槛
 
-尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows Canvas fallback 的原生 wgpu 替换；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。
+尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows 正式 NSH 包的本机打包/安装；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。

@@ -2814,6 +2814,7 @@ dependencies = [
  "env_logger",
  "glow",
  "js-sys",
+ "naga",
  "nsh-base",
  "nsh-core",
  "nsh-engine",
@@ -2836,6 +2837,7 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "wgpu",
+ "windows",
 ]
 
 [[package]]

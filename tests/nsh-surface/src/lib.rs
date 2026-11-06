@@ -18,6 +18,11 @@ fn components_ios(components: &nsh_platform_ios::Components) {
     oshwhub_nsh::viewer::surface::register_ios(components);
 }
 
+#[native_components(windows)]
+fn components_windows(components: &nsh_platform_windows::Components) {
+    oshwhub_nsh::__nsh_native_components_windows(components);
+}
+
 #[component]
 pub fn SurfaceProbe() -> impl IntoElement {
     let retained = signal(false);

@@ -38,6 +38,11 @@ fn components_linux(components: &nsh_platform_linux::Components) {
     viewer::surface::register_linux(components);
 }
 
+#[native_components(windows)]
+fn components_windows(components: &nsh_platform_windows::Components) {
+    viewer::surface::register_windows(components);
+}
+
 pub fn app_theme() -> nsh_base::Theme {
     nsh_base::Theme::from_json(include_str!("../theme.json"))
         .expect("the bundled OSHWHub theme is valid")
