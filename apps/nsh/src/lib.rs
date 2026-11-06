@@ -1,6 +1,7 @@
 //! OSHWHub's Rust NSH application, shared by the native and Web runners.
 
 mod components;
+pub mod services;
 
 use nsh_base::theme;
 use nsh_core::{element::AnyElement, platform::Appearance, prelude::*};

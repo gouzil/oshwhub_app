@@ -1,10 +1,17 @@
 use crate::error::{AppError, Result};
 use serde_json::Value;
-use std::time::{Duration, Instant};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
 use url::Url;
+#[cfg(not(target_arch = "wasm32"))]
+use web_time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+mod browser;
 
 #[derive(Clone)]
 pub struct HttpClient {
+    #[cfg(not(target_arch = "wasm32"))]
     inner: reqwest::Client,
 }
 
@@ -20,13 +27,20 @@ const ALLOWED_HOSTS: &[&str] = &[
 
 impl HttpClient {
     pub fn new() -> Result<Self> {
-        let inner = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|_| AppError::new("NETWORK", "无法初始化网络客户端"))?;
-        Ok(Self { inner })
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let inner = reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(30))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|_| AppError::new("NETWORK", "无法初始化网络客户端"))?;
+            Ok(Self { inner })
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            Ok(Self {})
+        }
     }
 
     pub async fn get_json(&self, url: &str) -> Result<Value> {
@@ -55,6 +69,7 @@ impl HttpClient {
         self.request(url, None, max_bytes, false, &[]).await
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn request(
         &self,
         url: &str,
@@ -131,6 +146,7 @@ pub fn validate_url(url: &str) -> Result<Url> {
     Ok(url)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn network_error(error: reqwest::Error) -> AppError {
     if error.is_timeout() {
         AppError::new("TIMEOUT", "网络请求超时，请重试")

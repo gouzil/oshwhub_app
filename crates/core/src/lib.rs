@@ -1,4 +1,4 @@
-//! Shared application business logic. Platform adapters only transport JSON.
+//! Shared typed application logic and the compatibility JSON transport.
 pub mod api;
 mod bom;
 pub mod client;
@@ -7,6 +7,7 @@ pub mod error;
 pub mod model;
 pub mod pcb;
 pub mod schematic;
+mod task;
 
 use api::Api;
 use client::HttpClient;
@@ -14,7 +15,8 @@ use error::{AppError, Result};
 use model::FeedQuery;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{sync::OnceLock, time::Instant};
+use std::sync::OnceLock;
+use web_time::Instant;
 
 #[derive(Deserialize)]
 #[serde(tag = "command", rename_all = "camelCase")]

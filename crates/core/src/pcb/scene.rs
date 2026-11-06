@@ -7,8 +7,8 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
     sync::{Mutex, OnceLock},
-    time::Instant,
 };
+use web_time::Instant;
 
 const HOLE_COLOR: &str = "#0b121a";
 const CELL: f64 = 100.;

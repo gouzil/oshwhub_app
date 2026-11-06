@@ -13,8 +13,8 @@ use std::{
     collections::{BTreeMap, VecDeque},
     io::Cursor,
     sync::{Arc, Mutex, OnceLock},
-    time::Instant,
 };
+use web_time::Instant;
 
 const MODEL_LIMIT: usize = 12 * 1024 * 1024;
 
@@ -398,7 +398,7 @@ pub async fn load(
                 MODEL_LIMIT,
             )
             .await?;
-        let mesh = tokio::task::spawn_blocking(move || parse_obj(&bytes).map(Arc::new))
+        let mesh = crate::task::compute(move || parse_obj(&bytes).map(Arc::new))
             .await
             .map_err(|_| solid::invalid())??;
         let mut cache = cache().lock().map_err(|_| solid::invalid())?;
@@ -415,7 +415,7 @@ pub async fn load(
         (model, mesh)
     };
     let key = key.to_owned();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = crate::task::compute(move || {
         let instances = bindings
             .iter()
             .filter(|b| b.key == key)

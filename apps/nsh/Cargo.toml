@@ -11,6 +11,9 @@ nsh-base = "=0.4.0"
 env_logger = "0.11"
 oshwhub-core.workspace = true
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio.workspace = true
+
 [target.'cfg(target_os = "linux")'.dependencies]
 nsh-platform-linux = { version = "=0.4.0", default-features = false }
 
@@ -21,5 +24,6 @@ nsh-platform-macos = { version = "=0.4.0", default-features = false }
 nsh-platform-windows = { version = "=0.4.0", default-features = false }
 
 [dev-dependencies]
+pollster = "0.4"
 nsh-engine = { version = "=0.4.0", default-features = false }
 nsh-testing = { version = "=0.4.0", default-features = false }

@@ -1,4 +1,5 @@
 //! Read-only EasyEDA Pro state and independent 2D/3D scene compilers.
+use web_time::Instant;
 pub(crate) mod geometry;
 pub(crate) mod history;
 mod models;
@@ -19,7 +20,6 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Instant,
 };
 
 // One history part can contain a complete board rather than a small delta.
@@ -133,7 +133,7 @@ pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> R
     let document_id = document_id.to_owned();
     let (project, head, metrics) = load_project(client, project_id, &document_id).await?;
     let mut scene =
-        tokio::task::spawn_blocking(move || scene::compile(project, &document_id, head, metrics))
+        crate::task::compute(move || scene::compile(project, &document_id, head, metrics))
             .await
             .map_err(|_| AppError::new("internal", "PCB 场景处理失败"))??;
     scene.metrics.load_ms = start.elapsed().as_millis() as u64;
@@ -225,7 +225,7 @@ pub(crate) async fn load_project(
     .await?;
     let download_bytes = downloaded_bytes.load(Ordering::Relaxed);
     let project_metadata = metadata.clone();
-    let (project, metrics) = tokio::task::spawn_blocking(move || {
+    let (project, metrics) = crate::task::compute(move || {
         let parse_start = Instant::now();
         let mut project = history::Project {
             metadata: project_metadata,
@@ -259,7 +259,7 @@ pub fn demo() -> Scene {
     scene::demo()
 }
 pub async fn prepare_3d(scene_id: String) -> Result<solid::Scene3d> {
-    tokio::task::spawn_blocking(move || scene::prepare_3d(&scene_id))
+    crate::task::compute(move || scene::prepare_3d(&scene_id))
         .await
         .map_err(|_| AppError::new("internal", "三维板体处理失败"))?
 }
