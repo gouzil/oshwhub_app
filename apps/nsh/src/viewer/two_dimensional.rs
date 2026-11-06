@@ -230,6 +230,13 @@ use super::{
 };
 use crate::components::action;
 
+#[derive(Clone)]
+struct ImageSource {
+    uri: Arc<str>,
+    #[cfg(not(target_arch = "wasm32"))]
+    svg: Option<Arc<super::embedded_image::Svg>>,
+}
+
 struct ViewerState {
     scene: Arc<Scene>,
     active: Signal<bool>,
@@ -243,6 +250,7 @@ struct ViewerState {
     detail: Signal<Option<RasterPlan>>,
     cache: Stored<SceneCache>,
     drawing: Signal<Arc<Drawing>>,
+    image_sources: Signal<Option<Result<Arc<[ImageSource]>, String>>>,
     selected: Signal<Option<Arc<PickResult>>>,
     error: Signal<Option<String>>,
     layers_open: Signal<bool>,
@@ -424,10 +432,111 @@ fn selection_painter(state: &ViewerState) -> Painter {
 }
 
 fn raster_layer(state: &Rc<ViewerState>, plan: RasterPlan, id: &'static str) -> AnyElement {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let drawing = state.drawing;
+        raster_canvas(state, plan, id, move || drawing.get())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let prepared = signal(None::<Arc<Drawing>>);
+        let job_state = Rc::clone(state);
+        effect(move || {
+            let drawing = job_state.drawing.get();
+            let sources = job_state.image_sources.get();
+            if !job_state.active.get() {
+                return;
+            }
+            let Some(Ok(sources)) = sources else {
+                return;
+            };
+            let images = sources
+                .iter()
+                .filter_map(|source| {
+                    source
+                        .svg
+                        .as_ref()
+                        .map(|svg| (Arc::clone(&source.uri), Arc::clone(svg)))
+                })
+                .collect::<Vec<_>>();
+            if images.is_empty() {
+                prepared.set(Some(drawing));
+                return;
+            }
+            let error = job_state.error;
+            // This effect only follows drawing/lifecycle changes, so disposal cancels its work.
+            spawn(async move {
+                let result = super::embedded_image::raster_drawing(&drawing, &images, plan).await;
+                match result {
+                    Ok(drawing) => prepared.set(Some(Arc::new(drawing))),
+                    Err(message) => error.set(Some(message)),
+                }
+            });
+        });
+        let state = Rc::clone(state);
+        dynamic(move || {
+            let Some(drawing) = prepared.get() else {
+                return view().into_element();
+            };
+            let images = drawing
+                .ops
+                .iter()
+                .filter_map(|op| match op {
+                    CanvasOp::DrawImage { image, .. } => Some(Arc::clone(&image.uri)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if images.is_empty() {
+                return raster_canvas(&state, plan, id, move || Arc::clone(&drawing));
+            }
+            let loaded = signal(vec![false; images.len()]);
+            let error = state.error;
+            let nodes = images
+                .into_iter()
+                .enumerate()
+                .map(|(index, uri)| {
+                    image(nsh_core::element::SharedString::from(uri))
+                        .w(px(1.))
+                        .h(px(1.))
+                        .opacity(0.)
+                        .on_load(move |_: &Size<DevicePixels>| {
+                            loaded.update(|ready| ready[index] = true)
+                        })
+                        .on_error(move |message: &str| error.set(Some(message.to_owned())))
+                        .into_element()
+                })
+                .collect::<Vec<_>>();
+            let state = Rc::clone(&state);
+            view()
+                .absolute()
+                .left(px(0.))
+                .top(px(0.))
+                .right(px(0.))
+                .bottom(px(0.))
+                .pointer_events(nsh_core::PointerEvents::None)
+                .child(view().absolute().w(px(1.)).h(px(1.)).children(nodes))
+                .child(when(
+                    move || loaded.with(|ready| ready.iter().all(|ready| *ready)),
+                    move || {
+                        let drawing = Arc::clone(&drawing);
+                        raster_canvas(&state, plan, id, move || Arc::clone(&drawing))
+                    },
+                ))
+                .into_element()
+        })
+        .into_element()
+    }
+}
+
+fn raster_canvas(
+    state: &Rc<ViewerState>,
+    plan: RasterPlan,
+    id: &'static str,
+    drawing: impl Fn() -> Arc<Drawing> + 'static,
+) -> AnyElement {
     let ratio = f64::from(pixel_ratio()).max(0.01);
     let width = f64::from(plan.pixel_width) / ratio;
     let height = f64::from(plan.pixel_height) / ratio;
-    let drawing = state.drawing;
     canvas(move || {
         let n = |value: f64| Num::Const(value as f32);
         let mut painter = Painter::new()
@@ -437,7 +546,7 @@ fn raster_layer(state: &Rc<ViewerState>, plan: RasterPlan, id: &'static str) -> 
                 n(height / plan.height),
             ))
             .op(CanvasOp::Translate(n(-plan.x), n(-plan.y)));
-        for op in &drawing.get().ops {
+        for op in &drawing().ops {
             painter = painter.op(op.clone());
         }
         painter.op(CanvasOp::Restore)
@@ -479,6 +588,7 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
         detail: signal(None),
         cache: stored(SceneCache::default()),
         drawing: signal(Arc::new(Drawing::default())),
+        image_sources: signal_with(None, SignalEquals::Never),
         selected: signal_with(None, SignalEquals::Never),
         error: signal(None),
         layers_open: signal(false),
@@ -489,21 +599,77 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
     if let Err(error) = install_web_wheel(&state) {
         state.error.set(Some(error));
     }
-    let image_sources = state
-        .scene
-        .images
-        .iter()
-        .map(validate_embedded_image)
-        .collect::<Vec<_>>();
-    let image_sizes = signal(
-        image_sources
-            .iter()
-            .map(|result| result.as_ref().err().cloned().map(Err))
-            .collect::<Vec<Option<Result<[u32; 2], String>>>>(),
-    );
+    let image_sources = state.image_sources;
+    let image_sizes = signal(vec![
+        None::<Result<[u32; 2], String>>;
+        state.scene.images.len()
+    ]);
+    if state.scene.images.is_empty() {
+        image_sources.set(Some(Ok(Arc::from([]))));
+    } else {
+        let scene = Arc::clone(&state.scene);
+        spawn(async move {
+            let sources: Result<Arc<[ImageSource]>, String> = async move {
+                let mut sources = Vec::with_capacity(scene.images.len());
+                for index in 0..scene.images.len() {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let source = {
+                        let scene = Arc::clone(&scene);
+                        crate::services::compute(move || {
+                            let image = &scene.images[index];
+                            validate_embedded_image(image)
+                                .and_then(|_| super::embedded_image::Svg::parse(&image.content))
+                                .map(|svg| ImageSource {
+                                    uri: Arc::from(image.content.as_str()),
+                                    svg,
+                                })
+                                .map_err(|error| {
+                                    oshwhub_core::error::AppError::new("INVALID_IMAGE", error)
+                                })
+                        })
+                        .await
+                        .map_err(|error| error.message)?
+                    };
+                    #[cfg(target_arch = "wasm32")]
+                    let source = {
+                        let image = &scene.images[index];
+                        validate_embedded_image(image)?;
+                        ImageSource {
+                            uri: Arc::from(image.content.as_str()),
+                        }
+                    };
+                    sources.push(source);
+                }
+                Ok(Arc::from(sources))
+            }
+            .await;
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Ok(sources) = &sources {
+                image_sizes.update(|sizes| {
+                    for (index, source) in sources.iter().enumerate() {
+                        if let Some(svg) = &source.svg {
+                            sizes[index] = Some(Ok(svg.size()));
+                        }
+                    }
+                });
+            }
+            image_sources.set(Some(sources));
+        });
+    }
     {
         let state = Rc::clone(&state);
         effect(move || {
+            let sources = match image_sources.get() {
+                None => return,
+                Some(Ok(sources)) => sources,
+                Some(Err(error)) => {
+                    state.cache.with(|cache| {
+                        cache.replace(Err(error.clone()));
+                    });
+                    state.error.set(Some(error));
+                    return;
+                }
+            };
             let sizes = image_sizes.get();
             if let Some(error) = sizes
                 .iter()
@@ -539,7 +705,7 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
                     let size = sizes[index].as_ref().ok_or("图片尚未解码")?.clone()?;
                     Ok((
                         CanvasImage {
-                            uri: image.content.clone().into(),
+                            uri: Arc::clone(&sources[index].uri),
                         },
                         size,
                     ))
@@ -690,28 +856,35 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
         .images
         .iter()
         .enumerate()
-        .filter_map(|(index, image_scene)| {
-            if image_sources[index].is_err() {
-                return None;
-            }
-            Some(
-                image(image_scene.content.clone())
-                    .w(px(1.))
-                    .h(px(1.))
-                    .opacity(0.)
-                    .on_load(move |size: &Size<DevicePixels>| {
-                        image_sizes.update(|sizes| {
-                            sizes[index] = Some(Ok([
-                                u32::try_from(size.width.0).unwrap_or(0),
-                                u32::try_from(size.height.0).unwrap_or(0),
-                            ]))
-                        });
-                    })
-                    .on_error(move |message: &str| {
-                        image_sizes.update(|sizes| sizes[index] = Some(Err(message.to_owned())));
-                    })
-                    .into_element(),
-            )
+        .map(|(index, _)| {
+            dynamic(move || {
+                let Some(Ok(sources)) = image_sources.get() else {
+                    return view().into_element();
+                };
+                #[cfg(not(target_arch = "wasm32"))]
+                if sources[index].svg.is_some() {
+                    return view().into_element();
+                }
+                image(nsh_core::element::SharedString::from(Arc::clone(
+                    &sources[index].uri,
+                )))
+                .w(px(1.))
+                .h(px(1.))
+                .opacity(0.)
+                .on_load(move |size: &Size<DevicePixels>| {
+                    image_sizes.update(|sizes| {
+                        sizes[index] = Some(Ok([
+                            u32::try_from(size.width.0).unwrap_or(0),
+                            u32::try_from(size.height.0).unwrap_or(0),
+                        ]))
+                    });
+                })
+                .on_error(move |message: &str| {
+                    image_sizes.update(|sizes| sizes[index] = Some(Err(message.to_owned())));
+                })
+                .into_element()
+            })
+            .into_element()
         })
         .collect::<Vec<_>>();
     view()
@@ -762,6 +935,7 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
                 .child(when(
                     move || {
                         loading_count > 0
+                            && !image_sources.with(|sources| matches!(sources, Some(Err(_))))
                             && image_sizes.with(|sizes| {
                                 sizes.iter().any(Option::is_none)
                                     && !sizes.iter().any(|size| matches!(size, Some(Err(_))))

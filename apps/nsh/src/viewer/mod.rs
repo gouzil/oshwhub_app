@@ -1,6 +1,8 @@
 pub mod cache;
 pub mod camera3d;
 pub mod drawing;
+#[cfg(not(target_arch = "wasm32"))]
+mod embedded_image;
 #[cfg(any(
     target_arch = "wasm32",
     target_os = "macos",

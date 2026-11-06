@@ -13,7 +13,7 @@
 
 `cargo check --workspace --locked`、`cargo fmt --all -- --check`、`git diff --check` 和
 `cargo clippy --workspace --all-targets --locked -- -D warnings` 均通过。`cargo test --workspace --locked`
-最新结果为 **233 通过、3 忽略（25 个 suite）**。workspace all-target 与 WASM 应用库
+最新结果为 **242 通过、3 忽略（26 个 suite）**。workspace all-target 与 WASM 应用库
 Clippy 均在审阅修复后重新通过。
 
 `pnpm typecheck` 通过；直接运行 `./node_modules/.bin/biome check .` 最新检查 151 个文件无问题；
@@ -99,7 +99,7 @@ Web 路径计数验证连续滚轮不调用 Path2D.closePath；DPR=2 实际像�
 
 这些数值只证明本次诊断中的二维严重卡顿已消除。rAF 不是 compositor presentation，操作数稍有差异，
 普通页面单组 CPU 略高；尚无重复组、置信区间、完整 RSS/GPU、冷启动和生命周期样本。
-Mac 当前锁屏，headless 硬件 GPU 结果不能作为性能验收，也未输入严格比较器。
+当时 Mac 锁屏，因此使用 headless 诊断；该结果不能作为性能验收，也未输入严格比较器。
 原始 JSON、CPU profile、输入清单和日志保存于忽略的 `.superpowers/sdd/nsh-migration-plan/`。
 
 NSH 0.4.0 的 Windows Canvas 缓存为 D2D `ID2D1CommandList` 向量命令列表，随 transform 回放，
@@ -120,11 +120,55 @@ NSH 0.4.0 的 Windows Canvas 缓存为 D2D `ID2D1CommandList` 向量命令列表
 
 新增 Chromium 回归保留真实 GPU 分配及原生 popErrorScope 的结果，只延迟 Promise 完成；
 加载板体后在准备中缩放，旧实现稳定失败（红色像素为 0），修复后板体出现且下一次缩放继续改变像素。
-重新构建两份 Web Release 包后完整 26/26 通过；workspace 233/3、WASM/native all-target Clippy、
+重新构建两份 Web Release 包后完整 26/26 通过；workspace 233/3、native all-target 与 WASM 库 Clippy、
 TypeScript、72 Vitest + 32 Node 测试通过。聚焦独立审阅未发现新的 Critical/Important。重新打开同一在线项目并确认载入新 WASM `nsh.bd25e83cd8.wasm`，
 81/82 模型完成后，实际截图中可见新增器件，滚轮和工具栏缩放分别改变图像；修复前两者均不改变像素。
 新一组 20 秒 headless 3D 诊断 Task CPU 为 0.563 秒（旧版 0.580 秒）、174 次滚轮、rAF p95 16.8ms、
 0 long tasks。它仍是单组诊断，不能证明差异显著或性能已通过。
+
+## 原生 SVG 保真与有界栅格化
+
+Android 实际像素回归发现原有 SVG 整张缺失：NSH 0.4.0 Android Canvas 明确拒绝 vector image，
+其共享 SVG 解码器还会忽略 text 和嵌入 image。原生 viewer 现在用已固定版本的 resvg，
+复用仓库的 Noto Sans SC 字体，保留中文和内嵌 PNG/JPEG/GIF/WebP；仍由 NSH Canvas 合成。
+Web 继续使用浏览器 SVG 解码。此前一次 iOS 在线封面加载失败在同一包重启后恢复，
+NSH 原生 image 解码器支持 percent/base64 data URI，不能把它归因为 URI 编码或宣称已经修复网络根因。
+
+聚焦审阅提出的三项 Important 均按具体故障处理：固定 4 倍 PNG 在深缩放下损失细线，
+现改为保留 SVG 解析树，按既有 overview/detail 的可见世界区域和物理像素网格重新绘制，
+每片最多 4096 边长、4,194,304 像素，整次图片缓存总量最多 16,777,216 像素。
+手势继续只更新外部相机变换，空闲后才生成细节；新 PNG 解码成功前显示已有概览。
+旋转/镜像使用原场景变换，图片 viewport 单独裁剪；路径和字体无需随细化重新解析。
+
+resvg 对损坏位图只记日志而不返回错误，所以 href resolver 先完整、有界解码并归一化 PNG，
+CRC 错误或截断数据会使场景显式报错。内嵌图片总像素、解压/XML、绘制访问次数和中间图层分配
+均有上限；中间图层估算沿用 NSH 0.4.0 的算法，并附 Apache 许可证。
+文件、网络和嵌套 SVG 引用明确拒绝，不会静默省略。图片处理逐张等待并使用单个受限 blocking 槽位，
+取消后当前有界操作可以收尾，但排队作业及后续图片不能再启动，Tokio 网络线程不执行栅格化。
+
+新增 Rust 图片测试 8/8，包含中文/内嵌 PNG、单边尺寸/viewBox 比例、损坏/超大图片、
+外部资源/超大滤镜、局部深缩放、旋转裁剪及 Drawing 中图片替换。
+损坏 PNG 测试先失败，修复后通过；取消/队列测试在移除并发限制时失败，恢复后通过。
+Android arm64 手机模拟器上的完整 smoke 通过：Vulkan、resize/overlay、20 次销毁、
+3D 缩放/拖动/隐藏恢复，以及 2D 半透明、nonzero 孔洞、中文、SVG 图片和 125%/596% 缩放。
+固定 PNG 的深缩放细线像素峰值只有 128，回归失败；自适应版本满足大于 240 的断言，
+并人工查看了中文与细线截图。模拟器结果不计入真机性能门槛。
+
+当前 workspace 为 242 通过、3 忽略（26 suites），native all-target Clippy 通过。
+WASM 生产库使用 `--lib` 检查；额外尝试的 `--all-targets` 因现有原生 Headless/Tokio 测试宿主
+不支持 WASM 而失败，日志保留，不能称为全目标通过。Web 行为以重新打包后的浏览器回归为准。
+
+## 本机 macOS 验证优先级
+
+用户已手动解锁 Mac，并要求先验证 macOS。最新 SVG 实现已重新生成 macOS、iOS Simulator、
+Android universal（arm64-v8a / armeabi-v7a / x86_64）和 Linux aarch64 包；最终 Android
+SurfaceProbe 完整 smoke 再次通过。Linux 包确认 ELF aarch64，iOS Simulator 包已安装并启动，
+实际可见在线中文列表与封面。各目标 NSH package 串行运行，避免生成目录被不同主机覆盖。
+
+macOS 最新 Release 包已实际进入在线 RK3576 项目、BOM（197 种 / 885 元件）和 PCB 2D；
+图形与工具栏 125% 缩放可见。普通滚轮未改变缩放，正在排查主机输入接入，不能算作交互通过。
+旧版独立工作树已构建出 arm64 Electron Release `.app`，尚无合格的新旧 macOS 性能采样。
+优先 macOS 不替代其余平台的最终验收。
 
 ## 尚未验收的门槛
 

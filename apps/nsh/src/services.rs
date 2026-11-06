@@ -53,3 +53,24 @@ pub async fn run<T: Send + 'static>(
     job.await
         .map_err(|_| AppError::new("internal", "Rust 核心任务未能完成"))?
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn compute<T: Send + 'static>(
+    job: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    run(async move {
+        static LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+        let permit = LIMIT
+            .acquire()
+            .await
+            .map_err(|_| oshwhub_core::error::AppError::new("internal", "无法启动图片处理任务"))?;
+        tokio::task::spawn_blocking(move || {
+            // Keep the slot until the current bounded operation finishes, even after cancellation.
+            let _permit = permit;
+            job()
+        })
+        .await
+        .map_err(|_| oshwhub_core::error::AppError::new("internal", "图片处理任务未能完成"))?
+    })
+    .await
+}

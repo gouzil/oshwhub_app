@@ -12,7 +12,7 @@ use nsh_core::{
 use oshwhub_core::pcb::{Bounds, DrawBatch, Metrics, Scene, SceneImage, SceneLayer, TextLabel};
 use std::sync::Arc;
 
-const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yMc8AAAAASUVORK5CYII=";
+const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
 const COPPER: &str = "M2 2H22V22H2Z M8 8V16H16V8Z M18 2H30V22H18Z";
 
 fn scene() -> Scene {

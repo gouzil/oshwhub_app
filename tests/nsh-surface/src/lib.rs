@@ -264,7 +264,7 @@ fn drawing_fixture() -> oshwhub_core::pcb::Scene {
     // Authored SVG: green background, white text above a white embedded PNG.
     scene.images = vec![SceneImage {
         layer: 1, width: 48., height: 36., transform: [1., 0., 0., 1., 60., 35.],
-        content: concat!("data:image/svg+xml;base64,", "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI0OCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDBmZjAwIi8+PHRleHQgeD0iNCIgeT0iMjAiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IndoaXRlIj5TVkfkuK3mloc8L3RleHQ+PGltYWdlIGhyZWY9ImRhdGE6aW1hZ2UvcG5nO2Jhc2U2NCxpVkJPUncwS0dnb0FBQUFOU1VoRVVnQUFBQUVBQUFBQkNBUUFBQUMxSEF3Q0FBQUFDMGxFUVZSNDJtUDgveDhBQXdNQ0FPK3lNYzhBQUFBQVNVVk9SSzVDWUlJPSIgeD0iNCIgeT0iMjgiIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIvPjwvc3ZnPg==").into(),
+        content: concat!("data:image/svg+xml;base64,", "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI0OCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDBmZjAwIi8+PHRleHQgeD0iNCIgeT0iMjAiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IndoaXRlIj5TVkfkuK3mloc8L3RleHQ+PGltYWdlIGhyZWY9ImRhdGE6aW1hZ2UvcG5nO2Jhc2U2NCxpVkJPUncwS0dnb0FBQUFOU1VoRVVnQUFBQUVBQUFBQkNBUUFBQUMxSEF3Q0FBQUFDMGxFUVZSNDJtUDgveDhBQXdNQ0FPK2lwMXNBQUFBQVNVVk9SSzVDWUlJPSIgeD0iNCIgeT0iMjgiIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIvPjxwYXRoIGQ9J00zMiAwVjQ4JyBzdHJva2U9J3doaXRlJyBzdHJva2Utd2lkdGg9Jy4yNScvPjwvc3ZnPg==").into(),
     }];
     scene
 }
