@@ -50,7 +50,7 @@ pub fn SurfaceProbe() -> impl IntoElement {
 fn retained_surface_probe() -> impl IntoElement {
     use oshwhub_core::pcb::{Bounds3, Mesh, RawScene3d};
     use oshwhub_nsh::viewer::{
-        camera3d::fit_camera,
+        camera3d::{fit_camera, zoom_camera},
         surface::{SurfaceModel, surface_with_model},
     };
     use std::sync::Arc;
@@ -74,6 +74,7 @@ fn retained_surface_probe() -> impl IntoElement {
     });
     let model = SurfaceModel::new(fit_camera(&board.board.bounds, 1.));
     let load_model = Arc::clone(&model);
+    let zoom_model = Arc::clone(&model);
     let visible = signal(true);
     let tick = signal(0);
     let status = signal(SurfaceStatus::Pending);
@@ -113,6 +114,16 @@ fn retained_surface_probe() -> impl IntoElement {
                     tick.set(load_model.tick());
                 })
                 .child(text("Load retained board")),
+        )
+        .child(
+            nsh_base::button()
+                .accessibility_label("Zoom retained camera")
+                .min_h(px(44.))
+                .on_press(move || {
+                    zoom_model.set_camera(zoom_camera(zoom_model.frame().camera, 1.25));
+                    tick.set(zoom_model.tick());
+                })
+                .child(text("Zoom retained camera")),
         )
         .child(text(move || format!("Retained {:?}", status.get())))
         .child(

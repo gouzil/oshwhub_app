@@ -58,8 +58,8 @@ Windows 已改为 NSH 同设备 D3D11 索引/实例绘制与 D2D bitmap 合成�
 
 官方 `nsh package --target web` 已生成完整 Rust Web 包（本次 OSHWHub 目录约 12.5 MiB）。构建需要可用的 clang/llvm-ar；本机设置 `CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang`、`AR_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/llvm-ar`。wasm-bindgen、js-sys、web-sys 及 futures 固定为相互匹配的 0.2.129 / 0.3.106 / 0.4.79，CLI 必须为 0.2.129，通过 `NSH_WASM_BINDGEN` 指定。
 
-`node scripts/nsh-web-tests.mjs` 最新完整生成两个 Web Release 包并运行 **25/25 Chromium 测试**：8 项 core/WASM
-边界与场景、2 项发现页服务行为、3 项 shell 响应式/键盘（含 retained 隐藏页/模式的真实 Tab 隔离）、4 项 GPU surface（含 20 次挂载/销毁、示例 PCB 像素及工具栏/滚轮缩放），2 项二维缓存/Retina 回归，以及 6 项视口像素测试（390×844、844×390、768×1024、1024×768、1440×900、1920×1080），分别验证中文标签、SVG 内文字和嵌入 PNG。已人工查看竖屏和短横屏截图。
+`node scripts/nsh-web-tests.mjs` 最新完整生成两个 Web Release 包并运行 **26/26 Chromium 测试**：8 项 core/WASM
+边界与场景、2 项发现页服务行为、3 项 shell 响应式/键盘（含 retained 隐藏页/模式的真实 Tab 隔离）、5 项 GPU surface（含 20 次挂载/销毁、示例 PCB 像素、工具栏/滚轮缩放及准备期间的相机输入），2 项二维缓存/Retina 回归，以及 6 项视口像素测试（390×844、844×390、768×1024、1024×768、1440×900、1920×1080），分别验证中文标签、SVG 内文字和嵌入 PNG。已人工查看竖屏和短横屏截图。
 网络响应为浏览器路由夹具；流式分块单独使用可控 ReadableStream。应用的 WASM 客户端固定请求同源 `/fetch`，当前只有 loopback dev-server 实现它。必须先在 `apps/nsh` 执行 `nsh package --target web`，再从仓库根目录执行 `cargo run -p oshwhub-dev-server -- --web-root apps/nsh/.nsh/out/OSHWHub` 来提供 Web 包。旧 Web 同样依赖 `http://127.0.0.1:4318/bridge`，所以当前迁移保持原有本地服务范围；普通静态托管无法加载数据或图片，公共 Web 部署仍不在现有支持范围。这些夹具测试不证明所有真实硬件渲染/性能。
 
 已只读取得公开项目 `2507dcb6e20646e29377e4abd4922bfa`（立创·泰山派3M RK3576 开发板）的完整 PCB/原理图场景，保存于忽略的执行目录。输入约 17.1 MB、35 段历史、281,715 条记录；PCB 场景为 6,402 批次和 946 条文字，原理图 MIPI_DSI 为 11 批次和 215 条文字。同进程还取得 757,702 顶点、1,935,429 索引的三维板体（约 645,143 三角形），938 个器件绑定；82 个模型中 81 个可读取，1 个官方未提供，失败响应单独保留。场景与模型原始 JSON 及 SHA-256 清单均已保存；网络/编译成功仅证明样本可取得，不是新旧应用性能对照。
@@ -85,7 +85,7 @@ SHA-256 分别为 `1a305fc62753a14c2e1aa8a1746de25382b0843c14e2729b0a917ba4c6b2e
 | PCB 2D，修复前 | 1.154 / 19.330 | 172 / 119 | 16.7 / 149.9 | 0 / 117 |
 | PCB 2D，有界缓存合成 | 1.154 / 0.907 | 172 / 174 | 16.7 / 16.8 | 0 / 0 |
 | 原理图，有界缓存合成 | 1.231 / 0.853 | 172 / 174 | 16.8 / 16.7 | 0 / 0 |
-| PCB 3D | 0.580 / 0.361 | 172 / 173 | 16.7 / 16.8 | 0 / 0 |
+| PCB 3D，修复任务生命周期后 | 0.580 / 0.563 | 172 / 174 | 16.7 / 16.8 | 0 / 0 |
 
 PCB 2D 的 CPU profile 定位到每帧重建 3,240 个 Path2D、208,858 条路径操作。
 原实现把相机绑定在 Canvas 的绘制命令中，NSH Web 因而随每次相机变化重放全板。
@@ -106,6 +106,25 @@ NSH 0.4.0 的 Windows Canvas 缓存为 D2D `ID2D1CommandList` 向量命令列表
 并非这里验证的 Web bitmap 缓存。Linux 使用 image surface/GSK texture，macOS 使用 content layer；
 不能据 Web 结果宣称所有平台都只合成位图。Windows 真实大板二维须单独测量，若回放仍造成回退，
 再增加最小 bitmap 适配并重新验证。上述 Windows 三维 D3D11/D2D bitmap 功能证据不覆盖这一二维问题。
+
+## Web GPU 准备任务的生命周期回归
+
+采集 trace 时进一步核对实际像素，发现真实 RK3576 项目在显示 81/82 模型后，工具栏选中状态
+仍有响应，但缩放、器件显隐已不改变 GPU 图像；trace 全为 NO_DAMAGE。此前 PCB 3D 的
+`0.361s` Task CPU 等数据因此撤回，不能据此比较性能或认定实际绘出了全部已下载器件。
+
+根因是 `refresh` 在相机 tick 的 effect 下启动 GPU 准备任务，下一 tick 会按 NSH owner 语义取消
+该任务；任务已取走 GPU 并设置 `preparing=true`，取消后没有机会归还，导致表面永久停止更新。
+现在在 surface 创建时保留 owner，tick 和布局回调均在该 owner 下调度准备，使其跨相机更新存活，
+同时仍在组件销毁时取消。原有循环继续合并最新尺寸/资源 revision，并在完成时绘制最新相机。
+
+新增 Chromium 回归保留真实 GPU 分配及原生 popErrorScope 的结果，只延迟 Promise 完成；
+加载板体后在准备中缩放，旧实现稳定失败（红色像素为 0），修复后板体出现且下一次缩放继续改变像素。
+重新构建两份 Web Release 包后完整 26/26 通过；workspace 233/3、WASM/native all-target Clippy、
+TypeScript、72 Vitest + 32 Node 测试通过。聚焦独立审阅未发现新的 Critical/Important。重新打开同一在线项目并确认载入新 WASM `nsh.bd25e83cd8.wasm`，
+81/82 模型完成后，实际截图中可见新增器件，滚轮和工具栏缩放分别改变图像；修复前两者均不改变像素。
+新一组 20 秒 headless 3D 诊断 Task CPU 为 0.563 秒（旧版 0.580 秒）、174 次滚轮、rAF p95 16.8ms、
+0 long tasks。它仍是单组诊断，不能证明差异显著或性能已通过。
 
 ## 尚未验收的门槛
 

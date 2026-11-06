@@ -335,6 +335,7 @@ pub(super) fn surface(
     model: Option<(Arc<SurfaceModel>, Signal<u64>)>,
 ) -> AnyElement {
     static NEXT: AtomicUsize = AtomicUsize::new(1);
+    let owner = Owner::current();
     let id = format!("oshwhub-gpu-{}", NEXT.fetch_add(1, Ordering::Relaxed));
     let state = Rc::new(RefCell::new(State {
         model: model.as_ref().map(|(model, _)| Arc::clone(model)),
@@ -359,14 +360,17 @@ pub(super) fn surface(
         let selector = selector.clone();
         effect(move || {
             tick.get();
-            let allow_prepare = {
-                let current = state.borrow();
-                current
-                    .gpu
-                    .as_ref()
-                    .is_none_or(|gpu| gpu.needs_resource_prepare(current.model.as_deref()))
-            };
-            refresh(&state, status, &selector, allow_prepare);
+            // Allocation must survive the next camera tick but end with this surface.
+            owner.run(|| {
+                let allow_prepare = {
+                    let current = state.borrow();
+                    current
+                        .gpu
+                        .as_ref()
+                        .is_none_or(|gpu| gpu.needs_resource_prepare(current.model.as_deref()))
+                };
+                refresh(&state, status, &selector, allow_prepare);
+            });
         });
     }
     view()
@@ -377,11 +381,13 @@ pub(super) fn surface(
         .label("三维绘图区域")
         .test_id(&id)
         .on_layout(move |bounds: &nsh_core::Bounds<nsh_core::Points>| {
-            state.borrow_mut().size = [
-                f64::from(bounds.size.width.0),
-                f64::from(bounds.size.height.0),
-            ];
-            refresh(&state, status, &selector, true);
+            owner.run(|| {
+                state.borrow_mut().size = [
+                    f64::from(bounds.size.width.0),
+                    f64::from(bounds.size.height.0),
+                ];
+                refresh(&state, status, &selector, true);
+            });
         })
         .into_element()
 }

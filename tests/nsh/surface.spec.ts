@@ -95,3 +95,56 @@ test("retained surface draws resources received while hidden when shown again", 
   await expect(canvas).toHaveCount(1);
   await canvas.screenshot({ path: "output/nsh-web-tests/retained-restored.png" });
 });
+
+test("camera input during GPU allocation cannot cancel the surface preparation", async ({
+  page,
+}) => {
+  await page.goto("/surface/");
+  await page.getByRole("button", { name: "Retained GPU", exact: true }).click();
+  await expect(page.getByText(/Retained Ready/)).toBeVisible();
+  await page.evaluate(() => {
+    const browser = window as unknown as {
+      GPUDevice: { prototype: { popErrorScope: () => Promise<unknown> } };
+      blockedGpuScopes: number;
+      resumeGpuScopes: () => void;
+    };
+    const original = browser.GPUDevice.prototype.popErrorScope;
+    const gate = new Promise<void>((resolve) => {
+      browser.resumeGpuScopes = resolve;
+    });
+    browser.blockedGpuScopes = 0;
+    // Keep real GPU allocation and error results, delaying only their completion.
+    browser.GPUDevice.prototype.popErrorScope = function () {
+      const result = original.call(this);
+      browser.blockedGpuScopes++;
+      return result.then(async (error) => {
+        await gate;
+        return error;
+      });
+    };
+  });
+  await page.getByRole("button", { name: "Load retained board", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { blockedGpuScopes: number }).blockedGpuScopes),
+    )
+    .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Zoom retained camera", exact: true }).click();
+  await page.evaluate(() =>
+    (window as unknown as { resumeGpuScopes: () => void }).resumeGpuScopes(),
+  );
+  const canvas = page.locator("canvas");
+  await expect
+    .poll(async () => {
+      const { pixels, channels } = decodePng(await canvas.screenshot());
+      let red = 0;
+      for (let at = 0; at < pixels.length; at += channels)
+        if (pixels[at] > 70 && pixels[at + 1] < 40 && pixels[at + 2] < 40) red++;
+      return red;
+    })
+    .toBeGreaterThan(100);
+  const before = await canvas.screenshot();
+  await page.getByRole("button", { name: "Zoom retained camera", exact: true }).click();
+  await expect.poll(async () => (await canvas.screenshot()).equals(before)).toBe(false);
+  await expect(canvas).toHaveCount(1);
+});
