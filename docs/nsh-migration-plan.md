@@ -30,7 +30,7 @@
 
 ## Current status (2026-11-07)
 
-Rust NSH 页面、core/WASM 通路、二维/原理图 viewer、六端三维 GPU viewer（Windows 使用 D3D11/D2D）、业务页面与性能比较器已在工作树实现。workspace tests 最新为 230 通过/3 忽略，workspace/WASM/Linux Clippy 与 NSH check 通过；Web 最新 23/23 回归包含六视口中文与 SVG text/image 像素。Android Vulkan probe 已在手机模拟器验证缩放/旋转与 20 次销毁；Linux GTK GLES 像素/方向/叠层/resize/20 次销毁通过，Ubuntu 容器已生成真正 ELF aarch64 包并启动加载在线列表。此前 macOS 跨桌面生成的 Windows/Linux 假产物记录已撤回；新 Linux 包由 Linux 本机构建，Windows 两项原生 D3D11 回归已在 Windows 11 ARM64 / Parallels Display Adapter（x64 测试程序经系统兼容层）通过，正式包的安装/启动仍待验证。最终迁移仍未验收：没有真实旧版 vs NSH Release 性能样本，各端真实硬件/无障碍矩阵未完成。真实在线 Web 已走通发现/详情/BOM/PCB 2D/3D/原理图，并明确显示 1 项不可读取的官方模型。旧入口继续保留。
+Rust NSH 页面、core/WASM 通路、二维/原理图 viewer、六端三维 GPU viewer（Windows 使用 D3D11/D2D）、业务页面与性能比较器已在工作树实现。workspace tests 最新为 233 通过/3 忽略，workspace/WASM/Linux Clippy 与 NSH check 通过；Web 最新 25/25 回归包含六视口中文、SVG text/image、二维路径缓存与 Retina 像素。Android Vulkan probe 已在手机模拟器验证缩放/旋转与 20 次销毁；Linux GTK GLES 像素/方向/叠层/resize/20 次销毁通过，Ubuntu 容器已生成真正 ELF aarch64 包并启动加载在线列表。此前 macOS 跨桌面生成的 Windows/Linux 假产物记录已撤回；新 Linux 包由 Linux 本机构建，Windows 两项原生 D3D11 回归已在 Windows 11 ARM64 / Parallels Display Adapter（x64 测试程序经系统兼容层）通过，正式包的安装/启动仍待验证。真实 RK3576 大板 Web 诊断已发现并修复二维每帧路径重建，采用有界 overview/detail Canvas 与外部相机 transform；同口径单组 Task CPU 从 19.330 秒降至 0.907 秒（旧版 1.154 秒），但 Windows Canvas 仍是向量 command-list，二维性能须另测。最终迁移仍未验收：没有合格的真实旧版 vs NSH Release 性能样本，各端真实硬件/无障碍矩阵未完成。真实在线 Web 已走通发现/详情/BOM/PCB 2D/3D/原理图，并明确显示 1 项不可读取的官方模型。旧入口继续保留。
 
 ## File Structure
 

@@ -4,7 +4,7 @@ mod raster;
 mod viewport;
 
 use oshwhub_core::pcb::Bounds;
-use raster::{covers_view, detail_bounds, plan_raster};
+use raster::{covers_view, detail_bounds, plan_raster, refine_raster};
 use viewport::{Point, Viewport, fit_viewport, gesture_viewport, is_tap, world_point, zoom_at};
 
 const START: Viewport = Viewport {
@@ -285,6 +285,64 @@ fn detail_bounds_add_motion_room_around_a_panned_and_zoomed_view() {
             covered
         );
     }
+}
+
+#[test]
+fn detail_raster_is_reused_until_motion_or_zoom_exhausts_its_coverage() {
+    let base = plan_raster(&board_bounds(), 1.);
+    let fitted = fit_viewport(&board_bounds(), 80., 40., 0.);
+    assert_eq!(refine_raster(base, None, fitted, 80., 40., 1.), None);
+    let zoomed = Viewport {
+        scale: 4.,
+        x: -100.,
+        y: -100.,
+    };
+    let detail = refine_raster(base, None, zoomed, 80., 40., 2.).unwrap();
+    assert_eq!(
+        (detail.x, detail.y, detail.width, detail.height),
+        (22.5, 23.75, 25., 12.5)
+    );
+    assert_eq!((detail.pixel_width, detail.pixel_height), (200, 100));
+    assert_eq!(
+        refine_raster(
+            base,
+            Some(detail),
+            Viewport { x: -108., ..zoomed },
+            80.,
+            40.,
+            2.
+        ),
+        Some(detail)
+    );
+    assert_ne!(
+        refine_raster(
+            base,
+            Some(detail),
+            Viewport { x: -120., ..zoomed },
+            80.,
+            40.,
+            2.
+        ),
+        Some(detail)
+    );
+    assert_ne!(
+        refine_raster(
+            base,
+            Some(detail),
+            Viewport {
+                scale: 8.,
+                ..zoomed
+            },
+            80.,
+            40.,
+            2.
+        ),
+        Some(detail)
+    );
+    assert_eq!(
+        refine_raster(base, Some(detail), fitted, 80., 40., 1.),
+        None
+    );
 }
 
 #[test]

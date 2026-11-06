@@ -44,3 +44,30 @@ pub fn covers_view(plan: RasterPlan, view: Viewport, width: f64, height: f64) ->
         && (plan.x + plan.width) * view.scale + view.x >= width
         && (plan.y + plan.height) * view.scale + view.y >= height
 }
+
+pub fn refine_raster(
+    base: RasterPlan,
+    current: Option<RasterPlan>,
+    view: Viewport,
+    width: f64,
+    height: f64,
+    pixel_ratio: f64,
+) -> Option<RasterPlan> {
+    let density = view.scale * pixel_ratio;
+    if f64::from(base.pixel_width) / base.width >= density
+        && f64::from(base.pixel_height) / base.height >= density
+    {
+        return None;
+    }
+    let next = plan_raster(&detail_bounds(view, width, height), density);
+    if let Some(current) = current
+        && covers_view(current, view, width, height)
+        && f64::from(current.pixel_width) / current.width
+            >= f64::from(next.pixel_width) / next.width * 0.999
+        && f64::from(current.pixel_height) / current.height
+            >= f64::from(next.pixel_height) / next.height * 0.999
+    {
+        return Some(current);
+    }
+    Some(next)
+}

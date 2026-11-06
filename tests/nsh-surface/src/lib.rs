@@ -236,7 +236,7 @@ fn drawing_fixture() -> oshwhub_core::pcb::Scene {
         fill: true,
         width: 0.,
         bounds: scene.bounds,
-        color: Some("#ff6600".into()),
+        color: Some("#ff660080".into()),
     }];
     scene.texts = vec![TextLabel {
         layer: 1,

@@ -223,7 +223,11 @@ use nsh_core::{
 };
 use oshwhub_core::pcb::{PickResult, Scene, SceneImage};
 
-use super::{cache::SceneCache, drawing::prepare_scene};
+use super::{
+    cache::SceneCache,
+    drawing::prepare_scene,
+    raster::{RasterPlan, plan_raster, refine_raster},
+};
 use crate::components::action;
 
 struct ViewerState {
@@ -234,6 +238,9 @@ struct ViewerState {
     y: AnimatedValue,
     scale: AnimatedValue,
     zoom: Signal<f64>,
+    overview: RasterPlan,
+    raster_view: Signal<Option<(Viewport, Point)>>,
+    detail: Signal<Option<RasterPlan>>,
     cache: Stored<SceneCache>,
     drawing: Signal<Arc<Drawing>>,
     selected: Signal<Option<Arc<PickResult>>>,
@@ -249,6 +256,12 @@ impl ViewerState {
         self.y.set(camera.view.y as f32);
         self.scale.set(camera.view.scale as f32);
         self.zoom.set(camera.view.scale / camera.fitted.scale);
+        self.raster_view.set(
+            camera
+                .size
+                .filter(|_| camera.gesture.is_none())
+                .map(|size| (camera.view, size)),
+        );
     }
 
     fn key(&self, key: &str) {
@@ -380,8 +393,10 @@ fn register_wheel(state: &Rc<ViewerState>) {
     });
 }
 
-fn retained_painter(state: &ViewerState) -> Painter {
-    let drawing = state.drawing.get();
+fn selection_painter(state: &ViewerState) -> Painter {
+    let Some(selected) = state.selected.get() else {
+        return Painter::new();
+    };
     let mut painter = Painter::new();
     let x = painter.num(&state.x);
     let y = painter.num(&state.y);
@@ -390,10 +405,7 @@ fn retained_painter(state: &ViewerState) -> Painter {
         .op(CanvasOp::Save)
         .op(CanvasOp::Translate(x, y))
         .op(CanvasOp::Scale(scale, scale));
-    for op in &drawing.ops {
-        painter = painter.op(op.clone());
-    }
-    if let Some(selected) = state.selected.get() {
+    {
         let b = selected.bounds;
         let n = |value: f64| Num::Const(value as f32);
         let path = Arc::from([
@@ -411,16 +423,60 @@ fn retained_painter(state: &ViewerState) -> Painter {
     painter.op(CanvasOp::Restore)
 }
 
-/// A retained vector drawing: camera changes update three animation slots only.
+fn raster_layer(state: &Rc<ViewerState>, plan: RasterPlan, id: &'static str) -> AnyElement {
+    let ratio = f64::from(pixel_ratio()).max(0.01);
+    let width = f64::from(plan.pixel_width) / ratio;
+    let height = f64::from(plan.pixel_height) / ratio;
+    let drawing = state.drawing;
+    canvas(move || {
+        let n = |value: f64| Num::Const(value as f32);
+        let mut painter = Painter::new()
+            .op(CanvasOp::Save)
+            .op(CanvasOp::Scale(
+                n(width / plan.width),
+                n(height / plan.height),
+            ))
+            .op(CanvasOp::Translate(n(-plan.x), n(-plan.y)));
+        for op in &drawing.get().ops {
+            painter = painter.op(op.clone());
+        }
+        painter.op(CanvasOp::Restore)
+    })
+    .absolute()
+    .left(px(0.))
+    .top(px(0.))
+    .w(px(width as f32))
+    .h(px(height as f32))
+    .origin_top_left()
+    .bind_translate_x(&state.x.add(&state.scale.mul(plan.x as f32)))
+    .bind_translate_y(&state.y.add(&state.scale.mul(plan.y as f32)))
+    .bind_transform(
+        nsh_core::TransformKind::ScaleX,
+        &state.scale.mul((plan.width / width) as f32),
+    )
+    .bind_transform(
+        nsh_core::TransformKind::ScaleY,
+        &state.scale.mul((plan.height / height) as f32),
+    )
+    .bg(rgba(0x111827ff))
+    .pointer_events(nsh_core::PointerEvents::None)
+    .test_id(id)
+    .into_element()
+}
+
+/// Camera transforms stay outside the bounded overview/detail vector drawings.
 pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
     let state = Rc::new(ViewerState {
         camera: RefCell::new(Camera::new(scene.bounds)),
+        overview: plan_raster(&scene.bounds, f64::MAX),
         scene,
         active,
         x: animated_value(0.),
         y: animated_value(0.),
         scale: animated_value(1.),
         zoom: signal(1.),
+        raster_view: signal(None),
+        detail: signal(None),
         cache: stored(SceneCache::default()),
         drawing: signal(Arc::new(Drawing::default())),
         selected: signal_with(None, SignalEquals::Never),
@@ -502,8 +558,34 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
     {
         let state = Rc::clone(&state);
         effect(move || {
+            let view = state.raster_view.get();
+            let ratio = f64::from(pixel_ratio()) * 1.5;
+            if !active.get() {
+                return;
+            }
+            let Some((view, size)) = view else {
+                return;
+            };
+            let base = state.overview;
+            let detail = state.detail;
+            set_timeout(std::time::Duration::from_millis(180), move || {
+                detail.set(refine_raster(
+                    base,
+                    detail.get_untracked(),
+                    view,
+                    size.x,
+                    size.y,
+                    ratio,
+                ));
+            });
+        });
+    }
+    {
+        let state = Rc::clone(&state);
+        effect(move || {
             if !active.get() {
                 state.camera.borrow_mut().cancel();
+                state.publish_camera();
             }
         });
     }
@@ -553,12 +635,32 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
                 .text_color(move || theme().muted_foreground),
         );
     let painter_state = Rc::clone(&state);
+    let overview_state = Rc::clone(&state);
+    let detail_state = Rc::clone(&state);
     let touch_state = Rc::clone(&state);
     let layout_state = Rc::clone(&state);
     let canvas_ref = element_ref();
-    let drawing = canvas(move || retained_painter(&painter_state))
+    let drawing = view()
         .flex_1()
         .min_h(px(0.))
+        .relative()
+        .overflow_hidden()
+        .child(dynamic(move || {
+            raster_layer(&overview_state, overview_state.overview, "pcb-overview")
+        }))
+        .child(dynamic(move || match detail_state.detail.get() {
+            Some(plan) => raster_layer(&detail_state, plan, "pcb-detail"),
+            None => view().into_element(),
+        }))
+        .child(
+            canvas(move || selection_painter(&painter_state))
+                .absolute()
+                .left(px(0.))
+                .right(px(0.))
+                .top(px(0.))
+                .bottom(px(0.))
+                .pointer_events(nsh_core::PointerEvents::None),
+        )
         .element_ref(&canvas_ref)
         .label("二维画布")
         .hint("单指拖动平移，双指缩放；方向键平移，0 适应，减号和等号缩放")

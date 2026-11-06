@@ -218,7 +218,6 @@ fn ViewerFixture() -> impl IntoElement {
 
 #[derive(Default)]
 struct Observed {
-    canvas_id: Option<nsh_core::NodeId>,
     frames:
         std::collections::BTreeMap<nsh_core::NodeId, nsh_core::Bounds<nsh_core::geometry::Points>>,
     drawings: Vec<Arc<nsh_core::canvas::Drawing>>,
@@ -240,8 +239,7 @@ fn viewer_retains_drawing_during_gestures_and_inactive_toggles_then_changes_laye
         let mut records = records.lock().unwrap();
         for item in &batch.items {
             match item {
-                MountItem::Canvas { id, drawing } => {
-                    records.canvas_id = Some(*id);
+                MountItem::Canvas { drawing, .. } => {
                     records.drawings.push(drawing.clone());
                 }
                 MountItem::Frame { id, frame } => {
@@ -259,7 +257,7 @@ fn viewer_retains_drawing_during_gestures_and_inactive_toggles_then_changes_laye
     {
         let records = observed.lock().unwrap();
         let drawing = records.drawings.last().unwrap();
-        assert_eq!(drawing.slots.len(), 3);
+        assert!(drawing.slots.is_empty());
         assert!(drawing.ops.iter().any(|op| matches!(op, nsh_core::canvas::CanvasOp::FillText { text, .. } if text.as_ref() == "中文电路标签")));
         assert!(
             drawing
@@ -294,7 +292,12 @@ fn viewer_retains_drawing_during_gestures_and_inactive_toggles_then_changes_laye
         after.ops.len() < before.ops.len(),
         "hiding a layer must remove its paths from the Canvas"
     );
-    let canvas_bounds = records.frames[&records.canvas_id.unwrap()];
+    let canvas_id = app
+        .screen()
+        .press_target("label:二维画布")
+        .unwrap()
+        .unwrap();
+    let canvas_bounds = records.frames[&canvas_id];
     drop(records);
     app.press("label:切换图层 顶层").unwrap();
     app.press("label:二维图层").unwrap();
@@ -345,6 +348,95 @@ fn viewer_reports_real_core_pick_errors_instead_of_fabricating_properties() {
 }
 
 static GUI_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn camera_changes_composite_cached_vectors_instead_of_replaying_them() {
+    let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let drawings = Arc::new(Mutex::new(Vec::new()));
+    let mut app = Headless::start(EngineConfig {
+        viewport: Size::new(px(480.), px(640.)),
+        ..EngineConfig::new(Root::of::<ViewerFixture>())
+    })
+    .unwrap();
+    let records = Arc::clone(&drawings);
+    app.observe(move |_, batch| {
+        for item in &batch.items {
+            if let MountItem::Canvas { drawing, .. } = item {
+                records.lock().unwrap().push(Arc::clone(drawing));
+            }
+        }
+    });
+    app.first_render().unwrap();
+    let records = drawings.lock().unwrap();
+    let vectors: Vec<_> = records
+        .iter()
+        .filter(|drawing| drawing.ops.iter().any(|op| op.paints()))
+        .collect();
+    assert!(!vectors.is_empty());
+    assert!(
+        vectors.iter().all(|drawing| drawing.slots.is_empty()),
+        "binding the camera to a vector Canvas replays the whole board on every frame"
+    );
+    let count = records.len();
+    drop(records);
+    app.drag("label:二维画布", point(px(20.), px(10.))).unwrap();
+    app.press("label:放大二维画布").unwrap();
+    app.wait_for("text:125%").unwrap();
+    assert_eq!(drawings.lock().unwrap().len(), count);
+    for _ in 0..12 {
+        app.press("label:放大二维画布").unwrap();
+    }
+    app.wait(std::time::Duration::from_millis(250)).unwrap();
+    assert_eq!(
+        drawings.lock().unwrap().len(),
+        count + 1,
+        "idle zoom creates one detail raster"
+    );
+    app.drag("label:二维画布", point(px(5.), px(5.))).unwrap();
+    app.wait(std::time::Duration::from_millis(250)).unwrap();
+    assert_eq!(
+        drawings.lock().unwrap().len(),
+        count + 1,
+        "covered motion reuses the detail raster"
+    );
+}
+
+#[test]
+fn interrupted_drag_refines_the_final_camera_when_the_viewer_becomes_active_again() {
+    let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let drawings = Arc::new(Mutex::new(0));
+    let mut app = Headless::start(EngineConfig {
+        viewport: Size::new(px(480.), px(640.)),
+        ..EngineConfig::new(Root::of::<ViewerFixture>())
+    })
+    .unwrap();
+    let records = Arc::clone(&drawings);
+    app.observe(move |_, batch| {
+        for item in &batch.items {
+            if matches!(item, MountItem::Canvas { .. }) {
+                *records.lock().unwrap() += 1;
+            }
+        }
+    });
+    app.first_render().unwrap();
+    let initial = *drawings.lock().unwrap();
+    for _ in 0..12 {
+        app.press("label:放大二维画布").unwrap();
+    }
+    app.drag_and_hold("label:二维画布", point(px(5.), px(5.)))
+        .unwrap();
+    app.press("label:切换查看器").unwrap();
+    app.drop_held().unwrap();
+    app.wait(std::time::Duration::from_millis(250)).unwrap();
+    assert_eq!(*drawings.lock().unwrap(), initial);
+    app.press("label:切换查看器").unwrap();
+    app.wait(std::time::Duration::from_millis(250)).unwrap();
+    assert_eq!(
+        *drawings.lock().unwrap(),
+        initial + 1,
+        "resuming a cancelled gesture must refine its final camera without another input"
+    );
+}
 
 #[test]
 fn native_wheel_dispatches_only_active_matching_scenes_and_unregisters_on_disposal() {

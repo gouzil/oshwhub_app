@@ -43,6 +43,8 @@
 
 首先验证 Rust NSH Canvas 的保真和缓存成本。沿用场景的 nonzero 填充及规范化孔洞方向，不能把整层铜改成 even-odd。手势仅改变 retained/animated transform，不重新编译工程、不为每个图元建 NSH 节点、不复制整板。保留有界全板/视区缓存、空闲细化和切层原子替换；缓存分配失败时保留可操作的预览并显示可恢复错误。
 
+真实大板 Web 诊断已复现相机 slots 导致 Canvas 每帧重建整板路径；共享 Rust viewer 现将相机 transform 放在有界 overview/detail Drawing 外，180ms 空闲细化。Web 的实际路径计数与 Retina 像素回归已通过，headless 诊断不构成正式性能验收。Windows NSH Canvas 使用 D2D 向量 command-list，不能据 Web 缓存表现外推，须单独测量。
+
 若 NSH Canvas 的平台回放无法达到基线，用同一 NSH 原生组件机制承载 Rust GPU 二维绘制，仍属于 NSH 应用且不引入 RN/Expo。该切换必须有具体基准证明，不能只凭推测增加第二套后端。
 
 ## 三维
