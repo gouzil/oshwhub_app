@@ -114,3 +114,21 @@ macOS `ps`，保存目标及全部子孙进程的累计 CPU 秒数、RSS、启�
 
 输出标为 `kind: "process-diagnostic"`，不提供帧、丢帧、GPU 内存或操作时延，不能直接输入上面的
 验收比较器。必须另外保存输入动作及时间边界；包含等待或工具调用间隙的诊断，不能算作持续交互组。
+
+### 待验证的 macOS Metal HUD 采样路径
+
+Apple 提供应用进程级的 `MTL_HUD_ENABLED=1`、`MTL_HUD_LOG_ENABLED=1` 环境变量；
+HUD 每秒输出一组帧编号、graphics/process memory 和逐帧 present interval/GPU time。
+官方将 Frame Interval 定义为两个连续 `MTLDrawable` 实际显示时间的差值，将 HUD GPU 内存
+对应到 `MTLDevice.currentAllocatedSize`。这比全屏合成器帧更接近所需口径，但截至 2026-11-08
+尚未在本项目的新旧 Release 包上验证，不是已有采样结果。
+
+下次启动应用时仅对目标进程设置变量，不修改全局 defaults 或 launchctl 环境。先做短试采，
+核对实际日志、时间/内存单位、目标 PID（Electron 包括 GPU helper）、帧编号是否连续，以及
+NSH 主界面和三维子表面的多 layer 数据能否区分；不能把不同 layer 的帧交错拼成一条帧序列。
+若两版都能得到可归属且完整的记录，再使用相同工具设置采集正式样本。HUD 本身会增加工作，
+应保存开启方式并核实影响；其内存值也不能直接当作整个应用进程树的 GPU 总量。
+可选的 `MTL_HUD_LOG_SHADER_ENABLED=1` 只记录 shader 编译，不能代替路径解析或网格上传计数。
+
+来源：[启用和日志格式](https://developer.apple.com/documentation/xcode/monitoring-your-metal-apps-graphics-performance)、
+[指标定义](https://developer.apple.com/documentation/xcode/understanding-metal-performance-hud-metrics)。
