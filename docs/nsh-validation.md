@@ -236,6 +236,30 @@ Core Animation Commits、保持默认 `expensiveCommitSampling=0`，且不启用
 本轮只改验证记录，应用代码和 Release 包未变；进程采样工具加入后的最近完整
 `pnpm test` 结果为 72 个 Vitest + 39 个 Node 测试通过。
 
+## Android 原有主题偏好兼容（2026-11-08）
+
+原版 Android 把 `themeMode` / `themeColor` 保存在 `oshwhub-settings` SharedPreferences。
+新宿主在加载 `libnsh` 后、启动 Rust 根组件前通过 JNI 读取快照；NSH 已保存的值优先，
+只有缺失字段才使用经过校验的旧值，写入仍走 NSH 私有存储，不改旧文件。
+两个字段独立加载；旧源失败不会丢弃另一个已保存字段，也不会阻止后续保存。
+Activity 重建会刷新快照，允许从前一次读取失败中恢复。
+
+迁移选择和重建恢复回归均经历 RED→GREEN；独立复审指出的错误优先级问题也已复现、修复。
+最终 `cargo test --workspace --release --locked` 为 249 通过、3 忽略（26 个 test-result 组）；
+Release workspace all-target、Android arm64 lib、WASM lib Clippy（`-D warnings`）、fmt 和 diff 检查通过。
+Java facade/D8 构建通过；实际 arm64 `libnsh.so` 已确认导出
+`Java_com_longbridge_nsh_AppActivity_initializeLegacyPreferences`。
+本轮生产 ID 的 debug-signed arm64 APK SHA-256：
+`b881b6181f580cc7cb62710fda53fe42a79c6eafe9724fe9def324ae7a6db256`。
+
+手机模拟器 `emulator-5560`（API 34、arm64）使用独立包 ID
+`com.gouzil.oshwhub.thememigrationprobe` 运行同一产品 Rust 根组件和 Java 宿主，未覆盖原应用。
+预置旧 dark/purple 后设置页实际选中暗色/紫色；改成浅色/橙色，force-stop 后重开仍选中两者，
+旧 SharedPreferences 文件字节保持不变，进程日志无 JNI 链接/启动异常；重开截图已人工检查。
+原始无障碍树、截图、导出表及构建日志保存在执行账本目录。
+这是旧存储/JNI 的模拟器功能验证，不是 Android 真机性能验收。
+Electron 旧 localStorage 的主题数据迁移仍待完成。
+
 ## 尚未验收的门槛
 
 尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows 正式 NSH 包的本机打包/安装；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。

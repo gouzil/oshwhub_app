@@ -4,17 +4,39 @@ pub fn system_store() -> super::WebStore {
 }
 
 #[cfg(any(target_os = "android", test))]
-pub struct NshStore;
+pub struct NshStore {
+    legacy: super::Result<[Option<String>; 2]>,
+}
+
+#[cfg(any(target_os = "android", test))]
+impl NshStore {
+    fn new(legacy: super::Result<[Option<String>; 2]>) -> Self {
+        Self { legacy }
+    }
+}
 
 #[cfg(target_os = "android")]
 pub fn system_store() -> NshStore {
-    NshStore
+    NshStore::new(super::android::legacy_preferences())
 }
 
 #[cfg(any(target_os = "android", test))]
 impl super::PreferenceStore for NshStore {
     fn read(&self, key: &str) -> super::Result<Option<String>> {
-        Ok(nsh_core::storage::Storage::get_item(key))
+        if let Some(value) = nsh_core::storage::Storage::get_item(key) {
+            return Ok(Some(value));
+        }
+        let values = self.legacy.as_ref().map_err(Clone::clone)?;
+        let legacy = match key {
+            super::THEME_MODE_KEY => values[0]
+                .as_deref()
+                .filter(|value| super::parse_appearance(value).is_some()),
+            super::THEME_COLOR_KEY => values[1]
+                .as_deref()
+                .filter(|value| super::parse_accent(value).is_some()),
+            _ => None,
+        };
+        Ok(legacy.map(str::to_owned))
     }
 
     fn write(&mut self, key: &str, value: &str) -> super::Result<()> {
@@ -85,7 +107,137 @@ mod tests {
 
     #[component]
     fn StoredApp() -> impl IntoElement {
-        crate::app_with_store(super::NshStore)
+        crate::app_with_store(super::NshStore::new(Ok([None, None])))
+    }
+
+    #[component]
+    fn LegacyApp() -> impl IntoElement {
+        crate::app_with_store(super::NshStore::new(Ok([
+            Some("dark".into()),
+            Some("purple".into()),
+        ])))
+    }
+
+    #[component]
+    fn LegacyProbe() -> impl IntoElement {
+        let value = crate::preferences::ThemePreferences::load(&super::NshStore::new(Ok([
+            Some("dark".into()),
+            Some("purple".into()),
+        ])))
+        .unwrap();
+        text(format!("{:?} {}", value.appearance, value.accent.id()))
+    }
+
+    #[component]
+    fn FailedLegacyApp() -> impl IntoElement {
+        crate::app_with_store(super::NshStore::new(Err(super::super::AppError::new(
+            "PREFERENCES_READ",
+            "原有外观偏好读取失败",
+        ))))
+    }
+
+    #[test]
+    fn failed_legacy_read_does_not_block_current_preferences_or_new_saves() {
+        for (fixture, expected_color) in [
+            (
+                r#"{"oshwhub.themeMode":"light","oshwhub.themeColor":"orange"}"#,
+                Some("orange"),
+            ),
+            (r#"{"oshwhub.themeMode":"light"}"#, None),
+        ] {
+            let directory = std::env::temp_dir().join(format!(
+                "oshwhub-failed-legacy-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("storage.json"), fixture).unwrap();
+            let open = || {
+                Headless::start(EngineConfig {
+                    viewport: Size::new(px(390.), px(844.)),
+                    storage: Some(nsh_engine::FileStorage::open(&directory)),
+                    ..EngineConfig::new(
+                        Root::of::<FailedLegacyApp>().tokens(crate::app_theme().into_tokens()),
+                    )
+                })
+                .unwrap()
+            };
+            {
+                let mut app = open();
+                app.first_render().unwrap();
+                app.press("label:打开设置").unwrap();
+                app.wait_for("text:当前外观：浅色模式").unwrap();
+                if expected_color.is_none() {
+                    app.wait_for("text:原有外观偏好读取失败").unwrap();
+                }
+                app.press("label:暗色模式").unwrap();
+            }
+            {
+                let mut app = open();
+                app.first_render().unwrap();
+                app.press("label:打开设置").unwrap();
+                app.wait_for("text:当前外观：暗色模式").unwrap();
+            }
+            let stored: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(directory.join("storage.json")).unwrap())
+                    .unwrap();
+            assert_eq!(stored["oshwhub.themeMode"], "dark");
+            assert_eq!(
+                stored
+                    .get("oshwhub.themeColor")
+                    .and_then(|value| value.as_str()),
+                expected_color
+            );
+            std::fs::remove_dir_all(directory).unwrap();
+        }
+    }
+
+    #[test]
+    fn legacy_android_theme_is_used_until_the_user_saves_a_new_choice() {
+        let directory = std::env::temp_dir().join(format!(
+            "oshwhub-legacy-preferences-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let open = |root| {
+            Headless::start(EngineConfig {
+                viewport: Size::new(px(390.), px(844.)),
+                storage: Some(nsh_engine::FileStorage::open(&directory)),
+                ..EngineConfig::new(root)
+            })
+            .unwrap()
+        };
+        {
+            let mut app = open(Root::of::<LegacyProbe>());
+            app.first_render().unwrap();
+            app.wait_for("text:Dark purple").unwrap();
+            assert!(!directory.join("storage.json").exists());
+        }
+        {
+            let mut app = open(Root::of::<LegacyApp>().tokens(crate::app_theme().into_tokens()));
+            app.first_render().unwrap();
+            app.press("label:打开设置").unwrap();
+            app.wait_for("text:当前外观：暗色模式").unwrap();
+            app.press("label:浅色模式").unwrap();
+            app.press("label:橙色").unwrap();
+        }
+        {
+            let mut app = open(Root::of::<LegacyProbe>());
+            app.first_render().unwrap();
+            app.wait_for("text:Light orange").unwrap();
+        }
+        let stored: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(directory.join("storage.json")).unwrap())
+                .unwrap();
+        assert_eq!(stored["oshwhub.themeMode"], "light");
+        assert_eq!(stored["oshwhub.themeColor"], "orange");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

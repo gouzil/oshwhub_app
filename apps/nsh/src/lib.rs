@@ -72,9 +72,20 @@ pub fn App() -> impl IntoElement {
 
 pub fn app_with_store(store: impl preferences::PreferenceStore + 'static) -> AnyElement {
     let page = signal(Page::Discover);
-    let initial = preferences::ThemePreferences::load(&store);
-    let preference_error = signal(initial.as_ref().err().map(|error| error.message.clone()));
-    let preferences = signal(initial.unwrap_or_default());
+    let appearance = store.read(preferences::THEME_MODE_KEY);
+    let accent = store.read(preferences::THEME_COLOR_KEY);
+    let preference_error = signal(
+        appearance
+            .as_ref()
+            .err()
+            .or(accent.as_ref().err())
+            .map(|error| error.message.clone()),
+    );
+    // A failed fallback must not discard the other saved preference.
+    let preferences = signal(preferences::ThemePreferences::from_values(
+        appearance.as_ref().ok().and_then(|value| value.as_deref()),
+        accent.as_ref().ok().and_then(|value| value.as_deref()),
+    ));
     let store = stored(store);
     effect(move || {
         set_color_scheme(preferences.get().appearance);

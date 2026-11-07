@@ -1,4 +1,6 @@
 use nsh_core::platform::Appearance;
+#[cfg(any(target_os = "android", test))]
+mod android;
 mod platform;
 use oshwhub_core::error::{AppError, Result};
 pub use platform::system_store;
