@@ -13,8 +13,8 @@
 
 `cargo check --workspace --locked`、`cargo fmt --all -- --check`、`git diff --check` 和
 `cargo clippy --workspace --all-targets --locked -- -D warnings` 均通过。`cargo test --workspace --locked`
-最新结果为 **246 通过、3 忽略（26 个 suite，Release）**。workspace all-target Release
-Clippy 已在 macOS 输入修复后通过；WASM 应用库 Clippy 在此前 SVG 修复后通过。
+最新结果为 **257 通过、3 忽略（26 个 suite，Release）**。workspace all-target Release
+Clippy 已在桌面偏好导入修复后通过；WASM 应用库 Clippy 在此前 Android 偏好修复后通过。
 
 `pnpm typecheck` 通过；直接运行 `./node_modules/.bin/biome check .` 最新检查 151 个文件无问题；
 `pnpm test` 审阅修复后的结果为 **72 个 Vitest + 32 个 Node 测试通过**（包含 3 项打包主机保护测试）。
@@ -258,7 +258,35 @@ Java facade/D8 构建通过；实际 arm64 `libnsh.so` 已确认导出
 旧 SharedPreferences 文件字节保持不变，进程日志无 JNI 链接/启动异常；重开截图已人工检查。
 原始无障碍树、截图、导出表及构建日志保存在执行账本目录。
 这是旧存储/JNI 的模拟器功能验证，不是 Android 真机性能验收。
-Electron 旧 localStorage 的主题数据迁移仍待完成。
+Electron 旧 localStorage 的主题数据导入见下一节。
+
+## 桌面原有主题偏好兼容（2026-11-08）
+
+macOS、Windows、Linux 现在可读取 Electron `@oshwhub/desktop/Local Storage/leveldb`
+中的 `oshwhub://app` 主题选择。NSH 已保存的字段优先，只有缺失字段才从旧库取值；
+只接受已知主题枚举，支持 Chromium Latin1/UTF-16 编码，忽略开发环境 origin。
+旧库以最多 64 MiB 的普通数据文件快照复制到 MemEnv，恢复产生的写入全部留在内存。
+缺少旧库视为首次安装；读取损坏、权限或大小错误可见，不阻止健康的新字段和后续保存。
+
+固定依赖 `rusty-leveldb` 4.0.2 的上游错误处理不足，因此保存了带 MIT 许可证的本地修补版，
+并在 `vendor/rusty-leveldb/PATCHES.md` 列出范围：传播恢复和点查错误，验证 WAL 批次、
+SST entry/restart/filter/footer，分配前检查实际文件长度和解压上限。迁移读取关闭自动
+compaction，隔离上游迭代合并会跳过坏记录的路径；不把这个修补版用于产品数据库写入。
+另外修复 tombstone 的用户键匹配，避免删除模式时把另一张表里的颜色误判为删除。
+
+真实 Electron 45 / Chromium 156 的独立 origin 夹具覆盖保存、删除记录和原文件字节不变，
+应用层 8 项回归通过。损坏日志、SST 校验/footer、4 张重叠 L0 表中的损坏最新删除、
+CRC 合法的错误 batch/block、空 Full 记录，以及真实 Bloom false positive 下的双 SST
+读取均有失败复现和修复回归。读取库 Debug/Release 各 **156 个单元测试 + 3 个文档测试**通过，
+独立复审无未解决的 Critical/Important。完整 workspace Release **257 通过、3 忽略**，
+all-target Release Clippy、fmt 和 diff 检查通过。WASM/Android 的实际 normal/build 依赖树
+均不包含桌面读取库，也不包含 `nsh-js`。
+
+Mac 原生输入恢复后，重新启动旧版测试实例，实际 PCB 滚轮改变缩放，标准窗口“填充”可用。
+8 秒小规模 Instruments 校准记录到 12 条 OSHWHub 更新，全部关联到真实显示交换记录；
+frame lifetime 终点与显示交换时间差最多 375 ns，保留原始交换时间用于后续分析。
+这段包含工具间隙及并行构建，只验证目标帧归属，不能用作连续交互或性能对照。
+进程级 Metal HUD 环境已在主进程和 GPU helper 核实，但未取得 HUD 统计日志，未据此计算指标。
 
 ## 尚未验收的门槛
 

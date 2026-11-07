@@ -120,8 +120,9 @@ macOS `ps`，保存目标及全部子孙进程的累计 CPU 秒数、RSS、启�
 Apple 提供应用进程级的 `MTL_HUD_ENABLED=1`、`MTL_HUD_LOG_ENABLED=1` 环境变量；
 HUD 每秒输出一组帧编号、graphics/process memory 和逐帧 present interval/GPU time。
 官方将 Frame Interval 定义为两个连续 `MTLDrawable` 实际显示时间的差值，将 HUD GPU 内存
-对应到 `MTLDevice.currentAllocatedSize`。这比全屏合成器帧更接近所需口径，但截至 2026-11-08
-尚未在本项目的新旧 Release 包上验证，不是已有采样结果。
+对应到 `MTLDevice.currentAllocatedSize`。2026-11-08 已用环境变量启动旧 Electron Release，
+确认主进程、GPU helper 和 renderer 均继承两个开关，但 stdout 和相应 unified logging
+过滤未取得 `metal-HUD` 统计，不能据此输出帧或内存结果；新 NSH 包仍待核实。
 
 下次启动应用时仅对目标进程设置变量，不修改全局 defaults 或 launchctl 环境。先做短试采，
 核对实际日志、时间/内存单位、目标 PID（Electron 包括 GPU helper）、帧编号是否连续，以及
@@ -129,6 +130,14 @@ NSH 主界面和三维子表面的多 layer 数据能否区分；不能把不同
 若两版都能得到可归属且完整的记录，再使用相同工具设置采集正式样本。HUD 本身会增加工作，
 应保存开启方式并核实影响；其内存值也不能直接当作整个应用进程树的 GPU 总量。
 可选的 `MTL_HUD_LOG_SHADER_ENABLED=1` 只记录 shader 编译，不能代替路径解析或网格上传计数。
+
+另一路有界校准使用 `Activity Monitor` 模板，附加 `Hitches`、`Frame Lifetimes` 和
+`Core Animation Commits`，只记录 8 秒。旧版实际滚轮改变 PCB 相机时，取得 12 条目标更新、
+946 条系统 frame lifetime 和 944 条 display-surface-swap。12 条目标更新均能通过
+swap/surface 关联到显示交换，frame lifetime 终点与原始交换时间差最多 375 ns。
+后续应保留原始交换时间、目标 PID 与 surface 归属，并拒绝缺失或歧义的关联；不能使用
+全部系统帧。新包也验证相同归属后才能据此实现正式采集。这段含工具间隙和并行构建，
+仅为采样链路校准，不是性能样本。导出 TOC 时移除目标进程的 environment 节点，再用于审阅。
 
 来源：[启用和日志格式](https://developer.apple.com/documentation/xcode/monitoring-your-metal-apps-graphics-performance)、
 [指标定义](https://developer.apple.com/documentation/xcode/understanding-metal-performance-hud-metrics)。

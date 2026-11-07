@@ -78,8 +78,8 @@ impl super::PreferenceStore for IosStore {
     }
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android")))]
-pub fn system_store() -> super::Result<super::FileStore> {
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+pub fn system_store() -> super::Result<super::desktop::DesktopStore> {
     use std::path::PathBuf;
     let missing = || super::AppError::new("PREFERENCES_UNAVAILABLE", "无法定位应用偏好目录");
     #[cfg(target_os = "macos")]
@@ -92,10 +92,25 @@ pub fn system_store() -> super::Result<super::FileStore> {
         Some(path) if !path.is_empty() => PathBuf::from(path),
         _ => PathBuf::from(std::env::var_os("HOME").ok_or_else(missing)?).join(".config"),
     };
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    let base = PathBuf::from(std::env::var_os("OSHWHUB_DATA_DIR").ok_or_else(missing)?);
-    Ok(super::FileStore::new(
+    Ok(super::desktop::DesktopStore::new(
         base.join("com.gouzil.oshwhub/preferences.json"),
+        base.join("@oshwhub/desktop/Local Storage/leveldb"),
+    ))
+}
+
+#[cfg(not(any(
+    target_arch = "wasm32",
+    target_os = "ios",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux"
+)))]
+pub fn system_store() -> super::Result<super::FileStore> {
+    let base = std::env::var_os("OSHWHUB_DATA_DIR")
+        .ok_or_else(|| super::AppError::new("PREFERENCES_UNAVAILABLE", "无法定位应用偏好目录"))?;
+    Ok(super::FileStore::new(
+        std::path::PathBuf::from(base).join("com.gouzil.oshwhub/preferences.json"),
     ))
 }
 

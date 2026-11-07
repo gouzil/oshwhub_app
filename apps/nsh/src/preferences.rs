@@ -1,6 +1,8 @@
 use nsh_core::platform::Appearance;
 #[cfg(any(target_os = "android", test))]
 mod android;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod desktop;
 mod platform;
 use oshwhub_core::error::{AppError, Result};
 pub use platform::system_store;

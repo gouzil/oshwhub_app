@@ -2,3 +2,4 @@
 # Apply to the app and NSH-generated nested runner workspaces alike.
 [patch.crates-io]
 nsh-platform-ios = { path = "vendor/nsh-platform-ios" }
+rusty-leveldb = { path = "vendor/rusty-leveldb" }

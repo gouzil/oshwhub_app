@@ -102,7 +102,7 @@ Rust NSH 页面、core/WASM 通路、二维/原理图 viewer、六端三维 GPU 
 - [ ] 将 FeedController、主题解析、BOM 筛选、bridge 过期请求/错误、正文/图片、导航 E2E 的行为断言移植为 Rust/UI 测试。Run tests；Expected: 对应未迁移行为失败。
 - [ ] 直接调用现有强类型 API，实现搜索防抖/提交/清除、排序/刷新/分页、去重、滚动恢复、详情/安全正文/按需图片/缩略回退、响应式 BOM 和过滤。
 - [ ] 使用 NSH 虚拟列表、系统导航/返回和基础控件；补全加载/无结果/418/离线/重试、软键盘、短横屏、大字体、减少动态效果和隐藏区域焦点隔离。
-- [ ] 幂等迁移主题/外观与应用身份；损坏/未知值回退默认，保存失败可见且不覆盖旧值。验证 NSH namespace 与旧 Android/iOS/Electron/Web 存储的真实位置。
+- [ ] 幂等迁移主题/外观与应用身份；损坏/未知值回退默认，保存失败可见且不覆盖旧值。验证 NSH namespace 与旧 Android/iOS/Electron/Web 存储的真实位置。Android 旧 SharedPreferences 与桌面 Electron LevelDB 导入已实现并回归；桌面读取只操作有界内存快照，保留旧文件，完整 Release 257/3 忽略及独立读取库 Debug/Release 156+3 通过。其余平台的最终运行矩阵仍随 Task 6 验收。
 - [ ] Run Rust/UI/Web 六视口回归、VoiceOver/TalkBack 和 Release 列表/BOM/启动性能对照；Expected: 全部工作流保持、异步交错不会回写错误页面。提交。
 
 ### Task 6: 完整性能门槛、产物与最终切换
