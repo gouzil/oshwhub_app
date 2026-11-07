@@ -120,7 +120,7 @@ NSH 0.4.0 的 Windows Canvas 缓存为 D2D `ID2D1CommandList` 向量命令列表
 
 新增 Chromium 回归保留真实 GPU 分配及原生 popErrorScope 的结果，只延迟 Promise 完成；
 加载板体后在准备中缩放，旧实现稳定失败（红色像素为 0），修复后板体出现且下一次缩放继续改变像素。
-重新构建两份 Web Release 包后完整 26/26 通过；workspace 233/3、native all-target 与 WASM 库 Clippy、
+重新构建两份 Web Release 包后完整 26/26 通过；workspace 246/3、native all-target 与 WASM 库 Clippy、
 TypeScript、72 Vitest + 32 Node 测试通过。聚焦独立审阅未发现新的 Critical/Important。重新打开同一在线项目并确认载入新 WASM `nsh.bd25e83cd8.wasm`，
 81/82 模型完成后，实际截图中可见新增器件，滚轮和工具栏缩放分别改变图像；修复前两者均不改变像素。
 新一组 20 秒 headless 3D 诊断 Task CPU 为 0.563 秒（旧版 0.580 秒）、174 次滚轮、rAF p95 16.8ms、
@@ -154,7 +154,7 @@ Android arm64 手机模拟器上的完整 smoke 通过：Vulkan、resize/overlay
 固定 PNG 的深缩放细线像素峰值只有 128，回归失败；自适应版本满足大于 240 的断言，
 并人工查看了中文与细线截图。模拟器结果不计入真机性能门槛。
 
-当前 workspace 为 242 通过、3 忽略（26 suites），native all-target Clippy 通过。
+当前 workspace 为 246 通过、3 忽略（26 suites），native all-target Clippy 通过。
 WASM 生产库使用 `--lib` 检查；额外尝试的 `--all-targets` 因现有原生 Headless/Tokio 测试宿主
 不支持 WASM 而失败，日志保留，不能称为全目标通过。Web 行为以重新打包后的浏览器回归为准。
 
@@ -171,7 +171,7 @@ PCB 3D 和 MIPI_DSI 原理图。NSH 0.4.0 没有将普通滚轮交给应用的�
 二维、原理图滚轮均实测从 100% 到 123%；二维拖动、键盘适应后放大到 125%、三维滚轮和
 拖动旋转实际改变画面。切换模式后二维 125% 状态保留。三维可见 81/82 模型，1 项官方未提供。
 新包原理图中文与内嵌 logo 可见；触控板 pinch 尚无实际验证。mounted 二维/三维输入回归
-先失败后通过，workspace Release 244/3 ignored、all-target Release Clippy 通过。
+先失败后通过，workspace Release 246/3 ignored、all-target Release Clippy 通过。
 原理图拾取曾错误进入 PCB 拾取缓存并提示场景过期，现由模式注入对应的 core picker 修复；
 失活模式清除暂时错误提示而保留相机、图层和属性状态。回归验证通过，实际 Mac 包重建后需再做一次短回归。
 首次 PCB 读取曾超时、点击重试后成功，封面也曾显示重试，不宣称网络根因已解决。
@@ -182,6 +182,9 @@ PCB 3D 和 MIPI_DSI 原理图。NSH 0.4.0 没有将普通滚轮交给应用的�
 Instruments 静态试采可读 Activity Monitor；应用 presentation 关联与 GPU 内存口径尚待确认。
 20 秒 GPU 试采因磁盘不足失败，未作为验收数据；已清理本任务可重建的跨平台编译缓存。
 尚无合格的新旧 macOS 性能采样。
+本轮再次尝试 CUA 原生输入验证仍超时，因此触控板 pinch 和鼠标/键盘组合输入不能记为通过。
+通过 `open` 启动 macOS Release 包并观察到 arm64 NSH 进程，短时启动 smoke 结束后已清理；这不构成
+首帧、交互或内存性能样本。
 优先 macOS 不替代其余平台的最终验收。
 
 ## 尚未验收的门槛
