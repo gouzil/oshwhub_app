@@ -95,3 +95,22 @@ node scripts/nsh-performance.mjs baseline.json candidate.json [report.md]
 报告同时列出 baseline/candidate 估计、delta、95% CI、判定和原因，并列出每个场景的 sample label/kind 与完整设备 metadata。缺少任一场景、样本数量不足、元数据不一致、非 Release、软件 GPU、非有限值、非零手势工作或不符合 20 次生命周期要求都会返回 invalid（退出码 3），不会被降级成 inconclusive 或 pass。
 
 该工具的输出不是性能证明：真实设备/原生 GPU/Release 采集、命令、原始样本和未测平台仍必须分别保存并审阅。合成和示例场景的标签会保留在报告中。
+
+## macOS 进程诊断
+
+```sh
+node scripts/nsh-process-sample.mjs 12345 65 output/macos-process.json
+```
+
+参数依次为已启动且预热完成的应用根 PID、采样秒数和不存在的输出文件。采样器约每秒读取一次
+macOS `ps`，保存目标及全部子孙进程的累计 CPU 秒数、RSS、启动时间和采样耗时。
+`cpuPct = CPU 秒数增量 / 墙钟秒数 * 100`，一个持续占满的核心为 100%；CPU 原始计数精度为
+0.01 秒。`peakRssBytes` 是每次采样的整棵进程树 RSS 之和的最大值，包含重复计算的共享页，
+不等于物理 footprint 或 GPU 分配量。启动时间用于识别 PID 重用。
+
+缺少根进程、观测到进程树变化、计数倒退或采样失败时，文件保留已取得的样本并记录 `error`，
+退出码为 1；已有文件不会被覆盖。轮询无法发现两次采样之间就已结束的短命子进程，因此该工具
+只用于预热后进程稳定的交互诊断，不用于冷启动或有进程变化的生命周期验收。
+
+输出标为 `kind: "process-diagnostic"`，不提供帧、丢帧、GPU 内存或操作时延，不能直接输入上面的
+验收比较器。必须另外保存输入动作及时间边界；包含等待或工具调用间隙的诊断，不能算作持续交互组。

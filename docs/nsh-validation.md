@@ -182,9 +182,26 @@ PCB 3D 和 MIPI_DSI 原理图。NSH 0.4.0 没有将普通滚轮交给应用的�
 Instruments 静态试采可读 Activity Monitor；应用 presentation 关联与 GPU 内存口径尚待确认。
 20 秒 GPU 试采因磁盘不足失败，未作为验收数据；已清理本任务可重建的跨平台编译缓存。
 尚无合格的新旧 macOS 性能采样。
-本轮再次尝试 CUA 原生输入验证仍超时，因此触控板 pinch 和鼠标/键盘组合输入不能记为通过。
-通过 `open` 启动 macOS Release 包并观察到 arm64 NSH 进程，短时启动 smoke 结束后已清理；这不构成
-首帧、交互或内存性能样本。
+2026-11-08 解锁后 CUA 恢复。用固定 NSH 0.4.0 CLI 对提交
+`0d565a734b1c22dc722f22524b32198876b6b0d3` 重新构建 macOS Release 包（34.2 秒），
+可执行文件 UUID `E79494CE-DC98-3650-8E02-D045A14FAC73`，SHA-256
+`80abc6cce04cb933531847f97c306d1b77717675fd44d921f736eb0bd9b7ead7`。
+新包实际进入在线 RK3576/BOM，MIPI_DSI 原理图点选 U20 得到 COMPONENT/e69、SY7201ABC 属性，
+未再显示 PCB 场景过期；中文、细线、内嵌 logo 可见。PCB 2D 普通滚轮从 100% 到 128%，
+切到 3D 再返回仍为 128%；3D 实际可见 81/82 模型，滚轮与拖动改变相机。退出查看器后可重新打开。
+触控板 pinch 和鼠标/键盘组合输入仍未在本次验证中实测。
+
+增加 `scripts/nsh-process-sample.mjs`，以进程树累计 CPU 秒数和 RSS 采样，包含单位换算、PID 重用、
+进程树变化、原始输出防覆盖和真实忙进程回归。三维诊断保存 66 个样本、65.285 秒墙钟、
+6.99 秒 CPU、10.707% 平均 CPU、1,109,458,944 bytes 峰值 RSS；输入的三段工具调用有间隙，
+第三段已在采样结束后，因此该文件只能用于进程诊断，不能算连续交互组或新旧性能对照。
+原始文件和命令保存在本计划忽略的工作目录 `macos-head-*` 中。
+
+Instruments `Core Animation FPS` 明确报告 macOS 不支持该指标；
+Animation Hitches + Core Animation Commits 试采在结束处理时报告
+`set-column: Argument 2 should be of type 'backtrace' but was passed on object of type 'tagged-backtrace'`，
+该跟踪同样不用于验收。其 target updates 导出有 326 条 OSHWHub PID 记录，保留用于研究帧关联；
+不能把全屏 compositor 帧当作应用呈现帧。后续采样避免这些已失败的 Instruments 组合。
 优先 macOS 不替代其余平台的最终验收。
 
 ## 尚未验收的门槛
