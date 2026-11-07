@@ -163,6 +163,11 @@ pub fn app_with_store(store: impl preferences::PreferenceStore + 'static) -> Any
                 .style_when(|| window().width.0 >= 1024.0, |s| s.flex_row())
                 .child(
                     view()
+                        .style_when(
+                            move || viewer_route.get().is_some(),
+                            |s| s.hidden().invisible(),
+                        )
+                        .accessibility_elements_hidden(move || viewer_route.get().is_some())
                         .p_3()
                         .gap_3()
                         .border_b_1()
