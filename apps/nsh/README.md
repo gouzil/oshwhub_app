@@ -13,7 +13,7 @@ cargo test -p oshwhub-nsh
 
 生成的 runner、包与类型文件留在忽略的 `.nsh/`；不要提交这些产物。CLI 和 `nsh-*` crate 版本必须一致。
 
-macOS/iOS/Android/Linux/Web 的三维查看器已接入 GPU 表面：Metal、TextureView/JNI、GTK GLArea/GLES 和 WebGPU/WebGL。Windows 当前仍使用 Rust Canvas fallback（100,000 三角形上限），原生 GPU 接线未完成。Android 模拟器与 Linux 软件 GLES 已验证像素/交互/销毁；真实设备性能对照通过前不会关闭旧入口。
+macOS/iOS/Android/Linux/Web/Windows 的三维查看器均已接入 GPU 表面：Metal、TextureView/JNI、GTK GLArea/GLES、WebGPU/WebGL，以及 Windows 与 NSH 共享的 D3D11/D2D 合成路径。Android 模拟器、Linux 软件 GLES 与 Windows D3D11 功能回归已验证像素/交互/销毁；真实设备性能对照通过前不会关闭旧入口。
 
 Web 包当前必须由仓库中的同源本地服务提供。先在本目录运行 `nsh package --target web`，再在仓库根目录运行：
 
