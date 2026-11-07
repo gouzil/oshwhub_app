@@ -227,6 +227,7 @@ fn basic_surface_probe(drawing_shown: Signal<bool>) -> impl IntoElement {
                 oshwhub_nsh::viewer::two_dimensional::two_dimensional(
                     std::sync::Arc::new(drawing_fixture()),
                     signal(true),
+                    oshwhub_core::pcb::pick,
                 )
             },
         ))

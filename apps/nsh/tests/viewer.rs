@@ -213,7 +213,11 @@ fn ViewerFixture() -> impl IntoElement {
                 .label("切换查看器")
                 .child(text("切换")),
         )
-        .child(two_dimensional::two_dimensional(Arc::new(scene), active))
+        .child(two_dimensional::two_dimensional(
+            Arc::new(scene),
+            active,
+            oshwhub_core::pcb::pick,
+        ))
 }
 
 #[derive(Default)]
@@ -334,7 +338,7 @@ fn viewer_reports_real_core_pick_errors_instead_of_fabricating_properties() {
     #[component]
     fn ExpiredFixture() -> impl IntoElement {
         set_tokens(oshwhub_nsh::app_theme().into_tokens());
-        two_dimensional::two_dimensional(Arc::new(scene()), signal(true))
+        two_dimensional::two_dimensional(Arc::new(scene()), signal(true), oshwhub_core::pcb::pick)
     }
     let mut app = Headless::start(EngineConfig {
         viewport: Size::new(px(480.), px(640.)),
@@ -472,7 +476,11 @@ fn native_wheel_dispatches_only_active_matching_scenes_and_unregisters_on_dispos
                     .on_press(move || active.set(!active.get_untracked()))
                     .child(text("禁用")),
             )
-            .child(two_dimensional::two_dimensional(Arc::new(scene()), active))
+            .child(two_dimensional::two_dimensional(
+                Arc::new(scene()),
+                active,
+                oshwhub_core::pcb::pick,
+            ))
     }
     let mut app = Headless::start(EngineConfig {
         viewport: Size::new(px(480.), px(640.)),
@@ -532,7 +540,7 @@ fn invalid_embedded_image_is_reported_while_another_image_is_still_loading() {
                 transform: [1., 0., 0., 1., 0., 0.],
             });
         }
-        two_dimensional::two_dimensional(Arc::new(scene), signal(true))
+        two_dimensional::two_dimensional(Arc::new(scene), signal(true), oshwhub_core::pcb::pick)
     }
     let mut app = Headless::start(EngineConfig {
         viewport: Size::new(px(480.), px(640.)),
@@ -552,7 +560,7 @@ fn successful_pick_does_not_hide_the_last_preparation_failure() {
         set_tokens(oshwhub_nsh::app_theme().into_tokens());
         let mut scene = oshwhub_core::pcb::demo();
         scene.batches[0].path = "broken path".into();
-        two_dimensional::two_dimensional(Arc::new(scene), signal(true))
+        two_dimensional::two_dimensional(Arc::new(scene), signal(true), oshwhub_core::pcb::pick)
     }
     let mut app = Headless::start(EngineConfig {
         viewport: Size::new(px(480.), px(640.)),

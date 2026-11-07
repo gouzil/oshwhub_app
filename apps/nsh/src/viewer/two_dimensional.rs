@@ -237,8 +237,12 @@ struct ImageSource {
     svg: Option<Arc<super::embedded_image::Svg>>,
 }
 
+type Picker =
+    fn(&str, f64, f64, f64, Option<&[i32]>) -> oshwhub_core::error::Result<Option<PickResult>>;
+
 struct ViewerState {
     scene: Arc<Scene>,
+    pick: Picker,
     active: Signal<bool>,
     camera: RefCell<Camera>,
     x: AnimatedValue,
@@ -309,7 +313,7 @@ impl ViewerState {
             let visible = self
                 .cache
                 .with(|cache| cache.visible.iter().copied().collect::<Vec<_>>());
-            match oshwhub_core::pcb::pick(
+            match (self.pick)(
                 &self.scene.id,
                 world.x,
                 world.y,
@@ -574,11 +578,12 @@ fn raster_canvas(
 }
 
 /// Camera transforms stay outside the bounded overview/detail vector drawings.
-pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
+pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>, pick: Picker) -> AnyElement {
     let state = Rc::new(ViewerState {
         camera: RefCell::new(Camera::new(scene.bounds)),
         overview: plan_raster(&scene.bounds, f64::MAX),
         scene,
+        pick,
         active,
         x: animated_value(0.),
         y: animated_value(0.),

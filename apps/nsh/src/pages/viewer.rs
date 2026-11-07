@@ -318,7 +318,10 @@ fn viewer_with_loader(route: ViewerRoute, on_back: Rc<dyn Fn()>, load: SceneLoad
                             return view().into_element();
                         };
                         match target {
-                            Mode::Pcb2d | Mode::Schematic => two_dimensional(scene, active),
+                            Mode::Pcb2d => two_dimensional(scene, active, oshwhub_core::pcb::pick),
+                            Mode::Schematic => {
+                                two_dimensional(scene, active, oshwhub_core::schematic::pick)
+                            }
                             Mode::ThreeD => three_dimensional(scene, active),
                         }
                     }))
@@ -383,6 +386,28 @@ mod tests {
         app.wait_for("text:125%").unwrap();
         app.press("label:切换到 原理图").unwrap();
         app.wait_for("text:80%").unwrap();
+    }
+
+    #[test]
+    fn schematic_taps_query_the_schematic_cache() {
+        let mut app = Headless::start(EngineConfig {
+            viewport: Size::new(px(640.), px(800.)),
+            ..EngineConfig::new(
+                Root::of::<RetainedModes>().tokens(crate::app_theme().into_tokens()),
+            )
+        })
+        .unwrap();
+        app.first_render().unwrap();
+        app.wait_for("label:二维画布").unwrap();
+        app.press("label:切换到 原理图").unwrap();
+        app.wait_for("label:二维画布").unwrap();
+        // The fixture only caches PCB data, so the schematic picker must report its own miss.
+        app.press_at(
+            "label:二维画布",
+            nsh_core::geometry::point(px(100.), px(100.)),
+        )
+        .unwrap();
+        app.wait_for("text:场景已过期，请重新打开原理图").unwrap();
     }
 
     fn project(pcb: bool, schematic: bool, initial_schematic: bool) -> ViewerRoute {
