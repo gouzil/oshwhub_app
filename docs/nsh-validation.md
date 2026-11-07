@@ -13,8 +13,8 @@
 
 `cargo check --workspace --locked`、`cargo fmt --all -- --check`、`git diff --check` 和
 `cargo clippy --workspace --all-targets --locked -- -D warnings` 均通过。`cargo test --workspace --locked`
-最新结果为 **242 通过、3 忽略（26 个 suite）**。workspace all-target 与 WASM 应用库
-Clippy 均在审阅修复后重新通过。
+最新结果为 **244 通过、3 忽略（26 个 suite，Release）**。workspace all-target Release
+Clippy 已在 macOS 输入修复后通过；WASM 应用库 Clippy 在此前 SVG 修复后通过。
 
 `pnpm typecheck` 通过；直接运行 `./node_modules/.bin/biome check .` 最新检查 151 个文件无问题；
 `pnpm test` 审阅修复后的结果为 **72 个 Vitest + 32 个 Node 测试通过**（包含 3 项打包主机保护测试）。
@@ -165,9 +165,22 @@ Android universal（arm64-v8a / armeabi-v7a / x86_64）和 Linux aarch64 包；�
 SurfaceProbe 完整 smoke 再次通过。Linux 包确认 ELF aarch64，iOS Simulator 包已安装并启动，
 实际可见在线中文列表与封面。各目标 NSH package 串行运行，避免生成目录被不同主机覆盖。
 
-macOS 最新 Release 包已实际进入在线 RK3576 项目、BOM（197 种 / 885 元件）和 PCB 2D；
-图形与工具栏 125% 缩放可见。普通滚轮未改变缩放，正在排查主机输入接入，不能算作交互通过。
-旧版独立工作树已构建出 arm64 Electron Release `.app`，尚无合格的新旧 macOS 性能采样。
+macOS 最新 Release 包已实际进入在线 RK3576 项目、BOM（197 种 / 885 元件）、PCB 2D、
+PCB 3D 和 MIPI_DSI 原理图。NSH 0.4.0 没有将普通滚轮交给应用的相机处理函数，现增加
+仅捕获滚轮和 magnify 的画布局部 NSView，并通过 NSH engine queue 更新已有相机。
+二维、原理图滚轮均实测从 100% 到 123%；二维拖动、键盘适应后放大到 125%、三维滚轮和
+拖动旋转实际改变画面。切换模式后二维 125% 状态保留。三维可见 81/82 模型，1 项官方未提供。
+新包原理图中文与内嵌 logo 可见；触控板 pinch 尚无实际验证。mounted 二维/三维输入回归
+先失败后通过，workspace Release 244/3 ignored、all-target Release Clippy 通过。
+本次点击原理图发现属性查询错误进入 PCB 拾取缓存并提示场景过期，尚待修复；不能算作选择通过。
+首次 PCB 读取曾超时、点击重试后成功，封面也曾显示重试，不宣称网络根因已解决。
+
+包 UUID `E7394F59-2D33-3454-B96B-FF162503E93A` 与 Release runner 相同。
+旧版独立工作树已构建出 arm64 Electron Release `.app`，实际打开同一个 45,117 对象的 PCB。
+两版没有同时运行。当前窗口尺寸仍需统一，CUA 相同页数不代表相同逻辑像素滚轮输入。
+Instruments 静态试采可读 Activity Monitor；应用 presentation 关联与 GPU 内存口径尚待确认。
+20 秒 GPU 试采因磁盘不足失败，未作为验收数据；已清理本任务可重建的跨平台编译缓存。
+尚无合格的新旧 macOS 性能采样。
 优先 macOS 不替代其余平台的最终验收。
 
 ## 尚未验收的门槛

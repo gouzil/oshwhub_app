@@ -593,3 +593,53 @@ fn layer_and_property_panels_switch_without_overlapping_on_small_screens() {
     app.wait_for("text:点选图形查看属性").unwrap();
     assert!(!app.screen().matches("label:切换图层 顶层").unwrap());
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_canvas_wheel_events_zoom_only_the_active_viewer() {
+    use nsh_core::{EventKind, EventPayload, MountItem};
+    let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let target = Arc::new(Mutex::new(None));
+    let observed = Arc::clone(&target);
+    let mut app = Headless::start(EngineConfig {
+        viewport: Size::new(px(480.), px(640.)),
+        ..EngineConfig::new(Root::of::<ViewerFixture>())
+    })
+    .unwrap();
+    app.observe(move |_, batch| {
+        for item in &batch.items {
+            if let MountItem::Component { id, name } = item
+                && name.as_ref() == "oshwhub.wheel"
+            {
+                *observed.lock().unwrap() = Some(*id);
+            }
+        }
+    });
+    app.first_render().unwrap();
+    let target = target
+        .lock()
+        .unwrap()
+        .expect("Mac canvas must host its wheel input target");
+    let send = |app: &Headless, data| {
+        app.engine().control().dispatch_event(
+            target,
+            EventKind::NativeEvent,
+            EventPayload::Native {
+                name: "wheel".into(),
+                data,
+            },
+        )
+    };
+    send(&app, serde_json::json!({"delta": -100, "x":100, "y":100}));
+    app.wait_for("text:135%").unwrap();
+    app.press("label:切换查看器").unwrap();
+    send(&app, serde_json::json!({"delta": -100, "x":100, "y":100}));
+    app.wait(std::time::Duration::from_millis(40)).unwrap();
+    app.wait_for("text:135%").unwrap();
+    app.press("label:切换查看器").unwrap();
+    send(&app, serde_json::json!({"delta": -100, "x":100}));
+    app.wait(std::time::Duration::from_millis(40)).unwrap();
+    app.wait_for("text:135%").unwrap();
+    send(&app, serde_json::json!({"delta": 100, "x":100, "y":100}));
+    app.wait_for("text:100%").unwrap();
+}

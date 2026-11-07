@@ -11,6 +11,8 @@ mod embedded_image;
     target_os = "linux"
 ))]
 mod gpu;
+#[cfg(target_os = "macos")]
+pub(crate) mod macos_input;
 pub mod mesh;
 pub mod raster;
 pub mod render3d;

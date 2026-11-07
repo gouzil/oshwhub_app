@@ -26,6 +26,7 @@ fn native(registry: &mut Registry) {
 #[native_components(macos)]
 fn components_macos(components: &nsh_platform_macos::Components) {
     viewer::surface::register_macos(components);
+    viewer::macos_input::register(components);
 }
 
 #[native_components(ios)]

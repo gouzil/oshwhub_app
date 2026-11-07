@@ -846,6 +846,11 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>) -> AnyElement {
             );
             layout_state.publish_camera();
         });
+    #[cfg(target_os = "macos")]
+    let drawing = drawing.child(super::macos_input::overlay(
+        state.scene.id.clone(),
+        native_wheel,
+    ));
     let keyboard_state = Rc::clone(&state);
     let error = state.error;
     let loading_count = state.scene.images.len();

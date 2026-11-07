@@ -630,6 +630,11 @@ fn three_dimensional_with_loaders(
             )
         })
         .child(drawing);
+    #[cfg(target_os = "macos")]
+    let canvas = canvas.child(super::macos_input::overlay(
+        state.scene.id.clone(),
+        native_wheel,
+    ));
     view()
         .flex_1()
         .min_h(px(0.))

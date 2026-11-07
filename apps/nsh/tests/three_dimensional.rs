@@ -81,3 +81,52 @@ fn toolbar_zoom_out_changes_the_camera() {
     app.press("label:缩小三维场景").unwrap();
     assert!(model.frame().camera.distance > before.distance);
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_canvas_wheel_event_updates_the_gpu_camera() {
+    use nsh_core::{EventKind, EventPayload};
+    let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let handles = Arc::new(Mutex::new((None, None)));
+    let observed = Arc::clone(&handles);
+    let mut app = Headless::start(EngineConfig {
+        viewport: Size::new(px(480.), px(640.)),
+        ..EngineConfig::new(
+            Root::of::<ViewerFixture>().tokens(oshwhub_nsh::app_theme().into_tokens()),
+        )
+    })
+    .unwrap();
+    app.observe(move |_, batch| {
+        let mut handles = observed.lock().unwrap();
+        for item in &batch.items {
+            match item {
+                MountItem::Component { id, name } if name.as_ref() == "oshwhub.wheel" => {
+                    handles.0 = Some(*id)
+                }
+                MountItem::ComponentProps { props, .. } => {
+                    for (name, value) in props {
+                        if name.as_ref() == "model" {
+                            handles.1 = value.as_ref().and_then(|v| v["handle"].as_u64());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+    app.first_render().unwrap();
+    let (target, handle) = *handles.lock().unwrap();
+    let target = target.expect("Mac 3D canvas must host its wheel input target");
+    let model = SurfaceModel::resolve(handle.unwrap()).unwrap();
+    let before = model.frame().camera;
+    app.engine().control().dispatch_event(
+        target,
+        EventKind::NativeEvent,
+        EventPayload::Native {
+            name: "wheel".into(),
+            data: serde_json::json!({"delta":-100, "x":100, "y":100}),
+        },
+    );
+    app.wait(std::time::Duration::from_millis(40)).unwrap();
+    assert!(model.frame().camera.distance < before.distance);
+}
