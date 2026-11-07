@@ -204,6 +204,38 @@ Animation Hitches + Core Animation Commits 试采在结束处理时报告
 不能把全屏 compositor 帧当作应用呈现帧。后续采样避免这些已失败的 Instruments 组合。
 优先 macOS 不替代其余平台的最终验收。
 
+2026-11-08 继续检查旧版工作区大小窗口（截图为 3456×2168 像素）。
+`macos-baseline-fullscreen-pcb3d-process.json` 的文件名保留当时的命名；它约 55 秒，
+CPU 为 3.47 秒、整棵进程树峰值 RSS 为 1,798,291,456 bytes。
+输入循环在 CUA 60 秒超时后被中断，完成动作数未知；它与此前 2400×1664 像素的新包窗口
+也不匹配，因此两份进程诊断不能配对比较。后续菜单显示“进入全屏幕”，不能只凭截图尺寸
+把该窗口认定为 macOS 独立全屏空间。
+
+此前失败跟踪的任务专属 DTServiceHub PID 57292 仍持有约 11.8 GB 原始 ktrace。
+已确认路径与生成时间，停止该持有进程并删除这份冗余 scratch；清理清单保存于
+`macos-head-ktrace-cleanup.json`，已导出的 XML 和错误日志保留。
+
+新增 4 秒、3 秒尾窗口的 Instruments 小规模试采，避免再次产生巨型跟踪。
+Activity Monitor 配合 Frame Lifetimes、Core Animation Activity、Core Animation Server、
+Hitches，以及 Hitches + Display 的组合均正常保存，单份约 25–38 MB。
+这只验证记录/导出链路：Frame Lifetimes 导出 680 条系统帧，Core Animation Server
+导出 3,438 条 WindowServer 区间；均不能直接作为 OSHWHub 呈现帧。
+Hitches 虽包含 `hitches-updates` 和 `hitches-frame-lifetimes` 表，当前两组导出均为 0 行，
+尚未验证目标进程与实际显示帧的关联，不据此计算应用 FPS 或丢帧。
+随后不使用尾窗口，给 Hitches 增加 Frame Lifetimes 数据源，导出 264 条系统帧；再增加
+Core Animation Commits、保持默认 `expensiveCommitSampling=0`，且不启用 Time Profiler，
+4 秒跟踪也成功保存（约 26 MB、282 条系统帧），没有复现此前的 backtrace 解析失败。
+两者目标更新仍为 0 行，须等可验证的输入恢复后再检查。对历史失败跟踪的只读结构诊断中，
+326 条目标更新按 display/swap/surface 全部匹配到 323 个不同帧终点；这一关联也没有将
+失败跟踪变成有效样本，帧终点是否对应实际应用呈现仍待核实。
+
+这轮 CUA 能读取旧版无障碍树和窗口图像，但拖动、滚轮持续报告
+`noWindowsAvailable`；重新选择应用、前置窗口和重连会话未恢复可验证的输入。
+只读系统状态为 `IOConsoleLocked=false`，故没有把它再次归因为锁屏。
+已请求用户将 OSHWHub 切到当前桌面并恢复普通窗口；在输入恢复前不继续记录交互组。
+本轮只改验证记录，应用代码和 Release 包未变；进程采样工具加入后的最近完整
+`pnpm test` 结果为 72 个 Vitest + 39 个 Node 测试通过。
+
 ## 尚未验收的门槛
 
 尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows 正式 NSH 包的本机打包/安装；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。
