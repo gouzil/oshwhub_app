@@ -115,6 +115,30 @@ macOS `ps`，保存目标及全部子孙进程的累计 CPU 秒数、RSS、启�
 输出标为 `kind: "process-diagnostic"`，不提供帧、丢帧、GPU 内存或操作时延，不能直接输入上面的
 验收比较器。必须另外保存输入动作及时间边界；包含等待或工具调用间隙的诊断，不能算作持续交互组。
 
+### macOS 目标呈现记录
+
+```sh
+python3 scripts/nsh-macos-frames.py PID updates.xml lifetimes.xml swaps.xml present.json
+python3 scripts/nsh-macos-frames.test.py
+```
+
+三个输入分别是同一次 `xctrace export` 的 `hitches-updates`、
+`hitches-frame-lifetimes`、`display-surface-swap` 表。工具按每份 XML 独立解析 `id/ref`，
+只保留目标 PID 的更新，再以 swap/surface 关联生命周期和实际显示交换。
+`presentNs` 使用原始交换时间，单位为纳秒；`frameMs` 保留连续目标呈现之间的全部间隔，
+包括按需绘制的停顿。生命周期终点与交换时间的差值另外保存，不用它替换交换时间。
+结果保留三份源文件的路径和 SHA-256，拒绝覆盖已有输出。
+
+目前只支持单显示器，拒绝多显示器、未知或循环引用、重复标识、缺失或歧义的关联及无效时间。
+它解析的是进程更新与 compositor 交换，不把系统全部帧或多条 Metal layer 日志混成应用帧。
+输出标为 `macos-present-diagnostic`：输入覆盖、子表面完整性、丢帧定义、GPU 分配、操作时延和
+生命周期证据仍需单独核对，不能直接输入验收比较器。
+
+录制时使用 `--notify-tracing-started <name>`，等待对应 Darwin 通知后才开始输入；
+终端打印 `Starting recording` 早于实际录制，不能作为就绪信号。保存通知、每个动作及结束时间，
+确保完整动作区间处于录制范围内，并等待 `xctrace` 成功保存后再导出。
+正式采样期间不并行编译或运行测试，原始 trace 留在本地；TOC 移除 environment 后才用于审阅。
+
 ### 待验证的 macOS Metal HUD 采样路径
 
 Apple 提供应用进程级的 `MTL_HUD_ENABLED=1`、`MTL_HUD_LOG_ENABLED=1` 环境变量；
