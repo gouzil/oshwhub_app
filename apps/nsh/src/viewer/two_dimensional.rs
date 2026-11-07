@@ -757,6 +757,7 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>, pick: Picker) ->
             if !active.get() {
                 state.camera.borrow_mut().cancel();
                 state.publish_camera();
+                state.error.set(None);
             }
         });
     }

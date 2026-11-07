@@ -346,9 +346,46 @@ fn viewer_reports_real_core_pick_errors_instead_of_fabricating_properties() {
     })
     .unwrap();
     app.first_render().unwrap();
+    app.wait_for("label:二维画布").unwrap();
     app.press_at("label:二维画布", point(px(100.), px(100.)))
         .unwrap();
     app.wait_for("text:场景已过期，请重新打开 PCB").unwrap();
+}
+
+#[test]
+fn inactive_viewer_clears_transient_pick_error_before_mode_switch() {
+    let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    #[component]
+    fn ExpiredWithToggle() -> impl IntoElement {
+        set_tokens(oshwhub_nsh::app_theme().into_tokens());
+        let active = signal(true);
+        view()
+            .flex_1()
+            .child(
+                nsh_base::button()
+                    .accessibility_label("切换查看器")
+                    .on_press(move || active.update(|value| *value = !*value))
+                    .child(text("切换")),
+            )
+            .child(two_dimensional::two_dimensional(
+                Arc::new(scene()),
+                active,
+                oshwhub_core::pcb::pick,
+            ))
+    }
+    let mut app = Headless::start(EngineConfig {
+        viewport: Size::new(px(480.), px(640.)),
+        ..EngineConfig::new(Root::of::<ExpiredWithToggle>())
+    })
+    .unwrap();
+    app.first_render().unwrap();
+    app.wait_for("label:二维画布").unwrap();
+    app.press_at("label:二维画布", point(px(100.), px(100.)))
+        .unwrap();
+    app.wait_for("text:场景已过期，请重新打开 PCB").unwrap();
+    app.press("label:切换查看器").unwrap();
+    app.press("label:切换查看器").unwrap();
+    assert!(!app.screen().shows("场景已过期，请重新打开 PCB"));
 }
 
 static GUI_LOCK: Mutex<()> = Mutex::new(());
