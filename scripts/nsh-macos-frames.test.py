@@ -55,6 +55,44 @@ class PresentFramesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "target"):
             module.present_frames(99, *fixture())
 
+    def test_nested_update_rows_describe_one_presented_frame(self):
+        for nested_first in [False, True]:
+            docs = fixture()
+            rows = docs[0].find("node")
+            nested = copy.deepcopy(rows.findall("row")[1])
+            nested[6].text = "Red"
+            nested[7].text = "1"
+            rows.insert(1 if nested_first else len(rows), nested)
+            with self.subTest(nested_first=nested_first):
+                result = module.present_frames(7, *docs)
+                self.assertEqual([f["presentNs"] for f in result["frames"]], [100000000, 1200000000])
+                self.assertEqual(result["frameMs"], [1100.0])
+                self.assertEqual(result["nestedUpdateRows"], 1)
+
+    def test_rejects_conflicting_or_duplicate_nested_updates(self):
+        for column, value in [(0, "80000001"), (1, "11"), (7, "0")]:
+            docs = fixture()
+            rows = docs[0].find("node")
+            nested = copy.deepcopy(rows.findall("row")[1])
+            nested[7].text = "1"
+            nested[column].text = value
+            rows.append(nested)
+            with self.subTest(column=column), self.assertRaisesRegex(ValueError, "ambiguous"):
+                module.present_frames(7, *docs)
+
+    def test_rejects_nested_updates_without_one_root_or_with_repeated_depth(self):
+        for depths in [[1, 2], [0, 1, 1]]:
+            docs = fixture()
+            rows = docs[0].find("node")
+            original = rows.findall("row")[1]
+            original[7].text = str(depths[0])
+            for depth in depths[1:]:
+                nested = copy.deepcopy(original)
+                nested[7].text = str(depth)
+                rows.append(nested)
+            with self.subTest(depths=depths), self.assertRaisesRegex(ValueError, "ambiguous"):
+                module.present_frames(7, *docs)
+
     def test_rejects_missing_or_ambiguous_swap(self):
         for duplicate in [False, True]:
             docs = fixture()

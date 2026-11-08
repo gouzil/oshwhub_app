@@ -65,7 +65,7 @@ def rows(root, schema_name, required):
 def present_frames(pid, updates, lifetimes, swaps):
     if not isinstance(pid, int) or pid <= 0:
         raise ValueError("target PID must be positive")
-    updates = rows(updates, "hitches-updates", {"process", "start", "display", "swap-id", "surface-id"})
+    updates = rows(updates, "hitches-updates", {"process", "start", "duration", "display", "swap-id", "surface-id", "containment-level"})
     lifetimes = rows(lifetimes, "hitches-frame-lifetimes", {"start", "duration", "display", "swap-id", "surface-id"})
     swaps = rows(swaps, "display-surface-swap", {"timestamp", "display-name", "swap-id", "surface-id"})
     target = [row for row in updates if integer(row["process"]) == pid]
@@ -82,6 +82,21 @@ def present_frames(pid, updates, lifetimes, swaps):
     def key(row):
         return integer(row["swap-id"]), integer(row["surface-id"])
 
+    groups = {}
+    for update in target:
+        groups.setdefault(key(update), []).append(update)
+    nested_update_rows = len(target) - len(groups)
+    target = []
+    for group in groups.values():
+        if len(group) > 1:
+            levels = [integer(row["containment-level"]) for row in group]
+            identity = ("process", "start", "duration", "display", "swap-id", "surface-id")
+            # Hitches repeats a frame for nested visualization rows; these are not extra swaps.
+            if (levels.count(0) != 1 or len(set(levels)) != len(levels)
+                    or any(row[column] != group[0][column] for row in group for column in identity)):
+                raise ValueError("ambiguous swap/surface association in nested updates")
+        target.append(group[0])
+
     def index(data):
         result = {}
         for row in data:
@@ -92,7 +107,6 @@ def present_frames(pid, updates, lifetimes, swaps):
         return result
 
     swap_index, lifetime_index = index(swaps), index(lifetimes)
-    index(target)
     frames = []
     for update in target:
         k = key(update)
@@ -114,6 +128,7 @@ def present_frames(pid, updates, lifetimes, swaps):
         raise ValueError("requires distinct, increasing target presentations")
     return {
         "kind": "macos-present-diagnostic", "pid": pid,
+        "nestedUpdateRows": nested_update_rows,
         "frames": frames, "frameMs": intervals,
         "notAcceptance": "Process-attributed compositor swaps; input coverage, layer completeness, GPU memory and other acceptance metrics require separate evidence.",
     }
