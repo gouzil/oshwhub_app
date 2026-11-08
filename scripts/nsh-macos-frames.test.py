@@ -43,7 +43,130 @@ def fixture():
     return updates, lifetimes, swaps
 
 
+def raw_fixture():
+    columns = ["time", "core-index", "class", "subclass", "code", "function",
+               "arg1", "arg2", "arg3", "arg4"]
+    events = []
+    for swap, surface, ticks in [(100, 6, 1200), (101, 8, 1400), (102, 9, 3400)]:
+        for core in [17, 18]:
+            events.extend([
+                [1, core, 0x31, 0x80, 0xc8, 0, swap, surface, 0, 0],
+                [2_000_000_000, core, 0x31, 0x80, 0xd1, 0,
+                 swap, 1, 0, ticks + (1 if swap == 100 and core == 18 else 0)],
+            ])
+    raw = table("kdebug", columns, [
+        ''.join('<uint64>' + str(v) + '</uint64>' for v in event) for event in events
+    ])
+    clock = table("time-info", ["update-time", "mct-epoch", "timebase-info"], [
+        '<sample-time>0</sample-time><mach-continuous-time>1000</mach-continuous-time>'
+        '<mach-timebase-info><field>1000000</field><field>2</field></mach-timebase-info>'
+    ])
+    return raw, clock
+
+
 class PresentFramesTest(unittest.TestCase):
+    def test_raw_inputs_must_be_supplied_together(self):
+        raw, clock = raw_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.xml"
+            ET.ElementTree(raw).write(path)
+            for extra in [{"raw_display": path}, {"time_info": clock}]:
+                with self.subTest(extra=list(extra)), self.assertRaises(ValueError):
+                    module.present_frames(7, *fixture(), **extra)
+
+    def test_timebase_fields_resolve_their_document_references(self):
+        raw, clock = raw_fixture()
+        epoch = clock.find(".//mach-continuous-time")
+        epoch.text = "1000000"
+        epoch.set("id", "epoch")
+        numerator = clock.find(".//mach-timebase-info")[0]
+        numerator.text = None
+        numerator.set("ref", "epoch")
+        for row in raw.findall(".//row"):
+            if row[4].text == str(0xd1):
+                row[-1].text = str(int(row[-1].text) + 999000)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.xml"
+            ET.ElementTree(raw).write(path)
+            result = module.present_frames(7, *fixture(), raw_display=path, time_info=clock)
+        self.assertEqual(result["frameMs"], [1100.0])
+
+    def test_recovers_only_verified_on_glass_events_and_keeps_time_bounds(self):
+        docs = fixture()
+        docs[2].find("node").remove(docs[2].findall(".//row")[0])
+        for row in docs[2].findall(".//row"):
+            row[2].attrib.clear()
+            row[2].text = "Built-In Display"
+        raw, clock = raw_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.xml"
+            ET.ElementTree(raw).write(path)
+            result = module.present_frames(7, *docs, raw_display=path, time_info=clock)
+        self.assertEqual(result["rawValidatedSwaps"], 2)
+        self.assertEqual(result["recoveredSwaps"], 1)
+        self.assertEqual(result["frames"][0]["presentNs"], 100000000)
+        self.assertEqual(result["frames"][0]["presentMaxNs"], 100500000)
+        self.assertEqual(result["frameMs"], [1100.0])
+        self.assertEqual(result["frameMsLower"], [1099.5])
+
+    def test_recovered_later_frame_uses_upper_interval_bound(self):
+        docs = fixture()
+        docs[2].find("node").remove(docs[2].findall(".//row")[2])
+        raw, clock = raw_fixture()
+        raw.findall(".//row")[-1][-1].text = "3401"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.xml"
+            ET.ElementTree(raw).write(path)
+            result = module.present_frames(7, *docs, raw_display=path, time_info=clock)
+        self.assertEqual(result["frameMs"], [1100.5])
+        self.assertEqual(result["frameMsLower"], [1100.0])
+
+    def test_cli_raw_sources_are_hashed_and_output_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for i, document in enumerate([*fixture(), *raw_fixture()]):
+                path = Path(directory) / (str(i) + ".xml")
+                ET.ElementTree(document).write(path)
+                paths.append(path)
+            output = Path(directory) / "present.json"
+            args = [sys.executable, str(SCRIPT), "7", *map(str, paths[:3]),
+                    str(output), *map(str, paths[3:])]
+            first = subprocess.run(args, capture_output=True, text=True)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            saved = output.read_bytes()
+            result = json.loads(saved)
+            self.assertEqual(len(result["sources"]), 5)
+            self.assertEqual(result["recoveredSwaps"], 0)
+            second = subprocess.run(args, capture_output=True)
+            self.assertNotEqual(second.returncode, 0)
+            self.assertEqual(output.read_bytes(), saved)
+
+    def test_raw_recovery_rejects_clock_surface_and_event_conflicts(self):
+        for mutation in ["clock", "surface", "duplicate", "missing_program", "late_program", "unknown_ref"]:
+            docs = fixture()
+            raw, clock = raw_fixture()
+            raw_rows = raw.findall(".//row")
+            if mutation == "clock":
+                clock.find(".//mach-continuous-time").text = "999"
+            elif mutation == "surface":
+                raw_rows[2][7].text = "99"
+            elif mutation == "duplicate":
+                raw.find("node").append(copy.deepcopy(raw_rows[1]))
+            elif mutation == "missing_program":
+                for row in raw_rows[:4:2]:
+                    raw.find("node").remove(row)
+            elif mutation == "late_program":
+                for row in raw_rows[:4:2]:
+                    raw.find("node").remove(row)
+                    raw.find("node").append(row)
+            else:
+                raw_rows[0][0].set("ref", "missing")
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "raw.xml"
+                ET.ElementTree(raw).write(path)
+                with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                    module.present_frames(7, *docs, raw_display=path, time_info=clock)
+
     def test_uses_target_raw_swaps_and_keeps_idle_gap(self):
         result = module.present_frames(7, *fixture())
         self.assertEqual([f["presentNs"] for f in result["frames"]], [100000000, 1200000000])

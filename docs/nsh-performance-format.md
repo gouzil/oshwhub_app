@@ -129,6 +129,25 @@ python3 scripts/nsh-macos-frames.test.py
 包括按需绘制的停顿。生命周期终点与交换时间的差值另外保存，不用它替换交换时间。
 结果保留三份源文件的路径和 SHA-256，拒绝覆盖已有输出。
 
+若 Apple 的汇总 swap 表缺行，可以额外提供同一 trace 的原始显示 kdebug 与时钟表：
+
+```sh
+python3 scripts/nsh-macos-frames.py PID updates.xml lifetimes.xml swaps.xml present-bounded.json raw-display.xml time-info.xml
+```
+
+原始表是 `kdebug`、`codes='"0x85,0x20" "0x31,0x80"'`，时钟表为 `time-info`。
+目前只解码已校准的 IOMFB `0x31/0x80`：以 `0xc8` 明确指定 surface，
+以 `0xd1` 的 ON_GLASS 时间和 continuous epoch / timebase 还原真实交换时间。
+必须先让**每一条**已有 swap 的 ID、surface 和纳秒时间与原始事件精确对应；
+无法核对的驱动格式、时钟、引用、冲突 surface 或重复观察者事件仍拒绝。
+生命周期表缺行同样拒绝，不以其终点推算呈现时间。
+
+同一显示交换可能有多个底层观察者；只采用已通过已有 swap 校准的观察者。
+补关联时保留这些观察者时间的完整上下界，`presentNs` / `presentMaxNs` 分别表示下界和上界，
+`frameMs` 使用相邻帧差的上界，新增 `frameMsLower` 保留下界，避免将采集差异算成性能收益。
+`rawValidatedSwaps` 和 `recoveredSwaps` 分别记录精确核对及补关联数，五份输入均保留路径和 SHA-256。
+原始 XML 流式解析且上限 1 GiB，时钟表上限 64 KiB；这条可选路径仍输出诊断文件，不直接授予验收通过。
+
 目前只支持单显示器，拒绝多显示器、未知或循环引用、重复标识、缺失或歧义的关联及无效时间。
 它解析的是进程更新与 compositor 交换，不把系统全部帧或多条 Metal layer 日志混成应用帧。
 输出标为 `macos-present-diagnostic`：输入覆盖、子表面完整性、丢帧定义、GPU 分配、操作时延和
