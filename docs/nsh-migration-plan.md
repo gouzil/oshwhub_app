@@ -43,6 +43,12 @@ footprint 覆盖通过检查，CPU 中位数旧版 10.67 秒、NSH 6.80 秒，�
 拒绝样本算通过；完整来源、逐组数值和限制见 `docs/nsh-validation.md`。
 这仍不是全 Mac/全平台性能验收，旧入口继续保留。
 
+Mac GPU 计量已完成无窗口已知分配量校准，但官方 live 通路未覆盖旧版产品，不能用空流当零值。
+已另行校准两版共用的本地 Metal 分配采样库，并实测自动截止。通过单独测试启动器，已在旧版 GPU 进程
+及 NSH 主进程确认连续读数；渲染后端覆盖、场景/视口配对和整体采样开销仍待核实。
+所有步骤均未修改原产品包、产品源码或已授权输入回放程序。
+具体数值、原始证据与边界见 `docs/nsh-validation.md`。
+
 ## File Structure
 
 - `apps/nsh/nsh.json`、`Cargo.toml`、`theme.json`、`src/lib.rs`：产品声明、版本、主题与纯 Rust 根组件。
