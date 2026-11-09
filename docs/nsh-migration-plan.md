@@ -28,7 +28,7 @@
 - 密集真实 PCB 的图元/实例规模不能被小夹具掩盖；Tasks 3/4/6 用真实重放与独立合成压力样本分别报告。
 - OS/GPU/浏览器兼容范围不得悄悄降低；Tasks 2/6 记录旧版与 NSH 的版本下限并实际验证，不支持时明确未通过。
 
-## Current status (2026-11-09)
+## Current status (2026-11-10)
 
 Rust NSH 页面、core/WASM 通路、二维/原理图 viewer、六端三维 GPU viewer（Windows 使用 D3D11/D2D）、业务页面与性能比较器已在工作树实现。workspace Release tests 最新为 258 通过/3 忽略（26 组），native all-target Release Clippy 通过；此前 workspace/WASM/Linux Clippy 与 NSH check 通过；Web 最新 26/26 回归包含六视口中文、SVG text/image、二维路径缓存与 Retina 像素。Android Vulkan probe 已在手机模拟器验证缩放/旋转与 20 次销毁；Linux GTK GLES 像素/方向/叠层/resize/20 次销毁通过，Ubuntu 容器已生成真正 ELF aarch64 包并启动加载在线列表。此前 macOS 跨桌面生成的 Windows/Linux 假产物记录已撤回；新 Linux 包由 Linux 本机构建，Windows 两项原生 D3D11 回归已在 Windows 11 ARM64 / Parallels Display Adapter（x64 测试程序经系统兼容层）通过，正式包的安装/启动仍待验证。真实 RK3576 大板 Web 诊断已发现并修复二维每帧路径重建，采用有界 overview/detail Canvas 与外部相机 transform；同口径单组 Task CPU 从 19.330 秒降至 0.907 秒（旧版 1.154 秒），但 Windows Canvas 仍是向量 command-list，二维性能须另测。随后真实 Web 3D 暴露了准备任务被下一相机 tick 取消的问题，已将任务归属稳定 surface owner 并通过受控真实 GPU Promise 回归；此前 3D 低 CPU 诊断因画面冻结已撤回。最终迁移仍未验收：没有合格的真实旧版 vs NSH Release 性能样本，各端真实硬件/无障碍矩阵未完成。真实在线 Web 已走通发现/详情/BOM/PCB 2D/3D/原理图，并明确显示 1 项不可读取的官方模型。Mac 最新 `b69f912` 官方包已实际核实全宽查看器、PCB 滚轮、原理图、三维画面与返回导航。其后已完成连续输入诊断，结果与缺口见下文；旧入口继续保留。
 
@@ -74,6 +74,9 @@ CPU 配对变化 −4.573%，描述性 95% 区间 [−10.580%, +1.434%]，仍不
 该次缩放从 100% 变为 92%，仅作诊断；等待线程未采样，长空档和缩放来源继续待查。
 系统调度方法已在无窗口进程将 13 次已知等待与阻塞调用栈精确连接，帧记录插件组合也已校准。
 下一次产品诊断已准备，等待新的前台窗口；校准结果不代替实际产品数据。
+离线复核确认冻结包已有尺寸变化时取消手势的逻辑，未命中滚轮的采样也不能排除短事件；
+100%→92% 的缩放来源仍未确定。调度分析辅助程序已用原有 13 次等待核实精确连接与缺失栈保留，
+未新增产品录制、修改产品源码或给出性能通过结论。
 
 ## File Structure
 
