@@ -11,14 +11,17 @@
 
 ## 当前实现与检查
 
-`cargo check --workspace --locked`、`cargo fmt --all -- --check`、`git diff --check` 和
-`cargo clippy --workspace --all-targets --locked -- -D warnings` 均通过。`cargo test --workspace --locked`
-最新结果为 **257 通过、3 忽略（26 个 suite，Release）**。workspace all-target Release
-Clippy 已在桌面偏好导入修复后通过；WASM 应用库 Clippy 在此前 Android 偏好修复后通过。
+2026-11-13 为草稿 PR 重新运行 `cargo test --workspace --release --locked --jobs 4`，结果为
+**258 通过、3 忽略（26 个 suite）**；`cargo clippy --workspace --all-targets --release --locked
+--jobs 4 -- -D warnings`、`cargo fmt --all --check` 和 `git diff --check` 均通过。
+`cargo check --workspace --locked`、native 非 Release Clippy 与 WASM 应用库 Clippy 是此前实现阶段的
+通过记录，本轮没有重新运行这些配置。
 
-`pnpm typecheck` 通过；直接运行 `./node_modules/.bin/biome check .` 最新检查 151 个文件无问题；
-`pnpm test` 审阅修复后的结果为 **72 个 Vitest + 32 个 Node 测试通过**（包含 3 项打包主机保护测试）。
-本机 `pnpm lint` wrapper 仍因 Biome 进程异常退出（OOM，退出码 254）；同一工作树的直接 Biome CLI 已检查通过，需在 CI/标准开发机复核 wrapper。
+同轮 `pnpm typecheck` 通过；直接运行 `./node_modules/.bin/biome check .` 检查 153 个文件无问题；
+`pnpm test` 结果为 **72 个 Vitest + 39 个 Node 测试通过**，
+`python3 scripts/nsh-macos-frames.test.py` 为 **17/17**。
+本机 `pnpm lint` wrapper 仍以 254 退出并报告 linter 异常终止（possibly out of memory）；
+同一工作树的直接 Biome CLI 已检查通过，wrapper/CI 路径仍待确认。
 
 `cargo tree -p oshwhub-nsh -e normal,build` 没有 `nsh-js` 或 `rquickjs`。所有 NSH crate 锁定
 =0.4.0；应用 crate、platform、engine 和 testing 关闭默认 JS 特性。
