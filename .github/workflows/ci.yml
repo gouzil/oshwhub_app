@@ -189,14 +189,19 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -accel on -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -feature Vulkan
           script: |
-            adb install -r tests/nsh-surface/.nsh/out/SurfaceProbe.apk
-            NSH_ANDROID_SERIAL=emulator-5554 node scripts/nsh-android-smoke.mjs
+            adb -s emulator-5554 install -r tests/nsh-surface/.nsh/out/SurfaceProbe.apk
+            NSH_ANDROID_SERIAL=emulator-5554 node scripts/nsh-android-smoke.mjs || {
+              mkdir -p .superpowers/sdd/nsh-migration-plan/android-gpu
+              timeout 15s adb -s emulator-5554 logcat -d > .superpowers/sdd/nsh-migration-plan/android-gpu/failure-logcat.txt || true
+              exit 1
+            }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nsh-android-development-signature
           path: |
             apps/nsh/.nsh/out/android/*.apk
+            tests/nsh-surface/.nsh/out/SurfaceProbe.apk
             .superpowers/sdd/nsh-migration-plan/android-gpu/
           if-no-files-found: error
 
