@@ -4,29 +4,31 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { waitForHierarchy } from "./nsh-android-ui.mjs";
 
 const serial = process.env.NSH_ANDROID_SERIAL;
 assert.ok(serial, "Set NSH_ANDROID_SERIAL to the test emulator/device");
 const adb = process.env.ADB || "adb";
-const call = (...args) => execFileSync(adb, ["-s", serial, ...args], { encoding: "utf8" });
+const call = (...args) =>
+  execFileSync(adb, ["-s", serial, ...args], { encoding: "utf8", timeout: 10_000 });
 const output = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../.superpowers/sdd/nsh-migration-plan/android-gpu",
 );
 mkdirSync(output, { recursive: true });
 const snapshot = () => {
+  // uiautomator can exit successfully without writing a new hierarchy.
+  call("shell", "rm", "-f", "/data/local/tmp/oshwhub-surface.xml");
   call("shell", "uiautomator", "dump", "/data/local/tmp/oshwhub-surface.xml");
   return call("shell", "cat", "/data/local/tmp/oshwhub-surface.xml");
 };
 async function waitFor(pattern) {
-  let xml;
-  for (let attempt = 0; attempt < 20; attempt++) {
-    xml = snapshot();
-    if (pattern.test(xml)) return xml;
-    await setTimeout(250);
+  try {
+    return await waitForHierarchy(snapshot, pattern);
+  } catch (error) {
+    writeFileSync(`${output}/failure.txt`, error.stack);
+    throw error;
   }
-  writeFileSync(`${output}/failure.xml`, xml);
-  assert.fail(`Timed out waiting for ${pattern}; see ${output}/failure.xml`);
 }
 function tap(xml, label) {
   const node = xml.match(new RegExp(`<node[^>]*(?:text|content-desc)="${label}"[^>]*>`));
@@ -62,7 +64,7 @@ tap(xml, "Resize GPU");
 xml = await waitFor(new RegExp(`Ready.*width: ${Math.ceil((320 * density) / 160)}`));
 for (let cycle = 0; cycle < 20; cycle++) {
   tap(xml, "Toggle GPU");
-  xml = snapshot();
+  xml = await waitFor(/<hierarchy\b/);
   assert.doesNotMatch(xml, /text="Overlay"/);
   tap(xml, "Toggle GPU");
   xml = await waitFor(/Ready.*backend:.*(?:Vulkan|Gl)/);
@@ -75,7 +77,7 @@ writeFileSync(`${output}/pcb.xml`, xml);
 const screenshot = execFileSync(adb, ["-s", serial, "exec-out", "screencap", "-p"]);
 writeFileSync(`${output}/pcb.png`, screenshot);
 tap(xml, "放大三维场景");
-xml = snapshot();
+xml = await waitFor(/<hierarchy\b/);
 const zoomed = execFileSync(adb, ["-s", serial, "exec-out", "screencap", "-p"]);
 assert.notDeepEqual(zoomed, screenshot, "PCB zoom must update displayed pixels");
 writeFileSync(`${output}/pcb-zoomed.png`, zoomed);
@@ -87,12 +89,12 @@ const [, left, top, right, bottom] = canvas.map(Number);
 const cx = Math.round((left + right) / 2),
   cy = Math.round((top + bottom) / 2);
 call("shell", "input", "swipe", `${cx}`, `${cy}`, `${cx + 80}`, `${cy + 40}`, "300");
-snapshot();
+await waitFor(/<hierarchy\b/);
 const rotated = execFileSync(adb, ["-s", serial, "exec-out", "screencap", "-p"]);
 assert.notDeepEqual(rotated, zoomed, "PCB drag must update displayed pixels");
 writeFileSync(`${output}/pcb-rotated.png`, rotated);
 
-tap(snapshot(), "Retained GPU");
+tap(await waitFor(/<hierarchy\b/), "Retained GPU");
 xml = await waitFor(/Retained Ready/);
 function screenPixels() {
   const raw = execFileSync(adb, ["-s", serial, "exec-out", "screencap"], {
@@ -117,7 +119,7 @@ assert.equal(redPixels(), 0, "retained surface initially has no board");
 tap(xml, "Hide retained GPU");
 xml = await waitFor(/Show retained GPU/);
 tap(xml, "Load retained board");
-xml = snapshot();
+xml = await waitFor(/<hierarchy\b/);
 tap(xml, "Show retained GPU");
 await setTimeout(600);
 writeFileSync(
@@ -128,8 +130,8 @@ assert.ok(
   redPixels() > 100,
   "show must draw the board updated while its SurfaceTexture was retained",
 );
-tap(snapshot(), "Retained GPU");
-tap(snapshot(), "Show drawing");
+tap(await waitFor(/<hierarchy\b/), "Retained GPU");
+tap(await waitFor(/<hierarchy\b/), "Show drawing");
 xml = await waitFor(/content-desc="二维画布"/);
 writeFileSync(`${output}/drawing.xml`, xml);
 writeFileSync(

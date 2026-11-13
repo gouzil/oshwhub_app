@@ -1010,6 +1010,27 @@ PR #16 首轮 CI 暴露三项环境/测试问题，本地分别复现后修正�
 
 来源目录为 `.superpowers/sdd/nsh-migration-plan/macos-baseline-plain-pan-r4-run1/`；独立审计为 `macos-plain-pan-r4-run1-audit.json`。本轮尚无 NSH 配对记录，不能比较新旧性能。进程归属的 compositor 呈现也不等于每次画布绘制；所有全量验收门槛继续保留。
 
+## Android CI 模拟器就绪修正（2026-11-14）
+
+`90d6c17` 的远端 run `43486672533` 最终为八项通过、一项失败。quality 的六视口 E2E
+240 项通过，NSH macOS/Linux/Windows、iOS 与三个旧桌面 job 通过；Windows 原有设置路径
+回归用例和明确启用的两项 D3D11 GPU 测试均通过。各平台 suite 及 ignored 数量不同，未合并计数。
+产物包头已核对 Windows x86_64 GUI、macOS arm64 和 iOS arm64 simulator；这不证明安装或性能。
+
+Android 旧版 APK、NSH 主包及 GPU 探针均构建成功，失败发生在模拟器检查首次读取 UI 时。
+原始日志先报告 runner 无权访问 `/dev/kvm`，模拟器启动耗时 461 秒；后续确实创建了 wgpu Vulkan
+设备，但 `uiautomator dump` 报告 `null root node` 且未生成 XML。脚本读取不存在的文件立即退出，
+尚未执行像素及生命周期断言，不能据此判定产品 GPU 回归或认定 KVM 是唯一原因。
+
+CI 现在只为临时 runner 用户授予 KVM 设备所有权，验证读写权限，并要求模拟器启用硬件加速，
+避免静默退回软件 CPU 模拟。UI 导出前移除旧 XML，观察阶段在有限次数和时限内重试，拒绝不完整
+层级，失败保存最后诊断；单次 adb 命令限制十秒，最终失败仍使 job 失败。像素、缩放、拖动和
+20 次生命周期断言全部保留。缺失根节点恢复、不完整 XML 拒绝及持续离线终止三项回归测试先失败
+后通过；本地 72 项 Vitest、42 项 Node 测试通过。修正后的真实模拟器 CI 结果仍待验证。
+
+本轮新的 45 分钟前台窗口已记录为 `macos-plain-pan-r4-window-2.json`，未修改首条基线引用的
+协议或原窗口记录。CUA 启动时发现 Mac 锁屏，尚未启动产品、回放或录制；等待手动解锁。
+
 ## 尚未验收的门槛
 
 尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows 正式 NSH 包的本机打包/安装；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。

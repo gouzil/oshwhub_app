@@ -177,13 +177,17 @@ jobs:
             env: { ...process.env, NSH_RUNTIME: androidRuntime() },
           });
           JS
+      - name: Enable emulator hardware acceleration
+        run: |
+          sudo chown "$(id -u)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
       - name: Verify NSH Android GPU lifecycle (software GPU)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -feature Vulkan
+          emulator-options: -no-window -accel on -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -feature Vulkan
           script: |
             adb install -r tests/nsh-surface/.nsh/out/SurfaceProbe.apk
             NSH_ANDROID_SERIAL=emulator-5554 node scripts/nsh-android-smoke.mjs
