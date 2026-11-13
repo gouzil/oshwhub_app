@@ -310,16 +310,18 @@ fn file_io_errors_are_visible_and_leave_existing_data_intact() {
     let directory = TempDirectory::new();
     let blocked = directory.0.join("blocked");
     fs::write(&blocked, "keep me").unwrap();
-    let mut saved = FileStore::new(blocked.join("preferences.json"));
-    assert_eq!(
-        ThemePreferences::load(&saved).unwrap_err().code,
-        "PREFERENCES_READ"
-    );
-    assert!(
-        ThemePreferences::default()
-            .set_accent(&mut saved, Accent::Orange)
-            .is_err()
-    );
+    for relative in ["preferences.json", "nested/preferences.json"] {
+        let mut saved = FileStore::new(blocked.join(relative));
+        assert_eq!(
+            ThemePreferences::load(&saved).unwrap_err().code,
+            "PREFERENCES_READ"
+        );
+        assert!(
+            ThemePreferences::default()
+                .set_accent(&mut saved, Accent::Orange)
+                .is_err()
+        );
+    }
     assert_eq!(fs::read_to_string(&blocked).unwrap(), "keep me");
 }
 

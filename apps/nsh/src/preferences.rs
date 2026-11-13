@@ -135,7 +135,28 @@ impl FileStore {
         match fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|error| AppError::new("PREFERENCES_READ", error.to_string())),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // Windows also reports NotFound when an ancestor is a file.
+                for parent in self.path.ancestors().skip(1) {
+                    if parent.as_os_str().is_empty() {
+                        continue;
+                    }
+                    match fs::metadata(parent) {
+                        Ok(metadata) if metadata.is_dir() => break,
+                        Ok(_) => {
+                            return Err(AppError::new(
+                                "PREFERENCES_READ",
+                                format!("外观偏好路径的父级不是目录：{}", parent.display()),
+                            ));
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(error) => {
+                            return Err(AppError::new("PREFERENCES_READ", error.to_string()));
+                        }
+                    }
+                }
+                Ok(Default::default())
+            }
             Err(error) => Err(AppError::new("PREFERENCES_READ", error.to_string())),
         }
     }
