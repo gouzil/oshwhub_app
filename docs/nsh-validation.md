@@ -979,6 +979,18 @@ trace 时长 90.662705 秒，录制器退出 0、无保护中止，整轮 237.64
 `offline-import.json`，也未导出并验证时钟、调度或呈现数据；不能据保存日志认定恢复数据有效。
 仍不作调度或呈现结论，也不安排新的前台重试。无窗口校准未覆盖真实产品的保存峰值，原磁盘预留不足。
 
+## CI 复核与当前显示配置（2026-11-13）
+
+PR #16 首轮 CI 暴露三项环境/测试问题，本地分别复现后修正：
+
+- macOS 两项二维缓存测试使用真实时钟。Headless 每次操作至少等 100ms 安静窗口，慢的驱动可能跨过产品 180ms 空闲细化边界。逐次点击增加 200ms 驱动延迟后，原测试得到 8 份而非 2 份 Drawing；改用 NSH 手动时钟，同样的延迟和原断言通过。最终只为这两项测试指定手动时钟，未修改产品细化逻辑。
+- 两个 Linux CI job 未安装 Vulkan ICD。Ubuntu 24.04 容器仅安装 loader 时 `vulkaninfo --summary` 返回 1 / `Found no drivers`；安装 `mesa-vulkan-drivers` 后返回 0 并列出 llvmpipe。CI 补齐 loader 和 Mesa；这些仍是软件 GPU 功能检查，不计入硬件性能验收。
+- Windows 自动换行把 LevelDB 快照 `CURRENT` 从 LF 改成 CRLF，恢复时尝试打开含 `\r` 的 MANIFEST 名称。通过 `.gitattributes` 禁止转换快照字节；`core.autocrlf=true` 的独立 checkout 已核对全部 6 个快照文件与仓库字节一致，未放宽损坏数据库检查。
+
+本地重新执行 `cargo test --workspace --locked --jobs 4`：26 个 suite、258 passed、0 failed、3 ignored；`cargo fmt --all --check`、CI YAML 语法解析、`git diff --check` 和原始呈现解析器 17 项测试通过。远端修复后的 CI 尚待重新运行，不以容器 adapter 探针替代应用 GPU 测试。
+
+当前仅有内建显示器 ID 1、120Hz、3456×2234px、DPR2、mode 54，不能混入此前外接 170Hz 的 r3 批次。新的 r4 协议准备了十次独立新进程、五对交错顺序的轻量 PCB2D 采集，13 份源文件和每个输出目录的 10 份录制插件文件均已核对哈希；不再尝试恢复大体积 SystemTrace。该协议仍不覆盖其他场景、GPU 总量、冷启动或全部平台，不授予验收通过。等待用户新的前台时间窗口后才能开始输入。
+
 ## 尚未验收的门槛
 
 尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows 正式 NSH 包的本机打包/安装；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。

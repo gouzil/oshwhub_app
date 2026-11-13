@@ -396,6 +396,8 @@ fn camera_changes_composite_cached_vectors_instead_of_replaying_them() {
     let drawings = Arc::new(Mutex::new(Vec::new()));
     let mut app = Headless::start(EngineConfig {
         viewport: Size::new(px(480.), px(640.)),
+        // Driver latency must not count as idle time between zoom inputs.
+        clock: nsh_core::time::Clock::manual(std::time::SystemTime::UNIX_EPOCH),
         ..EngineConfig::new(Root::of::<ViewerFixture>())
     })
     .unwrap();
@@ -448,6 +450,8 @@ fn interrupted_drag_refines_the_final_camera_when_the_viewer_becomes_active_agai
     let drawings = Arc::new(Mutex::new(0));
     let mut app = Headless::start(EngineConfig {
         viewport: Size::new(px(480.), px(640.)),
+        // Driver latency must not count as idle time between zoom inputs.
+        clock: nsh_core::time::Clock::manual(std::time::SystemTime::UNIX_EPOCH),
         ..EngineConfig::new(Root::of::<ViewerFixture>())
     })
     .unwrap();
