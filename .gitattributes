@@ -1,0 +1,2 @@
+# Preserve LevelDB snapshots byte for byte on Windows checkouts.
+apps/nsh/tests/fixtures/electron-theme/*/* -text

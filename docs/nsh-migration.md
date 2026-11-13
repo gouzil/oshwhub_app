@@ -1,0 +1,113 @@
+# 全量 NSH 迁移与性能验收
+
+状态：2026-11-07 用户选择并授权全 Rust NSH 页面方案；实现与跨端构建验证正在进行，最终切换仍受性能和真实设备验收门槛约束。当前对照产品版本为 `df1c0ef40cfc1743086c10a0d7ec63d3e69c006f`，最新证据见 [nsh-validation.md](nsh-validation.md)。
+
+## 目标与范围
+
+将发现、搜索/排序/分页、工程详情/正文/图片、BOM、设置/主题、关于、实验室，以及 PCB 二维、原理图和 PCB 三维工作区全部迁移到 NSH。保留现有公开只读功能、错误恢复、键盘/触摸/无障碍和持久化行为。最终入口、构建和 CI 都使用 NSH。
+
+覆盖 Android、iOS、macOS、Windows、Linux 和 Web。现有 Rust core 的 API、安全校验、历史下载/解密/重放、图元编译、拾取、板体网格与器件解析继续复用。不得将 Electron、React Native、Skia 或 Expo GL 查看器作为最终运行时依赖。
+
+用户的性能要求是迁移完成后没有下降。开发期间保留旧版供对照；功能或任一必需平台的性能未通过时，不删除旧实现、不宣称迁移完成。
+
+## 已核实的依据
+
+- 已读取引用聊天 `01a182be-9756-7592-ba04-dce18e2304dc`。旧探针针对 NSH 0.3.0，只证明基础互操作，未证明完整查看器或产品性能。
+- 本次固定 NSH **v0.4.0**，revision `e626a8dd8f8d8b277b9507cfd5ac74d0e67020f3`，2026-11-04 发布。CLI、Rust crates 和平台 runtime 必须同一版本，锁定依赖与下载校验和。
+- 此版本 Canvas 支持 SVG 路径、even-odd、文字、位图和原生 animated values；每次重新录制会替换全部绘制命令，不能把手势做成每帧重新遍历整板。
+- `#[native_components(...)]` 支持在应用 crate 注册 macOS/iOS/Windows/Linux 组件并进入正式宿主。macOS/iOS 使用 Metal，Linux 通过 GTK GLArea 当前上下文复用 wgpu GLES，Android 使用自有 TextureView/JNI 宿主连接 wgpu，Web 使用 Rust WebGPU/WebGL 表面。Windows 在 NSH 的同一 D3D11 设备上绘制索引/实例网格，再用 D2D bitmap 合成；各平台功能 smoke 均不能替代真实硬件性能对照。
+- 现有二维查看器使用图层矢量缓存、全板/视区两张有界光栅缓存、180ms 空闲细化、原子切层。现有三维查看器复用索引网格、实例绘制、渐进模型加载与资源释放。这些都是迁移验收条件。
+
+源码依据：NSH v0.4.0 的 `website/docs/canvas.md`、`native-components.md`、`packaging.md`、`examples/rust-exports`；本项目 `packages/ui/src/App.tsx`、`screens/ViewerPage.tsx`、`packages/pcb-viewer/src/PcbViewer.tsx`、`crates/core/src/pcb/scene.rs`。
+
+## 方案取舍
+
+1. **已选择：全 Rust NSH 页面。** 页面、状态、导航、主题、普通控件和绘制都使用 Rust；直接复用 core 的类型与异步 API，场景和网格留在 Rust，不添加应用自己的 TSX/QuickJS 数据边界。二维走 Rust NSH Canvas；各端三维使用已接入的 GPU 表面，Windows 使用 NSH 的 D3D11/D2D 互操作；完整硬件性能对照仍待验收。相应移植现有纯 TS 业务逻辑与回归断言。
+2. **未选择：NSH TSX 页面 + Rust 场景/绘制组件。** 可沿用页面语言，但仍保留 QuickJS 和跨语言边界，不采用此路线。
+3. **NSH 页面嵌入旧 RN/Skia/Expo GL。** 可作为迁移期间对照，但保留旧运行时，不满足全量切换目标，不能作为交付方案。
+
+全 Rust 路线是用户明确选择。视觉沿用现有界面与语义，不借迁移增加新功能或另做产品改版。Web 允许 NSH 自动生成的启动/wasm-bindgen 胶水；应用页面、状态和渲染逻辑仍为 Rust。
+
+## 代码边界
+
+- 新 NSH 应用集中在 `apps/nsh/`：`nsh.json`、`Cargo.toml`、`src/lib.rs`、`src/main.rs`、`src/pages/`、`src/components/`、`src/viewer/`；从固定版本官方 Rust 模板起步，配置 Rust 根组件。
+- `crates/core` 保持框架无关。通过少量明确接口取得场景与网格所有权；纯计算和网络/异步运行时按 native/Web 区分。禁止削弱 URL 白名单、超时、大小上限、AES 验证、解压上限和错误协议。
+- `packages/ui` 中纯 TS 数据/状态计算移植为 Rust 并保留现有行为断言；NSH 不导入 React/RN 组件、DOM、Node 或 npm UI。页面采用 NSH 原生虚拟列表、导航、输入与按钮，保留搜索防抖、过期响应保护、返回滚动位置和按需图片。
+- 场景、路径、图片、mesh 只在加载或内容变化时准备。Rust 组件直接持有场景/共享句柄；相机和图层命令只传小数据。原生组件 JSON props/events 不能承载每帧网格。
+- 产品 crate、原生 runner 及 Rust headless 测试禁用 NSH 的 JS 默认特性；用 `cargo tree` 与产物检查确认不链接 `nsh-js`、`rquickjs`，不能只以没有 `.tsx` 文件为证。
+- 主题 token 和共用控件集中管理；PCB 图层颜色仍来自场景数据。保存原有主题配置，迁移失败不能覆盖原值。所有持久化迁移须幂等。
+
+## 二维与原理图
+
+复用同一 `Scene`、批次顺序和 Rust 拾取；预解析 SVG 路径，保留填充规则、透明度、描边端点、文字角度/镜像/对齐、图片和中文。
+
+首先验证 Rust NSH Canvas 的保真和缓存成本。沿用场景的 nonzero 填充及规范化孔洞方向，不能把整层铜改成 even-odd。手势仅改变 retained/animated transform，不重新编译工程、不为每个图元建 NSH 节点、不复制整板。保留有界全板/视区缓存、空闲细化和切层原子替换；缓存分配失败时保留可操作的预览并显示可恢复错误。
+
+真实大板 Web 诊断已复现相机 slots 导致 Canvas 每帧重建整板路径；共享 Rust viewer 现将相机 transform 放在有界 overview/detail Drawing 外，180ms 空闲细化。Web 的实际路径计数与 Retina 像素回归已通过，headless 诊断不构成正式性能验收。Windows NSH Canvas 使用 D2D 向量 command-list，不能据 Web 缓存表现外推，须单独测量。
+
+若 NSH Canvas 的平台回放无法达到基线，用同一 NSH 原生组件机制承载 Rust GPU 二维绘制，仍属于 NSH 应用且不引入 RN/Expo。该切换必须有具体基准证明，不能只凭推测增加第二套后端。
+
+## 三维
+
+用共享 Rust GPU 渲染器消费现有板体/器件顶点、索引、材质和实例变换。优先使用 NSH 已依赖生态中的 wgpu，新增直接依赖必须锁版本并证明平台兼容。每种 mesh 上传一次；相机只更新小 uniform；空闲不持续绘制，隐藏工作区暂停，销毁时释放 GPU 和监听资源。
+
+macOS/iOS 注册真实 Metal 表面；Android 通过自有 Java TextureView/JNI 宿主接入 wgpu（模拟器实测 Vulkan）；Linux 使用 GTK GLArea 外部 GLES framebuffer，保留 GPU 内绘制与 NSH 裁剪/叠层；Web 使用自有 wasm-bindgen/web-sys 表面。Windows 复用 NSH 的 D3D11 设备，保存/恢复绘图状态，绘制到有界 BGRA/depth target 后由 D2D 按 NSH 的 transform/clip/overlay 合成；同一 WGSL 经 Naga 生成 HLSL，着色器只编译一次。该路径已在 Parallels D3D11 通过像素、实例与生命周期回归，避免要求旧版支持的 D3D11 设备必须有 D3D12。Web `nativeComponent` 仍为空视图，不能依赖它承载 GPU。每个平台必须验证首帧、布局、焦点、裁剪/叠层和重复销毁；模拟器和 Linux 软件 GLES 功能结果不能作为真实硬件性能证明。WebGPU 不可用时须有经过验证的兼容 GPU 路线或明确验收失败，不能静默退回每帧整板投影。
+
+保留孔洞、板厚、顶底铜/丝印、官方器件关联、渐进加载、失败重试、相机约束、2D/3D 切换时的二维相机/图层状态。SVG/OBJ 等不可信数据继续在已有边界校验。
+
+## Web/WASM
+
+先实际编译定位当前失败，再做最小 target-specific 拆分：UUID 随机数、Tokio 功能/线程任务、reqwest 浏览器路径、计时、解密依赖。纯计算继续共用；Web 网络需保留域名/字节限制与错误语义，并明确浏览器 CORS 能否覆盖现有下载域。
+
+旧 Web 通过 `http://127.0.0.1:4318/bridge` 调用本地核心，本身不支持独立公共静态托管。NSH Web 保持本地服务范围，由同源 loopback `/fetch` 提供受白名单与字节上限约束的下载，计算仍在 Rust/WASM。若后续公共 Web 需要远程代理，须单独说明部署与信任边界；当前迁移不新增远程服务，也不能把离线夹具通过视为在线通路验收。
+
+## 功能验收
+
+复用现有测试的业务断言和自制夹具，分别移植到 NSH headless、Web 浏览器和平台测试：
+
+- 发现/搜索/排序/分页：取消/过期请求、重复页、418/离线/重试、隐藏列表不分页、返回位置。
+- 详情/图片/BOM：安全正文、按需下载/缩略回退、长图比例、字段/缺失值/数量 0、筛选与板子切换。
+- 导航/主题：窄屏、横屏、桌面、软键盘、系统返回、主题即时生效与保存失败提示。
+- PCB/原理图：路径/中文/图片像素、拾取、图层稳定顺序、切层/面板不重置相机、缓存失败恢复。
+- 3D：真实板体/孔洞/器件、渐进加载、重试、旋转/缩放、隐藏暂停、释放和重复打开。
+- 无障碍：焦点可达、隐藏视图不可聚焦、44px 触摸目标、减少动态效果、大字体、VoiceOver/TalkBack。
+
+## 性能验收（严格对照，不预留降级比例）
+
+对照旧版 `df1c0ef` 与迁移版 Release。同一设备/OS/GPU/刷新率/像素密度/视口/输入数据/缓存状态，不同时运行两版测量。网络用固定响应隔离噪声；真实在线速度另列。启动、2D、原理图、3D 和普通页面分别报告。
+
+固定小型示例、含中文/图片原理图、已有大型真实 PCB/器件样本；缺少可重放大板时先记录缺口并准备有界合成压力样本，不能宣称合成样本代表真实板。
+
+每组至少 10 次冷启动；交互至少 5 组各 60 秒，脚本固定平移、双指/滚轮缩放、切层、拾取、3D 旋转和返回。测量：
+
+| 指标 | 通过条件 |
+| --- | --- |
+| 冷启动与数据就绪至可交互首帧 | 中位数与 p95 不高于旧版 |
+| 2D/原理图/3D 交互帧时间 | p50/p95/p99 和丢帧比例不高于旧版；已有 60FPS 场景保持 16.67ms 预算 |
+| 切层、拾取、BOM 筛选 | p95 不高于旧版 |
+| CPU、峰值 RSS/平台进程内存、GPU/纹理分配 | 同阶段不高于旧版；记录指标定义与采样方法 |
+| 反复打开/关闭 20 次 | 释放后内存无持续增长、无监听/场景/GPU 泄漏 |
+| 手势期间工程编译、路径解析、网格上传 | 次数均为 0；只允许相机/小状态更新 |
+
+估算重复测量噪声并报告置信区间；结果无法区分时标为“无结论”并增加样本，不能把任意 5%/10% 回退当成通过。headless 计时、SwiftShader 截图和微基准仅作诊断，不能代替对应原生产品的 GPU/整应用性能验收。未在本机可测的平台需实际 CI/设备结果，配置存在不等于通过。
+
+原生 SVG 的嵌入文字/图片由共享 Rust resvg 适配，使用现有 Noto Sans SC，保留解析树并按 overview/detail 的可见区域重新栅格化；仍通过 NSH Canvas 绘制。每片最多 4096 边长/4,194,304 像素，图片缓存总量及中间图层、XML/解压、解码都有边界，逐张 CPU 作业可取消后续处理。文件/网络和嵌套 SVG 图片引用目前明确报错；不能以省略元素或一张固定 PNG 代替保真验收，完整原生兼容/像素范围仍由验证矩阵确认。
+
+## 实施顺序与交付
+
+1. 冻结旧版输入/功能与性能基线，建立能保存原始样本并拒绝无效对照的比较工具。
+2. 固定 NSH 全 Rust 工程，直接接入 core 类型与 API 并完成 native/Web 编译和错误协议；先验证正式包宿主及无 QuickJS 依赖。
+3. 迁移 PCB 二维和原理图并过保真/性能门槛。
+4. 迁移三维 GPU 表面并过真实板/模型/资源门槛。
+5. 迁移全部普通页面、持久化和原生导航；更新跨端构建与 CI。
+6. 全平台功能/性能对照，解决所有回退后切入口，删除旧运行时/依赖/过时脚本并更新说明。
+
+每一步保留原始命令、版本、样本、报告和未验收项。只提交本目标文件，不修改主工作区已有未跟踪文件。不部署、不发布应用商店、不改远端服务。
+
+## 本轮已验证的旧版基线
+
+2026-11-06，主工作区 `df1c0ef`：`pnpm test` 72 个 Vitest 和 22 个 Node 测试通过；`cargo test --workspace --locked` 105 通过、3 忽略；`playwright test tests/e2e/performance.spec.ts --project=wide-1440 --workers=1` 4 通过；原理图/三维六视口 `schematic.spec.ts`、`three.spec.ts` 42 通过；`pnpm build:web` 通过。这里只是回归正确性/缓存行为证据，尚无整应用前后性能数字。既有 Web 产物包含约 8.08MB CanvasKit WASM 与 10.60MB 中文字体，不能仅凭迁移后包更小推断启动或交互更快。
+
+独立 builder check 已完成，结论为 `nothing important left`；Android/Web 宿主未知应作为早期验证任务，只有实际发现需要新增在线代理或缩减既有兼容范围时才另作用户决策。仓库有意忽略 `docs/superpowers/`，批准后的长期设计与验收记录进入正常跟踪的 `docs/nsh-migration.md`；执行账本记录每步证据。
+
+旧版性能探针在默认 headless Chromium 下无法创建 WebGL。单独验证加入 `--use-gl=angle --use-angle=metal` 后实际 renderer 为 `ANGLE Metal Renderer: Apple M3 Max`。暂停时已停止探针及其本地服务；未写出有效时延样本，失败运行不得计入性能基线。

@@ -4,20 +4,22 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(getrandom_backend, values("custom"))'] }
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-reqwest.workspace = true
 url.workspace = true
 uuid.workspace = true
+web-time = "1.1"
 scraper = "0.24"
 pulldown-cmark = "0.13.5"
 html-escape = "0.2"
-aes-gcm = "0.10"
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
 flate2 = "1.1"
 hex = "0.4"
 base64 = "0.22"
@@ -25,6 +27,18 @@ futures-util = "0.3"
 lyon_tessellation = "1.0"
 i_overlay = "9.1.0"
 tobj = "4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }
+js-sys = "=0.3.106"
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "=0.4.79"
+web-sys = { version = "=0.3.106", features = ["Window", "AbortController", "AbortSignal", "Headers", "Request", "RequestInit", "RequestMode", "RequestRedirect", "RequestCredentials", "Response", "ResponseType", "ReadableStream", "ReadableStreamDefaultReader"] }
 
 [[example]]
 name = "smoke"

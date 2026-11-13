@@ -1,0 +1,168 @@
+# 全 Rust NSH 迁移 Implementation Plan
+
+> **For agentic workers:** Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 全部页面与 PCB/原理图/三维渲染切换到 Rust NSH，并用对应平台的 Release 对照证明性能没有下降。
+
+**Architecture:** 一个纯 Rust NSH 根组件，直接调用 `oshwhub-core` 的强类型接口。NSH owns UI/layout/accessibility；Rust owns scene/cache/GPU buffers。各端使用已接入的 GPU 表面；Windows 复用 NSH 的 D3D11 设备并通过 D2D 合成，完整真实硬件对照仍待验收。
+
+**Tech Stack:** Rust 1.98.1、NSH =0.4.0、现有 Rust core、NSH Canvas、与 NSH 兼容的 wgpu、已有 Playwright 与原生平台测试。
+
+**Spec:** `docs/nsh-migration.md`（用户 2026-11-06 明确选择全 Rust 方案）。
+
+## Global Constraints
+
+- 覆盖 Android、iOS、macOS、Windows、Linux 和 Web；保留当前全部公开只读功能。
+- 禁止最终依赖 Electron、React Native、Skia、Expo GL 或应用 TSX/QuickJS；Web 自动生成的启动/wasm-bindgen 胶水除外。
+- 固定 NSH =0.4.0，对照产品 commit `df1c0ef40cfc1743086c10a0d7ec63d3e69c006f`。
+- URL 白名单、超时、下载/历史/解压/图元/GPU 上限、AES 验证、错误恢复和无障碍不得削弱。
+- 手势只更新相机等小状态；整板编译、路径解析与 mesh 上传次数均为 0。
+- 每项性能中位数/p95 等按设计逐项与旧版对照，不预留 5%/10% 的降级比例；噪声内无结论不能算通过。
+- 不部署、不发布应用商店、不修改远端服务。旧运行时保留至全量验收通过。
+
+## Review Focus
+
+- 浏览器 `nativeComponent` 为空，不能把桌面注册成功当 Web 3D 支持；Task 2 必须检查真实像素、裁剪、焦点与销毁。
+- 旧主题存储迁移失败不能覆盖用户选择；Task 5 检查损坏值、存储拒绝及重复迁移。
+- 场景在切换页面/2D/3D 后异步完成，不能覆盖新页面或使用已销毁 GPU；Tasks 3/4/5 检查交错响应与释放。
+- 密集真实 PCB 的图元/实例规模不能被小夹具掩盖；Tasks 3/4/6 用真实重放与独立合成压力样本分别报告。
+- OS/GPU/浏览器兼容范围不得悄悄降低；Tasks 2/6 记录旧版与 NSH 的版本下限并实际验证，不支持时明确未通过。
+
+## Current status (2026-11-10)
+
+Rust NSH 页面、core/WASM 通路、二维/原理图 viewer、六端三维 GPU viewer（Windows 使用 D3D11/D2D）、业务页面与性能比较器已在工作树实现。workspace Release tests 最新为 258 通过/3 忽略（26 组），native all-target Release Clippy 通过；此前 workspace/WASM/Linux Clippy 与 NSH check 通过；Web 最新 26/26 回归包含六视口中文、SVG text/image、二维路径缓存与 Retina 像素。Android Vulkan probe 已在手机模拟器验证缩放/旋转与 20 次销毁；Linux GTK GLES 像素/方向/叠层/resize/20 次销毁通过，Ubuntu 容器已生成真正 ELF aarch64 包并启动加载在线列表。此前 macOS 跨桌面生成的 Windows/Linux 假产物记录已撤回；新 Linux 包由 Linux 本机构建，Windows 两项原生 D3D11 回归已在 Windows 11 ARM64 / Parallels Display Adapter（x64 测试程序经系统兼容层）通过，正式包的安装/启动仍待验证。真实 RK3576 大板 Web 诊断已发现并修复二维每帧路径重建，采用有界 overview/detail Canvas 与外部相机 transform；同口径单组 Task CPU 从 19.330 秒降至 0.907 秒（旧版 1.154 秒），但 Windows Canvas 仍是向量 command-list，二维性能须另测。随后真实 Web 3D 暴露了准备任务被下一相机 tick 取消的问题，已将任务归属稳定 surface owner 并通过受控真实 GPU Promise 回归；此前 3D 低 CPU 诊断因画面冻结已撤回。最终迁移仍未验收：没有合格的真实旧版 vs NSH Release 性能样本，各端真实硬件/无障碍矩阵未完成。真实在线 Web 已走通发现/详情/BOM/PCB 2D/3D/原理图，并明确显示 1 项不可读取的官方模型。Mac 最新 `b69f912` 官方包已实际核实全宽查看器、PCB 滚轮、原理图、三维画面与返回导航。其后已完成连续输入诊断，结果与缺口见下文；旧入口继续保留。
+
+原生 SVG 保真回归已增加共享 Rust 适配：保留带字体/内嵌位图的解析树，按可见区域细化为有界 PNG，继续由 NSH Canvas 合成；逐图有界 CPU 作业可在页面取消后停止后续处理。8 项 Rust 图片测试和 Android 模拟器 596% 深缩放、半透明/孔洞/中文/内嵌 PNG 像素回归通过。固定低分辨率 PNG、损坏图片静默省略和整批同步 CPU 工作的审阅问题均已处理；这不替代六端原生像素矩阵与性能验收。当前检查口径为 native all-target / WASM lib；WASM all-target 尝试因仅支持原生的 Headless/Tokio 测试宿主失败，已在验证记录说明。
+
+Mac 最新连续平移诊断已完成统一 12 秒预热和各 5×61 秒输入；全部输入、CPU 边界与进程树
+footprint 覆盖通过检查，CPU 中位数旧版 10.67 秒、NSH 6.80 秒，输入期间采样 footprint 峰值中位数
+分别为 1,263,918,208 / 599,197,688 字节。帧时间仍未通过：NSH 第 1 组保留了 123.530208ms
+和 100.000667ms 长间隔，第 3 组因原始显示事件与汇总时间不一致被严格解析拒绝，只有四组有效。
+随后重启同包，开启/关闭 footprint 各补录一组；两份帧记录均解析通过，最大间隔约 35.29ms，
+未复现大于 100ms 的空档，但单组不能证明原因或修复。补录单独保存，原始批次没有排除长间隔或将
+拒绝样本算通过；完整来源、逐组数值和限制见 `docs/nsh-validation.md`。
+这仍不是全 Mac/全平台性能验收，旧入口继续保留。
+
+Mac GPU 计量已完成无窗口已知分配量校准，但官方 live 通路未覆盖旧版产品，不能用空流当零值。
+已另行校准两版共用的本地 Metal 分配采样库，并实测自动截止。通过单独测试启动器，已在旧版 GPU 进程
+及 NSH 主进程确认连续读数；渲染后端覆盖、场景/视口配对和整体采样开销仍待核实。
+第二版已补足场景就绪后显式开始、逐组停止和关闭查看器后的覆盖，已知分配、截止和损坏数据自检通过；
+两版各一次关闭后的读数仍不构成释放、泄漏或性能通过。五组开启/关闭采样的短轨迹配对现已执行：
+CPU 速率配对均值变化为旧版 +0.479%、NSH −0.959%，对应描述性 95% 区间分别为
+[-5.644%, +6.601%] / [-3.169%, +1.250%]，均不能证明零开销。旧版全部 7,839 份已发布交换通过原始事件核对，
+恢复 1 份缺失关联；NSH r1 预热阶段的一份已发布交换缺少对应原始 ON_GLASS 记录，整份帧采集仍严格拒绝。
+NSH r2 独立补录通过默认严格解析，中央五秒窗口的 p50/p95 均为 16.666750/25.000125ms；
+CPU 配对变化 −4.573%，描述性 95% 区间 [−10.580%, +1.434%]，仍不证明零开销。
+本轮漏存开跑前的显示配置，结束后仅检测到内置 120Hz 屏，旧版 r1 为外接 170Hz 屏；
+只能保留为本会话采样开关诊断，不能跨批次比较产品性能，也未替换 r1 的拒绝记录。
+短组只比较已载入采样库的激活与待命状态，不覆盖注入/启动成本，也不是 5×60 秒验收。
+后续正式帧时间/CPU 对照使用未注入采样器的原包，GPU 分配另作阶段核验；采集前后均须保存并核对显示配置、窗口与画布几何。
+共享 IOSurface 补充校准已证明 Metal 计数会计入纹理别名，且遗漏未导入的表面，不能直接当物理 GPU 峰值；
+全局 IOAccelerator 计数无法归属到应用；`footprint --unmapped` 需要管理员权限，但另一条 `vmmap` 通路已无需提权读到
+进程的 mapped/unmapped 图形分类。共享表面在三个持有阶段均计为 64 MiB，增加纹理别名没有重复计入该 IOSurface 分类，
+释放后归零；这仅验证该分类，尚不证明所有图形分类或跨进程共享分配的去重。每次读取约半秒，正式采样开销仍待验证。
+具体边界已保留原始证据。
+所有步骤均未修改原产品包、产品源码或已授权输入回放程序。
+具体数值、原始证据与边界见 `docs/nsh-validation.md`。
+
+无注入采样器的新进程 r3 对照已核对前后显示和等画布：四次录制完成，但旧版首轮未响应拖动，
+另一次预热因指针偏离中断，均不计入比较。目前仅旧版一份、NSH 两份可用诊断，完整配对仅一对。
+旧版 / NSH 第二次中央 60 秒 p95 同为 23.529625ms，但 NSH 保留了最长 705.887125ms 的呈现空档，
+旧版最长 182.354125ms；相应输入仍正常发送，根因未明。全部失败和长间隔保留，尚不能判定性能不下降。
+下一步须定位长间隔并补足独立样本，不能用较低 CPU、相同分位数或缩短窗口替代完整性能门槛。
+补充上下文与一次 CPU 调用栈诊断已完成：未复现长空档，运行样本以 NSH 可见性遍历为主要开销。
+该次缩放从 100% 变为 92%，仅作诊断；等待线程未采样，长空档和缩放来源继续待查。
+系统调度方法已在无窗口进程将 13 次已知等待与阻塞调用栈精确连接，帧记录插件组合也已校准。
+下一次产品诊断已准备，等待新的前台窗口；校准结果不代替实际产品数据。
+离线复核确认冻结包已有尺寸变化时取消手势的逻辑，未命中滚轮的采样也不能排除短事件；
+100%→92% 的缩放来源仍未确定。调度分析辅助程序已用原有 13 次等待核实精确连接与缺失栈保留，
+随后产品调度诊断保持 100% 缩放与精确平移，但保存超时，完整失败记录保留，不提供帧或调度结论。
+无窗口完整 90 秒校准已成功保存：整轮约 237.65 秒，其中录制结束后的保存约 145.05 秒；
+录制结束后退出目标进程不影响保存。178 段长阻塞中 175 段连接到已知等待栈，另外三段及全部缺失栈保留。
+随后 r3 已完成完整 12 秒预热和 61 秒轨迹，缩放保持 100% 且板框精确平移；录制结束后及时关闭窗口。
+但 Instruments 在保存空间索引时耗尽磁盘并终止，仍无有效调度或呈现结论。
+已保留失败原始流并清理自有已完成录制的临时流，归档数据核对未变；离线导入日志报告已保存 trace，
+但尚未导出或验证恢复数据，不会直接追加前台重试。这些结果不构成性能通过，也没有修改产品源码。
+
+## File Structure
+
+- `apps/nsh/nsh.json`、`Cargo.toml`、`theme.json`、`src/lib.rs`：产品声明、版本、主题与纯 Rust 根组件。
+- `apps/nsh/src/main.rs`：直接运行桌面原生窗口；NSH CLI 管理其他平台 runner。
+- `apps/nsh/src/components/`、`src/pages/`、`src/model.rs`：共享控件、页面与可独立测试的业务状态。
+- `apps/nsh/src/viewer/`：二维/原理图、相机、缓存、三维 renderer 和平台表面。
+- `apps/nsh/tests/`：真实 Rust NSH headless/模型/渲染边界测试。
+- `crates/core/src/client.rs`、`lib.rs`、`pcb.rs`、`schematic.rs` 及各计算模块：仅为复用强类型 API、WASM 与共享数据所有权做必要适配。
+- `scripts/`、`tests/e2e/`、`.github/workflows/ci.yml`：性能采集/比较、Web 回归与各端产物。
+- `docs/nsh-validation.md`：命令、版本、输入、原始样本与所有验收缺口。
+
+### Task 1: 可测试、无 QuickJS 的 Rust NSH 应用
+
+**Files:** Create `apps/nsh/{nsh.json,Cargo.toml,theme.json,src/lib.rs,src/main.rs,src/components/mod.rs,tests/shell.rs}`; modify root `Cargo.toml`、`Cargo.lock`、`.gitignore`；create `docs/nsh-validation.md`。
+
+**Interfaces:** Consumes `nsh_core::element::Root`、现有 core 类型；produces `oshwhub_nsh::App` 根组件、`registry()`、`cargo run -p oshwhub-nsh` 与 `nsh.json` Rust runner 配置。
+
+- [x] 校验 NSH release archive 的 SHA-256 后用其 Rust 模板建立工程；所有 NSH 依赖精确锁定 =0.4.0，engine/platform/testing 均关闭 JS 默认特性。
+- [x] 对官方初始 app 添加 headless 测试：打开设置、切换外观、进入关于并返回，验证只更新对应状态和可访问导航。Run `cargo test -p oshwhub-nsh --test shell`；Expected: 因产品导航尚不存在而失败。
+- [x] 实现真实 Rust shell、共享 Button、语义主题 token、关于/实验室入口和外观状态绑定；后续页面的未实现功能不伪装成功。
+- [x] Run `cargo test -p oshwhub-nsh --test shell`；Expected: 通过；Run `cargo tree -p oshwhub-nsh -e normal,build`；Expected: 无 `nsh-js`/`rquickjs`。
+- [x] Run `cargo run -p oshwhub-nsh`；Expected: 真实原生窗口、可点击导航与主题；保存截图和实际进程信息。
+- [x] Run `cargo fmt --all --check`、`cargo test --workspace --locked`；Expected: 新旧 Rust 测试全通过；显式暂存此任务文件并提交。
+
+### Task 2: 全平台宿主与强类型 core / WASM 通路
+
+**Files:** Modify `crates/core/{Cargo.toml,src/client.rs,src/lib.rs,src/pcb.rs,src/schematic.rs}`；create `apps/nsh/src/{services.rs,viewer/surface.rs,viewer/platform/}`、必要 Android NSH 宿主；tests `apps/nsh/tests/services.rs`、`surface.rs`。
+
+**Interfaces:** Consumes Task 1 root and public `Api`/`HttpClient`/`Scene`/`Scene3d`；produces reusable service calls returning existing `Result<T>`、`Scene`/mesh ownership and a working GPU surface tied to NSH layout/disposal on each platform。
+
+- [ ] 先编译 `nsh check` 和 `nsh package --target web`，记录真实失败；对损坏 ID、无限/超大拾取、下载重定向/超限与过期响应写失败用例。Expected: 平台边界缺失或新接口测试失败，保留既有安全测试。
+- [ ] 做最小 target-specific 运行时、UUID、计时和网络拆分；原生继续复用 reqwest/Tokio，Web 使用合法浏览器网络路径；禁止将网络/计算搬回 JS 业务层。
+- [ ] 验证 macOS/iOS/Windows/Linux 注册、Android 自有 NSH 宿主，以及 Web 自有 Rust 表面的首帧、调整尺寸、裁剪/叠层、焦点和销毁；缺失表面显示错误，不显示假就绪。
+- [ ] Run `cargo test --workspace --locked`、`nsh check`、各 target package 和 surface 测试；Expected: 所有可执行环境真实通过；无环境者保持未验收，记录可复现 CI/设备步骤。
+- [ ] 若 Web 网络必须新增受控代理，或 NSH 下限提高造成既有兼容损失，先给出实测证据与具体影响再交用户决定；其余实施自主推进。提交本任务文件。
+
+### Task 3: PCB 二维与原理图全部 Rust 渲染
+
+**Files:** Create `apps/nsh/src/viewer/{mod.rs,viewport.rs,drawing.rs,cache.rs,two_dimensional.rs}`、`apps/nsh/tests/{viewport.rs,drawing.rs,viewer.rs}`；reuse core scene/picking；move font/license assets without duplication after acceptance。
+
+**Interfaces:** Consumes Task 2 scene ownership and surface; produces shared Rust viewer for PCB/schematic, cached parsed paths, bounded overview/detail rasters, retained camera/layer/selection state。
+
+- [ ] 移植现有 viewport/raster/pictures 的独立手算断言和自制夹具；增加铜层 nonzero 重叠、孔洞、中文、旋转/镜像、图片与失败缓存保留测试。Run `cargo test -p oshwhub-nsh --test viewer`；Expected: 迁移行为缺失而失败。
+- [ ] 先实现 Rust NSH Canvas 的正确显示与 retained transform，测其平台回放；仅在具体基准不满足时改为既定 NSH GPU 表面，保留同样的二维契约。
+- [ ] 实现原子切层、180ms 空闲细化、有界预览/细节、单/双指/滚轮/键盘/无障碍操作、拾取与属性；面板不缩放/重建画布，过期响应不能改新场景。
+- [ ] Run 新测试与原有 core tests、六视口 Web 像素/交互回归；Expected: 完整图元和状态保持正确，手势期间编译/路径解析次数 0，失败可恢复。
+- [ ] 对应设备 Release 对照二维/原理图性能；保存原始样本与缺口，提交。
+
+### Task 4: PCB 三维全部 Rust GPU 渲染
+
+**Files:** Create `apps/nsh/src/viewer/{three_dimensional.rs,camera3d.rs,mesh.rs,gpu.rs,board.wgsl}`、`apps/nsh/tests/{camera3d.rs,gpu.rs}`；reuse Task 2 platform surfaces and core `solid`/`models`。
+
+**Interfaces:** Consumes existing packed mesh/instances, scene ID and NSH surface; produces indexed/instanced renderer with small camera uniforms, progressive models and bounded lifecycle。
+
+- [ ] 移植现有 camera/mesh/gl3d 业务断言；失败用例覆盖底面复合变换、索引/缓冲上限、迟到模型、隐藏暂停、初始化中途失败和释放。Run `cargo test -p oshwhub-nsh --test gpu`；Expected: 尚未实现而失败。
+- [ ] 实现索引与实例绘制、与现有一致的深度/光照/颜色、每 mesh 一次上传、视图改变时按需绘制、模型并发/重试及统计；不增加每帧 CPU 全板投影。
+- [ ] 各平台实际运行包含板厚/孔洞/铜/丝印/器件的场景；检查 2D/3D 切换状态与 20 次重复打开后的资源释放。
+- [ ] Run 单测、Web 六视口/原生交互和 Release 对照；Expected: 视觉/行为正确，所有资源有界，手势 mesh 上传 0，性能不回退。保存证据并提交。
+
+### Task 5: 全部业务页面、导航与持久化
+
+**Files:** Create `apps/nsh/src/{model.rs,preferences.rs,pages/discover.rs,pages/project.rs,pages/bom.rs,pages/settings.rs,pages/about.rs,pages/lab.rs}` and shared controls; tests `model.rs`、`pages.rs`、`preferences.rs`。
+
+**Interfaces:** Consumes Tasks 1/2 shell/services and Tasks 3/4 viewers; produces all original public workflows with owned Rust signals, virtualized collections and original theme preference values。
+
+- [ ] 将 FeedController、主题解析、BOM 筛选、bridge 过期请求/错误、正文/图片、导航 E2E 的行为断言移植为 Rust/UI 测试。Run tests；Expected: 对应未迁移行为失败。
+- [ ] 直接调用现有强类型 API，实现搜索防抖/提交/清除、排序/刷新/分页、去重、滚动恢复、详情/安全正文/按需图片/缩略回退、响应式 BOM 和过滤。
+- [ ] 使用 NSH 虚拟列表、系统导航/返回和基础控件；补全加载/无结果/418/离线/重试、软键盘、短横屏、大字体、减少动态效果和隐藏区域焦点隔离。
+- [ ] 幂等迁移主题/外观与应用身份；损坏/未知值回退默认，保存失败可见且不覆盖旧值。验证 NSH namespace 与旧 Android/iOS/Electron/Web 存储的真实位置。Android 旧 SharedPreferences 与桌面 Electron LevelDB 导入已实现并回归；桌面读取只操作有界内存快照，保留旧文件，完整 Release 257/3 忽略及独立读取库 Debug/Release 156+3 通过。其余平台的最终运行矩阵仍随 Task 6 验收。
+- [ ] Run Rust/UI/Web 六视口回归、VoiceOver/TalkBack 和 Release 列表/BOM/启动性能对照；Expected: 全部工作流保持、异步交错不会回写错误页面。提交。
+
+### Task 6: 完整性能门槛、产物与最终切换
+
+**Files:** Add repeatable baseline/candidate capture and comparison under `scripts/` and `tests/`；modify `package.json`、workspace/build configs、`.github/workflows/ci.yml`、README/docs；remove old UI/runtime only after acceptance。
+
+**Interfaces:** Consumes all prior tasks; produces per-platform same-input Release evidence, NSH entrypoints/artifacts, and a dependency tree free of old UI runtimes。
+
+- [ ] 比较器失败测试覆盖缺少数据、错误设备/GPU/视口/样本 hash、样本不足、空值/NaN、部分指标回退和噪声内无结论；Expected: 任何不可信或回退对照均不能通过。
+- [ ] 收集每组 10 次冷启动、5×60 秒交互、20 次生命周期以及 CPU/RSS/GPU 指标；小夹具/真实大板/合成压力分别归档；真实 GPU 与 SwiftShader 明确区分。
+- [ ] 对所有功能与平台要求逐项审计，修复每项回退；Expected: 设计每个指标均有对应范围的可靠证据，未测项不得标完成。
+- [ ] 更新各平台 NSH 构建、签名/安装说明和 CI 产物，验证正式包真实注册表面、字体/图片齐全与无 QuickJS；之后才切入口并删除 RN/Electron/Expo/Skia 和过时桥接/脚本。
+- [ ] Run 全量 fmt/clippy/test、Web/原生回归、六平台 package 与最终同口径对照；Expected: 全部通过。独立整分支审阅并修复重要问题，最终提交；按用户授权决定远端交付，不能自动部署。

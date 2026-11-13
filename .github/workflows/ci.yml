@@ -14,9 +14,11 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: Install Rust NSH native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libegl-dev libgles-dev libvulkan1 mesa-vulkan-drivers
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -40,6 +42,58 @@ jobs:
           path: |
             playwright-report
             test-results
+
+  nsh-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos
+          - os: windows-latest
+            target: windows
+          - os: ubuntu-24.04
+            target: linux
+    runs-on: ${{ matrix.os }}
+    env:
+      RUST_MIN_STACK: '268435456'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev libgtk-4-dev libegl-dev libgles-dev libvulkan1 mesa-vulkan-drivers xvfb
+      - name: Configure Windows libclang
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '"LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV'
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.98.1'
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: cargo install nsh-cli --version 0.4.0 --locked
+      - run: cargo test -p oshwhub-nsh --locked
+      - run: cargo clippy -p oshwhub-nsh --all-targets --locked -- -D warnings
+      - name: Verify GTK GPU pixels and lifecycle
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test -p oshwhub-nsh --locked --test linux_surface -- --ignored
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      - name: Verify Windows D3D11 pixels and lifecycle
+        if: runner.os == 'Windows'
+        run: cargo test -p oshwhub-nsh --lib --locked d3d11_gpu_ -- --ignored --nocapture
+      - run: pnpm build:nsh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsh-${{ matrix.target }}
+          path: apps/nsh/.nsh/out/${{ matrix.target }}/
+          if-no-files-found: error
 
   desktop:
     strategy:
@@ -76,8 +130,12 @@ jobs:
 
   android:
     runs-on: ubuntu-latest
+    env:
+      RUST_MIN_STACK: '268435456'
     steps:
       - uses: actions/checkout@v5
+      - name: Install NSH Linux host build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libegl-dev libgles-dev
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -85,7 +143,7 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      - run: sdkmanager 'ndk;27.1.12297006' 'platforms;android-37.0' 'build-tools;37.0.0' 'cmake;3.22.1'
+      - run: sdkmanager 'ndk;27.1.12297006' 'platforms;android-35' 'platforms;android-37.0' 'build-tools;37.0.0' 'cmake;3.22.1'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -94,7 +152,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.98.1'
-          targets: aarch64-linux-android, x86_64-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm rust:android
@@ -107,9 +165,50 @@ jobs:
           name: android-apk-development-signature
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+      - run: cargo install nsh-cli --version 0.4.0 --locked
+      - run: pnpm build:nsh android
+      - name: Build NSH Android GPU probe
+        run: |
+          node --input-type=module <<'JS'
+          import { androidRuntime } from './scripts/nsh-android-host.mjs';
+          import { execFileSync } from 'node:child_process';
+          execFileSync('nsh', ['package', '--target', 'android', '--abi', 'x86_64'], {
+            cwd: 'tests/nsh-surface', stdio: 'inherit',
+            env: { ...process.env, NSH_RUNTIME: androidRuntime() },
+          });
+          JS
+      - name: Enable emulator hardware acceleration
+        run: |
+          sudo chown "$(id -u)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Verify NSH Android GPU lifecycle (software GPU)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -accel on -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -feature Vulkan
+          script: |
+            adb -s emulator-5554 install -r tests/nsh-surface/.nsh/out/SurfaceProbe.apk
+            NSH_ANDROID_SERIAL=emulator-5554 node scripts/nsh-android-smoke.mjs || {
+              mkdir -p .superpowers/sdd/nsh-migration-plan/android-gpu
+              timeout 15s adb -s emulator-5554 logcat -d > .superpowers/sdd/nsh-migration-plan/android-gpu/failure-logcat.txt || true
+              exit 1
+            }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nsh-android-development-signature
+          path: |
+            apps/nsh/.nsh/out/android/*.apk
+            tests/nsh-surface/.nsh/out/SurfaceProbe.apk
+            .superpowers/sdd/nsh-migration-plan/android-gpu/
+          if-no-files-found: error
 
   ios:
     runs-on: macos-latest
+    env:
+      RUST_MIN_STACK: '268435456'
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -132,4 +231,11 @@ jobs:
         with:
           name: ios-simulator-app
           path: apps/mobile/ios/build/Build/Products/Release-iphonesimulator/*.app
+          if-no-files-found: error
+      - run: cargo install nsh-cli --version 0.4.0 --locked
+      - run: pnpm build:nsh ios-simulator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsh-ios-simulator-app
+          path: apps/nsh/.nsh/out/ios-simulator/*.app
           if-no-files-found: error

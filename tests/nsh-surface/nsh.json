@@ -1,0 +1,9 @@
+{
+  "name": "SurfaceProbe",
+  "id": "com.gouzil.oshwhub.surfaceprobe",
+  "version": "0.0.0",
+  "build": 1,
+  "rust": ".",
+  "root": "SurfaceProbe",
+  "theme": "../../apps/nsh/theme.json"
+}
