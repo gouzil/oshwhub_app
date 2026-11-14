@@ -1059,6 +1059,18 @@ CI 下一轮在 smoke 失败后、模拟器终止前，以十五秒上限保存 
 再确认新流程保存了非空真实模拟器日志、仍退出 1，且 artifact 包含探针 APK。
 产品渲染、原断言和重试上限均不变；下一轮远端结果仍待验证。
 
+## Android CI 逐行脚本修正（2026-11-15）
+
+`133d3d7` 的 run `43517520444` 为八项通过、Android 一项失败。失败发生在 smoke 启动前：
+`android-emulator-runner` 将 `script` 的每个物理行分别交给 shell 执行，多行 `|| { ... }`
+在第一行即报告 `Syntax error: end of file unexpected (expecting "}")`。这是新增诊断分组引入的
+CI 错误，没有执行 resize 检查，不能视为新的产品失败复现。
+
+失败日志收集改为完整单行命令，保留 smoke 失败退出、十五秒 logcat 上限及探针 APK artifact。
+按 action 的实际逐行执行方式，修改前第一行语法检查失败，修改后两行分别通过；隔离命令替身
+验证成功路径退出 0、smoke 失败保存日志并退出 1、logcat 自身失败仍退出 1。此前整段 shell
+自检没有覆盖 action 的逐行语义。产品源码和原 smoke 断言未改，修正后的远端结果仍待验证。
+
 ## 尚未验收的门槛
 
 尚未完成：同一设备/OS/GPU/视口/输入下的旧版与 NSH Release 性能样本（冷启动、2D/原理图/3D 交互、CPU/RSS/GPU、20 次生命周期）；真实大板和真实器件模型的持续 FPS/内存；Android 真机以及 iOS/Windows/Linux 的真实硬件渲染、无障碍和生命周期验收；Windows 正式 NSH 包的本机打包/安装；原生各端中文与嵌套 SVG 图片的像素矩阵。旧 RN/Electron/Skia/Expo 入口必须继续保留，直到这些门槛全部通过。
