@@ -145,11 +145,7 @@ impl Camera {
             self.cancel();
             return None;
         }
-        let mut current: Vec<_> = points
-            .iter()
-            .copied()
-            .filter(|point| phase != GesturePhase::End || !point.changed)
-            .collect();
+        let mut current = points.to_vec();
         current.sort_by_key(|point| point.id);
         if self.gesture.is_none() {
             if phase == GesturePhase::Start
@@ -170,6 +166,28 @@ impl Camera {
         if let Some(point) = points.iter().find(|point| point.id == gesture.origin.id) {
             gesture.moved |= !is_tap(gesture.origin.point, point.point, 1);
         }
+        // A release can carry newer coordinates than the last move.
+        let same_points = current
+            .iter()
+            .map(|point| point.id)
+            .eq(gesture.points.iter().map(|point| point.id));
+        if same_points
+            && (phase == GesturePhase::Move
+                || (phase == GesturePhase::End && (gesture.moved || gesture.max_pointers > 1)))
+        {
+            let start: Vec<_> = gesture.points.iter().map(|point| point.point).collect();
+            let end: Vec<_> = current.iter().map(|point| point.point).collect();
+            self.view = gesture_viewport(
+                gesture.base,
+                &start,
+                &end,
+                self.fitted.scale / 20.,
+                self.fitted.scale * 128.,
+            );
+        }
+        if phase == GesturePhase::End {
+            current.retain(|point| !point.changed);
+        }
         if current.is_empty() {
             let gesture = self.gesture.take().unwrap();
             let end = points
@@ -181,22 +199,7 @@ impl Camera {
                 && is_tap(gesture.origin.point, end, gesture.max_pointers))
             .then_some(end);
         }
-        if phase == GesturePhase::Move
-            && current
-                .iter()
-                .map(|point| point.id)
-                .eq(gesture.points.iter().map(|point| point.id))
-        {
-            let start: Vec<_> = gesture.points.iter().map(|point| point.point).collect();
-            let end: Vec<_> = current.iter().map(|point| point.point).collect();
-            self.view = gesture_viewport(
-                gesture.base,
-                &start,
-                &end,
-                self.fitted.scale / 20.,
-                self.fitted.scale * 128.,
-            );
-        } else {
+        if phase != GesturePhase::Move || !same_points {
             gesture.base = self.view;
             gesture.points = current;
         }

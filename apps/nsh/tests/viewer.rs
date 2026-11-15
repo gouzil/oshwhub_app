@@ -133,13 +133,65 @@ fn pan_and_pinch_rebase_when_pointer_count_changes_without_becoming_taps() {
 }
 
 #[test]
+fn drag_finishes_at_release_coordinates_without_a_last_move() {
+    for intermediate_move in [false, true] {
+        let mut camera = camera();
+        camera.touch(GesturePhase::Start, &[pointer(1, 100., 100., true)]);
+        if intermediate_move {
+            camera.touch(GesturePhase::Move, &[pointer(1, 120., 110., true)]);
+        }
+        assert!(
+            camera
+                .touch(GesturePhase::End, &[pointer(1, 140., 125., true)])
+                .is_none()
+        );
+        assert_eq!(
+            (camera.view.x, camera.view.y, camera.view.scale),
+            (64., 49., 2.)
+        );
+    }
+}
+
+#[test]
+fn pinch_release_applies_final_positions_before_rebasing_the_remaining_finger() {
+    let mut camera = camera();
+    camera.touch(
+        GesturePhase::Start,
+        &[pointer(1, 100., 100., true), pointer(2, 140., 100., true)],
+    );
+    camera.touch(
+        GesturePhase::Move,
+        &[pointer(1, 90., 100., true), pointer(2, 150., 100., true)],
+    );
+    assert!(
+        camera
+            .touch(
+                GesturePhase::End,
+                &[pointer(1, 80., 100., false), pointer(2, 160., 100., true)],
+            )
+            .is_none()
+    );
+    assert_eq!(
+        (camera.view.x, camera.view.y, camera.view.scale),
+        (-72., -52., 4.)
+    );
+    camera.touch(GesturePhase::Move, &[pointer(1, 85., 105., true)]);
+    assert_eq!(
+        (camera.view.x, camera.view.y, camera.view.scale),
+        (-67., -47., 4.)
+    );
+}
+
+#[test]
 fn tap_has_inclusive_five_pixel_threshold_but_out_and_back_drag_is_not_a_tap() {
     let mut camera = camera();
+    let fitted = camera.view;
     camera.touch(GesturePhase::Start, &[pointer(1, 100., 100., true)]);
     assert_eq!(
         camera.touch(GesturePhase::End, &[pointer(1, 103., 104., true)]),
         Some(Point { x: 103., y: 104. })
     );
+    assert_eq!(camera.view, fitted);
     camera.touch(GesturePhase::Start, &[pointer(1, 100., 100., true)]);
     camera.touch(GesturePhase::Move, &[pointer(1, 106., 100., true)]);
     camera.touch(GesturePhase::Move, &[pointer(1, 100., 100., true)]);
