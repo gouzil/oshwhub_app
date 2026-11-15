@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 全部页面与 PCB/原理图/三维渲染切换到 Rust NSH，并用对应平台的 Release 对照证明性能没有下降。
+**Goal:** 全部页面与 PCB/原理图/三维渲染切换到 Rust NSH；按用户 2026-11-15 修订，仅以 macOS 真实大板/器件模型持续帧率、新旧 CPU/内存/GPU 和各 20 次进入/退出资源对照作本轮性能验收。其他平台未测项明确保留，不外推通过。
 
 **Architecture:** 一个纯 Rust NSH 根组件，直接调用 `oshwhub-core` 的强类型接口。NSH owns UI/layout/accessibility；Rust owns scene/cache/GPU buffers。各端使用已接入的 GPU 表面；Windows 复用 NSH 的 D3D11 设备并通过 D2D 合成，完整真实硬件对照仍待验收。
 
@@ -18,7 +18,13 @@
 - URL 白名单、超时、下载/历史/解压/图元/GPU 上限、AES 验证、错误恢复和无障碍不得削弱。
 - 手势只更新相机等小状态；整板编译、路径解析与 mesh 上传次数均为 0。
 - 每项性能中位数/p95 等按设计逐项与旧版对照，不预留 5%/10% 的降级比例；噪声内无结论不能算通过。
-- 不部署、不发布应用商店、不修改远端服务。旧运行时保留至全量验收通过。
+- 不部署、不发布应用商店、不修改远端服务。旧运行时保留至本轮选定两项验收通过；之后清理代码与依赖，保留原始证据。
+
+## 2026-11-15 用户范围修订
+
+性能协议以 [nsh-migration.md 的性能验收](nsh-migration.md#性能验收严格对照不预留降级比例) 为准：真实 RK3576 大板 PCB2D 平移与 PCB3D 真实模型旋转，各五对 60 秒分析窗口；原包采集帧率/CPU/RSS，GPU 独立资源阶段；两版各 20 次完整 viewer 生命周期，逐次固定位置采样增长与释放。当前产品候选为 `4f7be6e`，旧候选记录只保留历史用途。
+
+下列历史任务中的冷启动、普通页面/原理图专项性能、合成压力和完整跨端真机/安装/无障碍矩阵不再作为本轮额外性能门槛，未执行仍记未执行。历史约 706ms 空档保留且计入本轮实际结果，不要求另行完成根因专项。全部页面/渲染迁移、现有功能回归及安全边界保持原范围。
 
 ## Review Focus
 
@@ -155,14 +161,14 @@ CPU 配对变化 −4.573%，描述性 95% 区间 [−10.580%, +1.434%]，仍不
 - [ ] 幂等迁移主题/外观与应用身份；损坏/未知值回退默认，保存失败可见且不覆盖旧值。验证 NSH namespace 与旧 Android/iOS/Electron/Web 存储的真实位置。Android 旧 SharedPreferences 与桌面 Electron LevelDB 导入已实现并回归；桌面读取只操作有界内存快照，保留旧文件，完整 Release 257/3 忽略及独立读取库 Debug/Release 156+3 通过。其余平台的最终运行矩阵仍随 Task 6 验收。
 - [ ] Run Rust/UI/Web 六视口回归、VoiceOver/TalkBack 和 Release 列表/BOM/启动性能对照；Expected: 全部工作流保持、异步交错不会回写错误页面。提交。
 
-### Task 6: 完整性能门槛、产物与最终切换
+### Task 6: 用户选定两项性能验收、产物与最终切换
 
 **Files:** Add repeatable baseline/candidate capture and comparison under `scripts/` and `tests/`；modify `package.json`、workspace/build configs、`.github/workflows/ci.yml`、README/docs；remove old UI/runtime only after acceptance。
 
-**Interfaces:** Consumes all prior tasks; produces per-platform same-input Release evidence, NSH entrypoints/artifacts, and a dependency tree free of old UI runtimes。
+**Interfaces:** Consumes all prior tasks; produces the two selected macOS same-input Release comparisons, explicit untested boundaries, NSH entrypoints/artifacts, and a dependency tree free of old UI runtimes。
 
 - [ ] 比较器失败测试覆盖缺少数据、错误设备/GPU/视口/样本 hash、样本不足、空值/NaN、部分指标回退和噪声内无结论；Expected: 任何不可信或回退对照均不能通过。
-- [ ] 收集每组 10 次冷启动、5×60 秒交互、20 次生命周期以及 CPU/RSS/GPU 指标；小夹具/真实大板/合成压力分别归档；真实 GPU 与 SwiftShader 明确区分。
-- [ ] 对所有功能与平台要求逐项审计，修复每项回退；Expected: 设计每个指标均有对应范围的可靠证据，未测项不得标完成。
+- [ ] 真实 RK3576 PCB2D/PCB3D 各收集五对新进程持续交互，沿用 12 秒预热、61 秒输入/中央 60 秒分析、严格帧/输入/环境核对；原包同步 CPU/进程树 RSS，GPU 独立采集。失败、拒绝与长间隔保留。
+- [ ] 两版各完成同进程连续 20 次详情→2D→3D 模型就绪→短旋转→详情；记录每次峰值与退出后 10/30 秒的资源残留、趋势，最后核对进程退出。Expected: 两项逐指标有可靠同口径证据，无回退；未测项不得标完成。
 - [ ] 更新各平台 NSH 构建、签名/安装说明和 CI 产物，验证正式包真实注册表面、字体/图片齐全与无 QuickJS；之后才切入口并删除 RN/Electron/Expo/Skia 和过时桥接/脚本。
-- [ ] Run 全量 fmt/clippy/test、Web/原生回归、六平台 package 与最终同口径对照；Expected: 全部通过。独立整分支审阅并修复重要问题，最终提交；按用户授权决定远端交付，不能自动部署。
+- [ ] Run 全量 fmt/clippy/test、现有 Web/原生回归与构建 CI，并完成上述两项最终同口径对照；Expected: 两项验收与现有回归通过，其他平台的未执行项如实保留。独立整分支审阅并修复重要问题，最终提交；按用户授权决定远端交付，不能自动部署。
