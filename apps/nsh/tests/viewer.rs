@@ -443,6 +443,70 @@ fn inactive_viewer_clears_transient_pick_error_before_mode_switch() {
 static GUI_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
+fn horizontal_drag_sends_only_changed_camera_values_and_focuses_once() {
+    let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    #[derive(Default)]
+    struct Updates {
+        values: std::collections::BTreeMap<nsh_core::NodeId, f32>,
+        redundant_sets: usize,
+        focuses: usize,
+    }
+    let updates = Arc::new(Mutex::new(Updates::default()));
+    let mut app = Headless::start(EngineConfig {
+        viewport: Size::new(px(480.), px(640.)),
+        clock: nsh_core::time::Clock::manual(std::time::SystemTime::UNIX_EPOCH),
+        ..EngineConfig::new(Root::of::<ViewerFixture>())
+    })
+    .unwrap();
+    let records = Arc::clone(&updates);
+    app.observe(move |_, batch| {
+        let mut records = records.lock().unwrap();
+        for item in &batch.items {
+            match item {
+                MountItem::Animation(nsh_core::animation::AnimationOp::CreateValue {
+                    node,
+                    value,
+                }) => {
+                    records.values.insert(*node, *value);
+                }
+                MountItem::Animation(nsh_core::animation::AnimationOp::Set { node, value }) => {
+                    if records.values.insert(*node, *value) == Some(*value) {
+                        records.redundant_sets += 1;
+                    }
+                }
+                MountItem::Command {
+                    command: nsh_core::Command::Focus,
+                    ..
+                } => records.focuses += 1,
+                _ => {}
+            }
+        }
+    });
+    app.first_render().unwrap();
+    let initial = {
+        let mut records = updates.lock().unwrap();
+        records.redundant_sets = 0;
+        records.focuses = 0;
+        records.values.clone()
+    };
+    app.drag("label:二维画布", point(px(120.), px(0.))).unwrap();
+    app.press_key("right").unwrap();
+    let records = updates.lock().unwrap();
+    let changes: Vec<_> = initial
+        .iter()
+        .filter_map(|(node, before)| {
+            let after = records.values[node];
+            (after != *before).then_some(after - before)
+        })
+        .collect();
+    assert_eq!(
+        (records.focuses, records.redundant_sets, changes),
+        (1, 0, vec![150.]),
+        "a horizontal drag must retain keyboard focus without unchanged native writes"
+    );
+}
+
+#[test]
 fn camera_changes_composite_cached_vectors_instead_of_replaying_them() {
     let _guard = GUI_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let drawings = Arc::new(Mutex::new(Vec::new()));

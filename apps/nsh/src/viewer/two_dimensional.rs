@@ -208,7 +208,7 @@ impl Camera {
 }
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     rc::{Rc, Weak},
     sync::Arc,
 };
@@ -251,6 +251,7 @@ struct ViewerState {
     x: AnimatedValue,
     y: AnimatedValue,
     scale: AnimatedValue,
+    published_camera: Cell<[f32; 3]>,
     zoom: Signal<f64>,
     overview: RasterPlan,
     raster_view: Signal<Option<(Viewport, Point)>>,
@@ -267,9 +268,22 @@ struct ViewerState {
 impl ViewerState {
     fn publish_camera(&self) {
         let camera = self.camera.borrow();
-        self.x.set(camera.view.x as f32);
-        self.y.set(camera.view.y as f32);
-        self.scale.set(camera.view.scale as f32);
+        let next = [
+            camera.view.x as f32,
+            camera.view.y as f32,
+            camera.view.scale as f32,
+        ];
+        // Unchanged sets still invalidate the host's native animation graph.
+        let previous = self.published_camera.replace(next);
+        if next[0] != previous[0] {
+            self.x.set(next[0]);
+        }
+        if next[1] != previous[1] {
+            self.y.set(next[1]);
+        }
+        if next[2] != previous[2] {
+            self.scale.set(next[2]);
+        }
         self.zoom.set(camera.view.scale / camera.fitted.scale);
         self.raster_view.set(
             camera
@@ -591,6 +605,7 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>, pick: Picker) ->
         x: animated_value(0.),
         y: animated_value(0.),
         scale: animated_value(1.),
+        published_camera: Cell::new([0., 0., 1.]),
         zoom: signal(1.),
         raster_view: signal(None),
         detail: signal(None),
@@ -845,7 +860,9 @@ pub fn two_dimensional(scene: Arc<Scene>, active: Signal<bool>, pick: Picker) ->
         .keep_touches(true)
         .on_press(|| {})
         .on_touch(move |event: &TouchEvent| {
-            canvas_ref.focus();
+            if event.phase == TouchPhase::Start {
+                canvas_ref.focus();
+            }
             touch_state.touch(event);
         })
         .on_layout(move |bounds: &nsh_core::Bounds<Points>| {
