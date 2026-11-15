@@ -1320,9 +1320,31 @@ NSH 第 4 条 LaunchServices 启动失败的全套文件与哈希；失败尝试
 查看器测试 18/18、工作区全量 261 passed / 3 ignored、工作区 all-target Clippy、format 和
 diff 检查通过。红绿输出保留为 `camera-native-writes-{red,green,workspace,clippy}.log`。
 Web 库的 wasm32 check 通过；桌面专用 binary 的 wasm32 check 被现有平台保护拒绝，输出
-同样保留。沿用 r5 固定视口宿主的离线、锁定依赖 Release 构建通过；本机未找到 `nsh` CLI，
-常规 package 命令在构建前报 ENOENT，因此此轮未重新验证 CLI 打包。
-这只证明减少了边界消息和重复写入，尚无新候选包的配对呈现数据，不能推断实际帧性能提升。
+同样保留。沿用 r5 固定视口宿主的离线、锁定依赖 Release 构建通过。常规 package 命令最初
+因本机缺少 `nsh` CLI 在构建前报 ENOENT；保留失败后，从官方固定版本发布包恢复本地
+NSH 0.4.0 与 wasm-bindgen 0.2.129，核对散列，不执行安装脚本或修改全局工具链接。
+随后原有 `node scripts/nsh-package.mjs macos` 退出 0，正式包的 deep/strict codesign 校验
+通过；二进制 SHA-256 为 `2ed4b8a7640449a89bdfcdde403e19e5a470a3797c798c8f00be0de28ffe0372`。
+正式包未启动，也未替换用于配对测试的固定视口包。工具来源、构建输出和签名校验保留为
+`restore-*-result.json`、`camera-native-writes-package-macos-restored.log` 和
+`camera-native-writes-official-macos-package.json`。
+
+完整 `node scripts/nsh-web-tests.mjs` 重建 WASM core、Rust Web 应用和 GPU/二维探针后，
+Chromium/ANGLE Metal 回归 26/26 通过，覆盖六个视口的中文、嵌套 SVG 文字/图片、透明与
+孔洞、相机交互、GPU 挂载/销毁、隐藏更新后恢复、导航、主题和键盘焦点。
+首次执行被独立探针锁文件缺少本地 `rusty-leveldb` 的 unused-patch 记录拒绝；仅补齐该记录，
+247 个 package 条目逐项不变，保留 `--locked`、原断言和像素阈值。初次失败及修正后的完整
+日志均保留，202 份测试产物与配置/源码快照另存为 `web-after-4f7be6e-validation-r2/`。
+`camera-native-writes-web-regression-r2-audit.json` 记录测试明细与散列，并纠正原始启动/
+结果元数据中误写的“244 个 package”文字标签，原始记录未覆盖。复核 r5 的 125 项、r6 的
+128 项冻结产物及各自额外引用的父协议散列，全部匹配；该核对不新增任何原生性能样本。
+
+产品源码 `4f7be6e162018755e499cd4fee9da967eab1322f` 的
+[CI 43691441936](https://github.com/gouzil/oshwhub_app/actions/runs/43691441936) 已完成，
+quality、三个旧桌面、三个 NSH 桌面、iOS、Android 共 9/9 项成功。完整状态与 Android
+原始日志保留为 `ci-43691441936-final-jobs.json` 和
+`ci-43691441936-android-raw-retry.log`；软件 GPU 的功能冒烟不计作真机性能证明。
+本次相机修改已减少边界消息和重复写入，但尚无新候选包的配对呈现数据，不能推断实际帧性能提升。
 r5 五对仍属于修改前的 `8a1e76b` 包；冻结测试包、原始录制及拒绝记录保留，不混入候选验收。
 
 ## 尚未验收的门槛
