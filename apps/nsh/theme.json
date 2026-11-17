@@ -1,0 +1,44 @@
+{
+  "name": "OSHWHub",
+  "cssVars": {
+    "theme": { "radius": "12px" },
+    "light": {
+      "background": "#ffffff",
+      "foreground": "#202d40",
+      "card": "#ffffff",
+      "card-foreground": "#202d40",
+      "primary": "#2c65e8",
+      "primary-foreground": "#ffffff",
+      "secondary": "#edf3ff",
+      "secondary-foreground": "#2c65e8",
+      "accent": "#edf3ff",
+      "accent-foreground": "#2c65e8",
+      "muted": "#f1f3f7",
+      "muted-foreground": "#636573",
+      "destructive": "#b42318",
+      "destructive-foreground": "#ffffff",
+      "border": "#e5e7eb",
+      "input": "#dde2ec",
+      "ring": "#2c65e8"
+    },
+    "dark": {
+      "background": "#101724",
+      "foreground": "#e6edf7",
+      "card": "#182230",
+      "card-foreground": "#e6edf7",
+      "primary": "#8bb3ff",
+      "primary-foreground": "#0f1724",
+      "secondary": "#1d2d4b",
+      "secondary-foreground": "#8bb3ff",
+      "accent": "#1d2d4b",
+      "accent-foreground": "#8bb3ff",
+      "muted": "#222d3e",
+      "muted-foreground": "#a6b3c7",
+      "destructive": "#ff9a92",
+      "destructive-foreground": "#35120f",
+      "border": "#334155",
+      "input": "#44536a",
+      "ring": "#8bb3ff"
+    }
+  }
+}

@@ -13,6 +13,7 @@
     "desktop": "node scripts/desktop-dev.mjs",
     "build:desktop": "node scripts/desktop-build.mjs",
     "build:web": "pnpm --filter @oshwhub/desktop build",
+    "build:nsh": "node scripts/nsh-package.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && node --test scripts/*.test.mjs",
     "test:e2e": "playwright test",

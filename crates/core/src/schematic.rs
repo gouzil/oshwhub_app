@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, OnceLock},
-    time::Instant,
 };
+use web_time::Instant;
 
 const CELL: f64 = 100.;
 const MAX_OBJECTS: usize = 200_000;
@@ -54,7 +54,7 @@ pub async fn load(client: &HttpClient, project_id: &str, document_id: &str) -> R
     crate::api::validate_id(document_id)?;
     let document_id = document_id.to_owned();
     let (project, revision, metrics) = pcb::load_project(client, project_id, &document_id).await?;
-    tokio::task::spawn_blocking(move || compile(project, &document_id, revision, metrics))
+    crate::task::compute(move || compile(project, &document_id, revision, metrics))
         .await
         .map_err(|_| AppError::new("internal", "原理图场景处理失败"))?
 }

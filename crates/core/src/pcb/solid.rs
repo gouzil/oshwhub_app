@@ -12,7 +12,7 @@ use lyon_tessellation::{
     path::{FillRule, LineCap, LineJoin, Path},
 };
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 pub const MM: f64 = 0.0254;
 pub const MAX_VERTICES: usize = 3_000_000;
@@ -477,11 +477,34 @@ pub struct Scene3d {
     pub warnings: Vec<String>,
 }
 
-pub fn prepare(
+#[derive(Clone)]
+pub struct RawScene3d {
+    pub board: Arc<Mesh>,
+    pub model_keys: Vec<String>,
+    pub component_count: usize,
+    pub bound_count: usize,
+    pub thickness: f64,
+    pub warnings: Vec<String>,
+}
+
+impl RawScene3d {
+    pub(super) fn packed(self) -> Scene3d {
+        Scene3d {
+            board: self.board.packed(),
+            model_keys: self.model_keys,
+            component_count: self.component_count,
+            bound_count: self.bound_count,
+            thickness: self.thickness,
+            warnings: self.warnings,
+        }
+    }
+}
+
+pub fn prepare_raw(
     seed: &Seed,
     surfaces: impl Iterator<Item = (i32, bool, f64, Vec<Vec<Point>>, String)>,
     bounds: Bounds,
-) -> Result<Scene3d> {
+) -> Result<RawScene3d> {
     let mut warnings = seed.warnings.clone();
     if seed.outlines.len() > 4096 {
         return Err(limit("板框", seed.outlines.len(), 4096));
@@ -578,8 +601,8 @@ pub fn prepare(
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    Ok(Scene3d {
-        board: mesh.finish().packed(),
+    Ok(RawScene3d {
+        board: Arc::new(mesh.finish()),
         model_keys,
         component_count: seed.component_count,
         bound_count: seed.bindings.len(),
@@ -591,6 +614,77 @@ pub fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn prepare(
+        seed: &Seed,
+        surfaces: impl Iterator<Item = (i32, bool, f64, Vec<Vec<Point>>, String)>,
+        bounds: Bounds,
+    ) -> Result<Scene3d> {
+        Ok(prepare_raw(seed, surfaces, bounds)?.packed())
+    }
+
+    #[test]
+    fn raw_board_preserves_literal_geometry_and_scene_metadata() {
+        let seed = Seed {
+            outlines: vec![vec![
+                (0., 0.),
+                (200., 0.),
+                (200., 100.),
+                (0., 100.),
+                (0., 0.),
+            ]],
+            thickness: Some(1.6),
+            component_count: 3,
+            ..Default::default()
+        };
+        let bounds = Bounds {
+            min_x: 0.,
+            min_y: 0.,
+            max_x: 200.,
+            max_y: 100.,
+        };
+        let raw = prepare_raw(&seed, std::iter::empty(), bounds).unwrap();
+        assert_eq!(raw.board.indices.len(), 36);
+        assert_eq!(raw.board.vertices.len() % 9, 0);
+        assert!(
+            raw.board
+                .indices
+                .iter()
+                .all(|index| (*index as usize) < raw.board.vertices.len() / 9)
+        );
+        for (actual, expected) in raw.board.bounds.min.into_iter().zip([0., -2.54, 0.]) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        for (actual, expected) in raw.board.bounds.max.into_iter().zip([5.08, 0., 1.6]) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        assert_eq!(raw.component_count, 3);
+        assert_eq!(raw.bound_count, 0);
+        assert!(raw.model_keys.is_empty());
+        assert_eq!(raw.thickness, 1.6);
+        assert!(raw.warnings.is_empty());
+    }
+
+    #[test]
+    fn raw_board_keeps_the_existing_outline_limit() {
+        let seed = Seed {
+            outlines: vec![Vec::new(); 4097],
+            ..Default::default()
+        };
+        let error = prepare_raw(
+            &seed,
+            std::iter::empty(),
+            Bounds {
+                min_x: 0.,
+                min_y: 0.,
+                max_x: 1.,
+                max_y: 1.,
+            },
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.code, "pcb_3d_limit");
+    }
 
     #[test]
     fn shared_vertices_do_not_hit_the_limit_for_expanded_triangle_corners() {

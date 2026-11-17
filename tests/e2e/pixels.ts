@@ -1,7 +1,7 @@
 import { inflateSync } from "node:zlib";
 
 // Decode Chromium's 8-bit RGB/RGBA screenshots so rendering checks inspect actual pixels.
-export function canvasColors(png: Buffer) {
+export function decodePng(png: Buffer) {
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
   const channels = png[25] === 6 ? 4 : png[25] === 2 ? 3 : 0;
@@ -46,6 +46,11 @@ export function canvasColors(png: Buffer) {
       pixels[i] = (raw[y * (stride + 1) + x + 1] + predictor) & 255;
     }
   }
+  return { width, height, channels, pixels };
+}
+
+export function canvasColors(png: Buffer) {
+  const { channels, pixels } = decodePng(png);
   const counts = { copper: 0, bottom: 0, chinese: 0 };
   for (let i = 0; i < pixels.length; i += channels) {
     const [red, green, blue] = pixels.subarray(i, i + 3);

@@ -13,8 +13,8 @@ use std::{
     collections::{BTreeMap, VecDeque},
     io::Cursor,
     sync::{Arc, Mutex, OnceLock},
-    time::Instant,
 };
+use web_time::Instant;
 
 const MODEL_LIMIT: usize = 12 * 1024 * 1024;
 
@@ -301,6 +301,12 @@ pub struct Model3d {
     pub mesh: PackedMesh,
     pub instances: Vec<Instance>,
 }
+pub struct RawModel3d {
+    pub key: String,
+    pub mesh_key: String,
+    pub mesh: Arc<Mesh>,
+    pub instances: Vec<Instance>,
+}
 type Cache = VecDeque<(String, String, Arc<Mesh>)>;
 fn cache() -> &'static Mutex<Cache> {
     static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
@@ -367,6 +373,23 @@ pub async fn load(
     bindings: Vec<Binding>,
     thickness: f64,
 ) -> Result<Model3d> {
+    let raw = load_raw(client, key, bindings, thickness).await?;
+    crate::task::compute(move || Model3d {
+        key: raw.key,
+        mesh_key: raw.mesh_key,
+        mesh: raw.mesh.packed(),
+        instances: raw.instances,
+    })
+    .await
+    .map_err(|_| solid::invalid())
+}
+
+pub async fn load_raw(
+    client: &HttpClient,
+    key: &str,
+    bindings: Vec<Binding>,
+    thickness: f64,
+) -> Result<RawModel3d> {
     if !bindings.iter().any(|b| b.key == key) {
         return Err(AppError::new("invalid_request", "模型不属于当前 PCB"));
     }
@@ -398,7 +421,7 @@ pub async fn load(
                 MODEL_LIMIT,
             )
             .await?;
-        let mesh = tokio::task::spawn_blocking(move || parse_obj(&bytes).map(Arc::new))
+        let mesh = crate::task::compute(move || parse_obj(&bytes).map(Arc::new))
             .await
             .map_err(|_| solid::invalid())??;
         let mut cache = cache().lock().map_err(|_| solid::invalid())?;
@@ -415,7 +438,7 @@ pub async fn load(
         (model, mesh)
     };
     let key = key.to_owned();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = crate::task::compute(move || {
         let instances = bindings
             .iter()
             .filter(|b| b.key == key)
@@ -431,10 +454,10 @@ pub async fn load(
         {
             return Err(solid::invalid());
         }
-        Ok(Model3d {
+        Ok(RawModel3d {
             key,
             mesh_key,
-            mesh: mesh.packed(),
+            mesh,
             instances,
         })
     })
@@ -442,7 +465,7 @@ pub async fn load(
     .map_err(|_| solid::invalid())??;
     tracing::info!(
         instances = result.instances.len(),
-        vertices = result.mesh.vertex_count,
+        vertices = result.mesh.vertices.len() / 9,
         elapsed_ms = start.elapsed().as_millis() as u64,
         "pcb.model.complete"
     );
@@ -455,6 +478,86 @@ mod tests {
 
     const OBJ: &str =
         "newmtl gold\nKd 0.8 0.6 0.2\nendmtl\nv 0 0 0\nv 2 0 0\nv 0 1 0\nusemtl gold\nf 1 2 3\n";
+
+    #[tokio::test]
+    async fn raw_model_reuses_cached_geometry_and_preserves_instances_and_packed_output() {
+        let key = "1".repeat(32);
+        let mesh = Arc::new(parse_obj(OBJ.as_bytes()).unwrap());
+        cache()
+            .lock()
+            .unwrap()
+            .push_back((key.clone(), "2".repeat(32), Arc::clone(&mesh)));
+        let first = Binding {
+            key: key.clone(),
+            title: "R1".into(),
+            position: [10., 20.],
+            angle: 0.,
+            bottom: false,
+            transform: ModelTransform::parse("78.74015748,39.37007874,0,0,0,0,0,0,0").unwrap(),
+        };
+        let second = Binding {
+            title: "R2".into(),
+            position: [30., 40.],
+            ..first.clone()
+        };
+        let foreign = Binding {
+            key: "3".repeat(32),
+            ..first.clone()
+        };
+        let bindings = vec![first, foreign, second];
+        let client = HttpClient::new().unwrap();
+        let raw = load_raw(&client, &key, bindings.clone(), 1.6)
+            .await
+            .unwrap();
+        let repeated = load_raw(&client, &key, bindings.clone(), 1.6)
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(&raw.mesh, &mesh));
+        assert!(Arc::ptr_eq(&raw.mesh, &repeated.mesh));
+        assert_eq!(raw.mesh.indices, [0, 1, 2]);
+        assert_eq!(raw.mesh.bounds.min, [0., 0., 0.]);
+        assert_eq!(raw.mesh.bounds.max, [2., 1., 0.]);
+        assert_eq!(raw.instances.len(), 2);
+        assert_eq!(raw.instances[0].title, "R1");
+        assert_eq!(raw.instances[1].title, "R2");
+        for (instance, expected) in raw
+            .instances
+            .iter()
+            .zip([[9., 19.5, 1.6], [29., 39.5, 1.6]])
+        {
+            for (actual, expected) in instance.matrix[12..15].iter().zip(expected) {
+                assert!((*actual - expected).abs() < 1e-5);
+            }
+        }
+        let packed = load(&client, &key, bindings.clone(), 1.6).await.unwrap();
+        assert_eq!(packed.key, raw.key);
+        assert_eq!(packed.mesh_key, raw.mesh_key);
+        assert_eq!(packed.mesh.data, mesh.packed().data);
+        assert_eq!(packed.mesh.indices, mesh.packed().indices);
+        assert_eq!(packed.instances[0].matrix, raw.instances[0].matrix);
+        assert_eq!(
+            load_raw(&client, &key, Vec::new(), 1.6)
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "invalid_request"
+        );
+        let mut invalid = bindings;
+        invalid[0].position[0] = f64::INFINITY;
+        assert_eq!(
+            load_raw(&client, &key, invalid, 1.6)
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "pcb_3d_format"
+        );
+        cache()
+            .lock()
+            .unwrap()
+            .retain(|(cached_key, _, _)| cached_key != &key);
+    }
 
     #[test]
     fn official_obj_style_inline_materials_produce_finite_colored_triangles() {
